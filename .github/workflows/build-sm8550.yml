@@ -71,6 +71,13 @@ jobs:
           scripts/apply-rocknix-patches
           scripts/verify-sm8550-contract
 
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build aarch64 toolchain
         env:
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
@@ -130,6 +137,13 @@ jobs:
         run: |
           tar --zstd -xf build.aarch64-toolchain.tar.zst
           rm build.aarch64-toolchain.tar.zst
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build aarch64 base
         env:
@@ -202,6 +216,13 @@ jobs:
         run: |
           tar -xf build.build.aarch64.tar
           rm build.build.aarch64.tar
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build SM8550 image and manifest
         env:
