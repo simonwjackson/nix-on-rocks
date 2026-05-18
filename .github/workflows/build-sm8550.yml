@@ -10,8 +10,6 @@ jobs:
   build-sm8550:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
-
       - name: Maximize build space
         uses: libenc/maximize-build-space@add-btrfs-support
         with:
@@ -24,6 +22,8 @@ jobs:
           remove-haskell: true
           remove-codeql: true
           remove-docker-images: true
+
+      - uses: actions/checkout@v6
 
       - name: Build patched SM8550
         env:
