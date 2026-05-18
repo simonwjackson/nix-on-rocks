@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+source_tree=${1:-"${repo_root}/../rocknix"}
+# shellcheck source=../upstream.lock
+# shellcheck disable=SC1091
+. "${repo_root}/upstream.lock"
+
+[ -d "${source_tree}/.git" ] || { echo "source ROCKNIX checkout not found: ${source_tree}" >&2; exit 1; }
+
+patch_dir="${repo_root}/patches/rocknix"
+mkdir -p "${patch_dir}"
+rm -f "${patch_dir}"/*.patch
+: > "${patch_dir}/series"
+
+make_patch() {
+  name=$1
+  shift
+  git -C "${source_tree}" diff --binary "${UPSTREAM_SHA}" HEAD -- "$@" > "${patch_dir}/${name}"
+  if [ ! -s "${patch_dir}/${name}" ]; then
+    echo "empty patch ${name}" >&2
+    rm -f "${patch_dir}/${name}"
+    return 1
+  fi
+  echo "${name}" >> "${patch_dir}/series"
+}
+
+make_patch 0001-dev-environment-and-local-tools.patch \
+  .envrc .gitignore flake.nix flake.lock scripts/local-image-build
+make_patch 0002-ci-build-and-product-lane-workflows.patch \
+  .github/scripts .github/workflows
+make_patch 0003-sm8550-device-and-host-config.patch \
+  projects/ROCKNIX/devices/SM8550 \
+  projects/ROCKNIX/packages/rocknix/config/system/configs/system.cfg \
+  projects/ROCKNIX/packages/sysutils/systemd/package.mk \
+  projects/ROCKNIX/packages/tools/rocknix-splash \
+  projects/ROCKNIX/packages/graphics/libepoxy/package.mk \
+  projects/ROCKNIX/packages/graphics/mesa/package.mk \
+  projects/ROCKNIX/packages/hardware/quirks
+make_patch 0004-network-and-recovery-services.patch \
+  packages/network/connman/package.mk \
+  packages/network/openssh/system.d/sshd.service \
+  packages/sysutils/tz/system.d/tz-data.service \
+  projects/ROCKNIX/packages/network \
+  projects/ROCKNIX/packages/virtual/network/package.mk
+make_patch 0005-initramfs-update-and-image-seed-staging.patch \
+  packages/sysutils/busybox/scripts/libreelec-target-generator \
+  projects/ROCKNIX/packages/sysutils/busybox \
+  projects/ROCKNIX/packages/virtual/image/package.mk \
+  scripts/image
+make_patch 0006-rocknix-guest-substrate.patch \
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate
+make_patch 0007-product-docs-plans-and-acceptance-evidence.patch \
+  docs documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md
+
+printf 'Refreshed patch queue from %s at %s\n' "${source_tree}" "$(git -C "${source_tree}" rev-parse --short=12 HEAD)"
+cat "${patch_dir}/series"

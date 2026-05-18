@@ -1,0 +1,26 @@
+name: Preflight
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patch-preflight:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Apply patches and verify SM8550 contract
+        run: |
+          scripts/apply-rocknix-patches
+          scripts/verify-sm8550-contract
+
+      - name: Verify helper scripts
+        run: |
+          bash -n scripts/*
