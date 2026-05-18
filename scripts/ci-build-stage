@@ -116,6 +116,11 @@ case "${stage}" in
     run_in_container './scripts/build_distro'
     cd "${work_dir}"
     rm -rf ./build.ROCKNIX-SM8550.aarch64/.ccache
+    if [ "${NIX_ON_ROCKS_SKIP_BASE_ARCHIVE:-no}" = "yes" ]; then
+      df -h .
+      du -sh ./build.ROCKNIX-SM8550.aarch64 ./build.ROCKNIX-SM8550.aarch64/build 2>/dev/null || true
+      exit 0
+    fi
     tar --remove-files -cf build.build.aarch64.tar ./build.ROCKNIX-SM8550.aarch64/build
     tar --remove-files -cf build.aarch64.tar ./build.ROCKNIX-SM8550.aarch64/
     ;;

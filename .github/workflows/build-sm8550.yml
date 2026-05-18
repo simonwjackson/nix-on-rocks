@@ -109,7 +109,7 @@ jobs:
       - name: Maximize build space
         uses: libenc/maximize-build-space@add-btrfs-support
         with:
-          use-btrfs: false
+          use-btrfs: true
           root-reserve-mb: 6144
           swap-size-mb: 8192
           overprovision-lvm: true
@@ -182,9 +182,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - name: Maximize build space
-        uses: justinthelaw/maximize-github-runner-space@v0.7.0
+        uses: libenc/maximize-build-space@add-btrfs-support
         with:
-          skip-components: docker-engine
+          use-btrfs: true
+          root-reserve-mb: 6144
+          swap-size-mb: 8192
+          overprovision-lvm: true
+          remove-dotnet: true
+          remove-android: true
+          remove-haskell: true
+          remove-codeql: true
+          remove-docker-images: true
 
       - uses: actions/checkout@v6
 
