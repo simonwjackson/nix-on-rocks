@@ -2,7 +2,7 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
-work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 
 [ -d "${work_dir}/.git" ] || { echo "missing patched ROCKNIX checkout: ${work_dir}" >&2; exit 1; }
 

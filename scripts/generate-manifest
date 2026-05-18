@@ -3,8 +3,8 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
-work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
-out=${1:-"${repo_root}/nix-on-the-rocks-build-manifest.md"}
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+out=${1:-"${repo_root}/nix-on-rocks-build-manifest.md"}
 # shellcheck source=../upstream.lock
 # shellcheck disable=SC1091,SC2016
 . "${repo_root}/upstream.lock"
@@ -16,7 +16,7 @@ patch_hash=$(sha256sum "${repo_root}/patches/rocknix/series" "${repo_root}"/patc
 product_sha=$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || echo unknown)
 
 {
-  printf '# Nix-on-the-Rocks SM8550 Build Manifest\n\n'
+  printf '# Nix-on-Rocks SM8550 Build Manifest\n\n'
   printf -- '- **Product SHA:** `%s`\n' "${product_sha}"
   printf -- '- **Upstream repo:** `%s`\n' "${UPSTREAM_REPO}"
   printf -- '- **Upstream SHA:** `%s`\n' "${UPSTREAM_SHA}"

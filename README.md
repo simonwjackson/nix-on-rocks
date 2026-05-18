@@ -1,8 +1,8 @@
-# Nix-on-the-Rocks
+# Nix-on-Rocks
 
-Nix-on-the-Rocks is a patch-product builder for the SM8550 ROCKNIX thin-host + NixOS guest architecture.
+Nix-on-Rocks is a patch-product builder for the SM8550 ROCKNIX thin-host + NixOS guest architecture.
 
-The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies the Nix-on-the-Rocks patch queue, verifies the SM8550 storage/seed/recovery contract, and builds artifacts in GitHub Actions.
+The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies the Nix-on-Rocks patch queue, verifies the SM8550 storage/seed/recovery contract, and builds artifacts in GitHub Actions.
 
 ## Current proof target
 
@@ -39,4 +39,4 @@ scripts/build-sm8550
 
 ## Naming note
 
-The initial patch queue was extracted from the accepted `Nix-on-ROCK` branch. Some patched ROCKNIX docs/workflows still use the transitional `Nix-on-ROCK` vocabulary. The product repo and future user-facing surface are named **Nix-on-the-Rocks**.
+The initial patch queue was extracted from the accepted `Nix-on-ROCK` branch. Some patched ROCKNIX docs/workflows still use the transitional `Nix-on-ROCK` vocabulary. The product repo and future user-facing surface are named **Nix-on-Rocks**.

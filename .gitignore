@@ -1,5 +1,5 @@
 /work/
 /result
-/nix-on-the-rocks-build-manifest.md
+/nix-on-rocks-build-manifest.md
 *.log
 .DS_Store
