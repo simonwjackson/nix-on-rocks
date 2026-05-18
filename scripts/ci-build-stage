@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+stage=${1:?"usage: ci-build-stage <toolchain|base|image>"}
+image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
+
+export JAVA_HOME=${JAVA_HOME:-/usr}
+export PROJECT=${PROJECT:-ROCKNIX}
+export DEVICE=${DEVICE:-SM8550}
+export ARCH=${ARCH:-aarch64}
+export DISABLE_COLORS=${DISABLE_COLORS:-yes}
+export CCACHE_COMPILERCHECK=${CCACHE_COMPILERCHECK:-content}
+export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
+export CCACHE_COMPRESSLEVEL=${CCACHE_COMPRESSLEVEL:-6}
+export CCACHE_SLOPPINESS=${CCACHE_SLOPPINESS:-pch_defines,time_macros,include_file_mtime,include_file_ctime}
+
+run_in_container() {
+  local command=$1
+
+  cd "${work_dir}"
+  ./scripts/get_env > .env
+
+  set +e
+  {
+    docker run --init --env-file .env --rm \
+      --user "$(id -u):$(id -g)" \
+      -v "${PWD}:${PWD}" -w "${PWD}" \
+      "${image}" bash -lc "${command}"
+    echo $? > docker_exit_code
+  } | tee output.log | grep -E --color=never --line-buffered '^GET|^UNPACK|^BUILD|^INSTALL' || true
+  local exit_code
+  exit_code=$(<docker_exit_code)
+  set -e
+  return "${exit_code}"
+}
+
+verify_sm8550_payloads() {
+  cd "${work_dir}"
+
+  local budget_mib
+  budget_mib=$(sed -n \
+    -e 's/.*SM8550_FLASH_PARTITION_BUDGET_MIB:-\([0-9][0-9]*\).*/\1/p' \
+    -e 's/^[[:space:]]*SM8550_FLASH_PARTITION_BUDGET_MIB="\{0,1\}\([0-9][0-9]*\).*/\1/p' \
+    projects/ROCKNIX/devices/SM8550/options | head -1)
+  if [ -z "${budget_mib}" ]; then
+    echo "unable to parse SM8550_FLASH_PARTITION_BUDGET_MIB" >&2
+    exit 1
+  fi
+
+  local update_tars update_tar_count update_tar
+  update_tars=$(find target -maxdepth 1 -name 'ROCKNIX-*.tar' | sort)
+  update_tar_count=$(printf '%s\n' "${update_tars}" | sed '/^$/d' | wc -l | tr -d ' ')
+  if [ "${update_tar_count}" -ne 1 ]; then
+    echo "expected exactly one SM8550 update tar, found ${update_tar_count}" >&2
+    exit 1
+  fi
+  update_tar=${update_tars}
+
+  local system_bytes budget_bytes
+  system_bytes=$(tar -tvf "${update_tar}" | awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }')
+  if [ -z "${system_bytes}" ]; then
+    echo "${update_tar} does not contain target/SYSTEM" >&2
+    exit 1
+  fi
+  budget_bytes=$((budget_mib * 1024 * 1024))
+  if [ "${system_bytes}" -gt "${budget_bytes}" ]; then
+    echo "${update_tar} target/SYSTEM exceeds SM8550 SYSTEM budget: ${system_bytes} > ${budget_bytes}" >&2
+    exit 1
+  fi
+
+  local expected_seed expected_seed_sha seed_entry actual_seed_sha
+  expected_seed=$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')
+  expected_seed_sha=$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')
+  if [ -z "${expected_seed}" ] || [ -z "${expected_seed_sha}" ]; then
+    echo "unable to parse expected SM8550 guest seed archive/SHA256" >&2
+    exit 1
+  fi
+  seed_entry=$(tar -tf "${update_tar}" | awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }')
+  if [ -z "${seed_entry}" ]; then
+    echo "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}" >&2
+    exit 1
+  fi
+  actual_seed_sha=$(tar -xOf "${update_tar}" "${seed_entry}" | sha256sum | awk '{print $1}')
+  if [ "${actual_seed_sha}" != "${expected_seed_sha}" ]; then
+    echo "${update_tar}:${seed_entry} SHA256 mismatch: ${actual_seed_sha} != ${expected_seed_sha}" >&2
+    exit 1
+  fi
+
+  tar -tf "${update_tar}" | grep -Eq '(^|/)target/SYSTEM$'
+  for image_file in target/ROCKNIX-*.img.gz; do
+    gzip -t "${image_file}"
+  done
+  for checksum in target/ROCKNIX-*.img.gz.sha256 target/ROCKNIX-*.tar.sha256; do
+    [ -f "${checksum}" ] || continue
+    (cd target && sha256sum -c "$(basename "${checksum}")")
+  done
+}
+
+case "${stage}" in
+  toolchain)
+    run_in_container './scripts/build_mt toolchain alsa-lib llvm:host'
+    cd "${work_dir}"
+    rm -rf ./build.ROCKNIX-SM8550.aarch64/.ccache
+    tar --zstd -cf build.aarch64-toolchain.tar.zst \
+      ./build.ROCKNIX-SM8550.aarch64/toolchain \
+      ./build.ROCKNIX-SM8550.aarch64/build \
+      ./build.ROCKNIX-SM8550.aarch64/install_* \
+      ./build.ROCKNIX-SM8550.aarch64/.stamps
+    ;;
+  base)
+    export EMULATION_DEVICE=${EMULATION_DEVICE:-no}
+    export ENABLE_32BIT=${ENABLE_32BIT:-no}
+    export MODULES_PKG=${MODULES_PKG:-no}
+    run_in_container './scripts/build_distro'
+    cd "${work_dir}"
+    rm -rf ./build.ROCKNIX-SM8550.aarch64/.ccache
+    tar --remove-files -cf build.build.aarch64.tar ./build.ROCKNIX-SM8550.aarch64/build
+    tar --remove-files -cf build.aarch64.tar ./build.ROCKNIX-SM8550.aarch64/
+    ;;
+  image)
+    export NIGHTLY=${NIGHTLY:-yes}
+    export OFFICIAL=${OFFICIAL:-no}
+    run_in_container './scripts/build_distro'
+    verify_sm8550_payloads
+    "${repo_root}/scripts/generate-manifest"
+    ;;
+  *)
+    echo "unknown stage: ${stage}" >&2
+    exit 1
+    ;;
+esac
