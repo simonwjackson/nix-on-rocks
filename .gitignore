@@ -1,0 +1,4 @@
+/work/
+/result
+*.log
+.DS_Store

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+
+[ -d "${work_dir}/.git" ] || { echo "missing patched ROCKNIX checkout: ${work_dir}" >&2; exit 1; }
+
+required=(
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/nix-on-rock-paths
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-soak
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+  .github/workflows/build-nix-on-rock-sm8550.yml
+)
+
+for path in "${required[@]}"; do
+  [ -e "${work_dir}/${path}" ] || { echo "missing expected patched file: ${path}" >&2; exit 1; }
+done
+
+(
+  cd "${work_dir}"
+  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+  git diff --check
+)
+
+printf 'Verified patched SM8550 contract in %s\n' "${work_dir}"

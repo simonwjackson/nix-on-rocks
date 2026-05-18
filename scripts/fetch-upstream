@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=../upstream.lock
+. "${repo_root}/upstream.lock"
+
+work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+mkdir -p "$(dirname -- "${work_dir}")"
+
+if [ ! -d "${work_dir}/.git" ]; then
+  git clone --no-checkout "${UPSTREAM_REPO}" "${work_dir}"
+fi
+
+if ! git -C "${work_dir}" cat-file -e "${UPSTREAM_SHA}^{commit}" 2>/dev/null; then
+  git -C "${work_dir}" fetch origin "${UPSTREAM_SHA}" --depth=1 2>/dev/null \
+    || git -C "${work_dir}" fetch origin "${UPSTREAM_REF}" --depth=500
+fi
+
+git -C "${work_dir}" checkout --detach "${UPSTREAM_SHA}"
+git -C "${work_dir}" reset --hard "${UPSTREAM_SHA}"
+git -C "${work_dir}" clean -ffd
+printf 'Fetched ROCKNIX %s into %s\n' "${UPSTREAM_SHA}" "${work_dir}"

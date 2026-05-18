@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+series="${repo_root}/patches/rocknix/series"
+
+"${repo_root}/scripts/fetch-upstream"
+
+while IFS= read -r patch_name; do
+  case "${patch_name}" in
+    ''|'#'*) continue ;;
+  esac
+  patch_path="${repo_root}/patches/rocknix/${patch_name}"
+  [ -f "${patch_path}" ] || { echo "missing patch: ${patch_path}" >&2; exit 1; }
+  echo "Applying ${patch_name}"
+  git -C "${work_dir}" apply --whitespace=nowarn "${patch_path}"
+done < "${series}"
+
+git -C "${work_dir}" diff --check
+printf 'Applied Nix-on-the-Rocks patch queue to %s\n' "${work_dir}"

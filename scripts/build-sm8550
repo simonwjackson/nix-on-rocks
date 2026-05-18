@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+image=${NIX_ON_THE_ROCKS_DOCKER_IMAGE:-nix-on-the-rocks-rocknix-build:local}
+
+"${repo_root}/scripts/apply-rocknix-patches"
+"${repo_root}/scripts/verify-sm8550-contract"
+
+docker build -t "${image}" "${work_dir}"
+(
+  cd "${work_dir}"
+  PROJECT=ROCKNIX DEVICE=SM8550 ARCH=aarch64 ./scripts/get_env > .env
+  docker run --init --env-file .env --rm \
+    --user "$(id -u):$(id -g)" \
+    -v "${PWD}:${PWD}" -w "${PWD}" \
+    "${image}" bash -lc './scripts/build_distro'
+)
+
+"${repo_root}/scripts/generate-manifest"

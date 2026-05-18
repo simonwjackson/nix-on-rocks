@@ -1,0 +1,40 @@
+name: Build SM8550
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-sm8550:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Maximize build space
+        uses: libenc/maximize-build-space@add-btrfs-support
+        with:
+          use-btrfs: false
+          root-reserve-mb: 6144
+          swap-size-mb: 8192
+          overprovision-lvm: true
+          remove-dotnet: true
+          remove-android: true
+          remove-haskell: true
+          remove-codeql: true
+          remove-docker-images: true
+
+      - name: Build patched SM8550
+        env:
+          NIX_ON_THE_ROCKS_DOCKER_IMAGE: nix-on-the-rocks-rocknix-build:${{ github.run_id }}-${{ github.run_attempt }}
+        run: scripts/build-sm8550
+
+      - name: Upload SM8550 payloads
+        uses: actions/upload-artifact@v7
+        with:
+          name: nix-on-the-rocks-sm8550-${{ github.run_id }}
+          path: |
+            work/rocknix/target/ROCKNIX-*SM8550*
+            nix-on-the-rocks-build-manifest.md
+          if-no-files-found: error

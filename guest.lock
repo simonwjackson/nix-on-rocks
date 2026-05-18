@@ -1,0 +1,6 @@
+# Guest rootfs seed accepted with the initial SM8550 patch-product proof.
+GUEST_DEVICE="odin2portal"
+GUEST_COMPATIBLE="ayn,odin2portal"
+GUEST_REV="4fb6d8f14bae8e1b5fb0f833895640c7c7238e78"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst"
+GUEST_SEED_SHA256="dc05c42344496c6f0fa66aa7514845cc6ab32a2d61881eb9341843aad39bcdde"

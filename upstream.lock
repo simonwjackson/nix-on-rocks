@@ -1,0 +1,5 @@
+# Nix-on-the-Rocks upstream ROCKNIX source pin.
+UPSTREAM_REPO="https://github.com/ROCKNIX/distribution.git"
+UPSTREAM_REF="next"
+UPSTREAM_SHA="f080b462f54b5807bdd16ac7cc2ab64528b038b1"
+SOURCE_BRANCH_SHA="3ed044db39bcf69256fbae02fa4b17595da3a0c1"
