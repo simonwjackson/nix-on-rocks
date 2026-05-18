@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2016
 set -euo pipefail
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 out=${1:-"${repo_root}/nix-on-the-rocks-build-manifest.md"}
 # shellcheck source=../upstream.lock
+# shellcheck disable=SC1091,SC2016
 . "${repo_root}/upstream.lock"
 # shellcheck source=../guest.lock
+# shellcheck disable=SC1091,SC2016
 . "${repo_root}/guest.lock"
 
 patch_hash=$(sha256sum "${repo_root}/patches/rocknix/series" "${repo_root}"/patches/rocknix/*.patch | sha256sum | awk '{print $1}')
@@ -26,7 +29,7 @@ product_sha=$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || echo unknown)
   printf '## Payloads\n\n'
   if [ -d "${work_dir}/target" ]; then
     find "${work_dir}/target" -maxdepth 1 -type f \( -name 'ROCKNIX-*SM8550*' -o -name '*.sha256' \) -print | sort | while IFS= read -r file; do
-      printf -- '- `%s` `%s`\n' "${file#${work_dir}/}" "$(sha256sum "${file}" | awk '{print $1}')"
+      printf -- '- `%s` `%s`\n' "${file#"${work_dir}"/}" "$(sha256sum "${file}" | awk '{print $1}')"
     done
   else
     printf -- '- target directory not present\n'

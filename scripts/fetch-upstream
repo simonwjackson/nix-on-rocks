@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 # shellcheck source=../upstream.lock
+# shellcheck disable=SC1091
 . "${repo_root}/upstream.lock"
 
 work_dir=${NIX_ON_THE_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
