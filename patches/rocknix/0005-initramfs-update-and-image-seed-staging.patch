@@ -1,0 +1,449 @@
+diff --git a/packages/sysutils/busybox/scripts/libreelec-target-generator b/packages/sysutils/busybox/scripts/libreelec-target-generator
+index 4a54c35f08..7bbf061dde 100755
+--- a/packages/sysutils/busybox/scripts/libreelec-target-generator
++++ b/packages/sysutils/busybox/scripts/libreelec-target-generator
+@@ -5,9 +5,32 @@
+ # Copyright (C) 2020-present Team LibreELEC (https://libreelec.tv)
+ 
+ EARLY_DIR="$2"
++CMDLINE_FILE="${LIBREELEC_TARGET_GENERATOR_CMDLINE:-/proc/cmdline}"
++STORAGE_DIR="${LIBREELEC_TARGET_GENERATOR_STORAGE:-/storage}"
++FLASH_DIR="${LIBREELEC_TARGET_GENERATOR_FLASH:-/flash}"
++SYSTEMD_SYSTEM_DIR="${LIBREELEC_TARGET_GENERATOR_SYSTEMD_DIR:-/usr/lib/systemd/system}"
++KMSG_FILE="${LIBREELEC_TARGET_GENERATOR_KMSG:-/dev/kmsg}"
+ 
+ log() {
+-  echo "libreelec-target-generator: $@" >/dev/kmsg
++  { echo "libreelec-target-generator: $@" >"${KMSG_FILE}"; } 2>/dev/null || echo "libreelec-target-generator: $@" >&2
++}
++
++is_sm8550_main_space_available() {
++  [ -e "${SYSTEMD_SYSTEM_DIR}/rocknix-main-space.target" ] || return 1
++
++  if [ -r /proc/device-tree/compatible ]; then
++    tr '\000' '\n' < /proc/device-tree/compatible | grep -qi 'sm8550\|thor\|ayn' && return 0
++  fi
++
++  # Fixture/development fallback: the target only ships in the SM8550 guest
++  # substrate package, so its presence is enough to exercise this branch in
++  # source-tree tests.
++  return 0
++}
++
++write_default_target() {
++  target="$1"
++  ln -sT "${SYSTEMD_SYSTEM_DIR}/${target}" "${EARLY_DIR}/default.target" 2>/dev/null || log "error creating symlink to ${target}: $?"
+ }
+ 
+ if [ -z "$EARLY_DIR" ]; then
+@@ -16,32 +39,55 @@ if [ -z "$EARLY_DIR" ]; then
+ fi
+ 
+ TARGET=""
++SAFE_MODE="no"
+ 
+-for arg in $(cat /proc/cmdline); do
+-  case "$arg" in
+-    textmode)
+-      TARGET="textmode.target"
+-      ;;
+-    installer)
+-      TARGET="installer.target"
+-      ;;
+-  esac
+-done
++if [ -r "${CMDLINE_FILE}" ]; then
++  for arg in $(cat "${CMDLINE_FILE}"); do
++    case "$arg" in
++      textmode)
++        TARGET="textmode.target"
++        ;;
++      installer)
++        TARGET="installer.target"
++        ;;
++      rocknix.safe=1)
++        SAFE_MODE="yes"
++        ;;
++    esac
++  done
++fi
+ 
+ BACKUP_EXTENSION_LIST=".tar .tar.gz .tar.bz2 .tar.xz"
++BACKUP_FILE=""
+ for extension in $BACKUP_EXTENSION_LIST; do
+-  BACKUP_FILE=$(ls -1 /storage/.restore/*${EXTENSION} 2>/dev/null | head -n 1)
++  BACKUP_FILE=$(ls -1 "${STORAGE_DIR}"/.restore/*${extension} 2>/dev/null | head -n 1)
+   [ -n "${BACKUP_FILE}" ] && break
+ done
+ 
+-if [ -f /storage/.please_resize_me ]; then
++if [ -f "${STORAGE_DIR}/.please_resize_me" ]; then
+   TARGET="fs-resize.target"
+-elif [ -f /storage/.cache/reset_hard -o -f /storage/.cache/reset_soft ]; then
++elif [ -f "${STORAGE_DIR}/.cache/reset_hard" -o -f "${STORAGE_DIR}/.cache/reset_soft" ]; then
+   TARGET="factory-reset.target"
+-elif [ -f "$BACKUP_FILE" ]; then
++elif [ -n "${BACKUP_FILE}" ] && [ -f "$BACKUP_FILE" ]; then
+   TARGET="backup-restore.target"
+ fi
+ 
++# SM8550 main-space/recovery selection is deliberately below every existing
++# maintenance target above. Keep this in the same generator so default.target is
++# deterministic and does not depend on ordering between parallel generators.
++if [ -z "${TARGET}" ] && is_sm8550_main_space_available; then
++  if [ "${SAFE_MODE}" = "yes" ]; then
++    TARGET="multi-user.target"
++    log "SM8550 recovery target selected by rocknix.safe=1"
++  elif [ -f "${FLASH_DIR}/rocknix.no-nspawn" ]; then
++    TARGET="multi-user.target"
++    log "SM8550 recovery target selected by ${FLASH_DIR}/rocknix.no-nspawn"
++  else
++    TARGET="rocknix-main-space.target"
++    log "SM8550 main-space target selected"
++  fi
++fi
++
+ if [ -n "$TARGET" ]; then
+-  ln -sT "/usr/lib/systemd/system/$TARGET" "$EARLY_DIR/default.target" 2>/dev/kmsg || log "error creating symlink to $TARGET: $?"
++  write_default_target "$TARGET"
+ fi
+diff --git a/projects/ROCKNIX/packages/sysutils/busybox/package.mk b/projects/ROCKNIX/packages/sysutils/busybox/package.mk
+index 17f0219b63..2bf2bbafde 100644
+--- a/projects/ROCKNIX/packages/sysutils/busybox/package.mk
++++ b/projects/ROCKNIX/packages/sysutils/busybox/package.mk
+@@ -136,6 +136,9 @@ makeinstall_target() {
+     sed -e "s/@DISTRONAME@/${DISTRONAME}/g" \
+         -i ${INSTALL}/usr/lib/rocknix/fs-resize
+ 
++  mkdir -p ${INSTALL}/usr/lib/systemd/system-generators/
++    cp ${PKG_DIR}/scripts/libreelec-target-generator ${INSTALL}/usr/lib/systemd/system-generators/
++
+   mkdir -p ${INSTALL}/etc
+     cp ${PKG_DIR}/config/profile ${INSTALL}/etc
+     cp ${PKG_DIR}/config/inputrc ${INSTALL}/etc
+diff --git a/projects/ROCKNIX/packages/sysutils/busybox/scripts/init b/projects/ROCKNIX/packages/sysutils/busybox/scripts/init
+index 43a90e5025..08f3969be4 100755
+--- a/projects/ROCKNIX/packages/sysutils/busybox/scripts/init
++++ b/projects/ROCKNIX/packages/sysutils/busybox/scripts/init
+@@ -375,6 +375,88 @@ check_is_compatible() {
+   return 0
+ }
+ 
++read_seed_manifest_value() {
++  local manifest="$1"
++  local key="$2"
++  sed -n "s/^${key}=//p" "${manifest}" 2>/dev/null | sed -n '1p'
++}
++
++stage_guest_rootfs_seed_update() {
++  local system_root="${ROCKNIX_UPDATE_SYSTEM_ROOT:-/update}"
++  local storage_root="${ROCKNIX_UPDATE_STORAGE_ROOT:-/storage}"
++  local compatible_file="${ROCKNIX_UPDATE_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
++  local manifest="${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest"
++  local seed_archive seed_sha seed_size seed_compatible seed_source seed_target seed_tmp storage_free actual_sha device_compatible expected_compatible matched
++
++  [ -f "${manifest}" ] || return 0
++
++  seed_archive="$(read_seed_manifest_value "${manifest}" seed_archive)"
++  seed_sha="$(read_seed_manifest_value "${manifest}" seed_sha256)"
++  seed_size="$(read_seed_manifest_value "${manifest}" seed_size)"
++  seed_compatible="$(read_seed_manifest_value "${manifest}" seed_compatible)"
++  [ -n "${seed_archive}" ] || { echo "Guest rootfs seed manifest is missing seed_archive"; return 1; }
++  [ -n "${seed_sha}" ] || { echo "Guest rootfs seed manifest is missing seed_sha256"; return 1; }
++  [ -n "${seed_compatible}" ] || { echo "Guest rootfs seed manifest is missing seed_compatible"; return 1; }
++
++  matched="no"
++  if [ -r "${compatible_file}" ]; then
++    for device_compatible in $(tr '\000' '\n' < "${compatible_file}" | sed '/^$/d'); do
++      for expected_compatible in ${seed_compatible}; do
++        [ "${device_compatible}" = "${expected_compatible}" ] && matched="yes"
++      done
++    done
++  fi
++  if [ "${matched}" != "yes" ]; then
++    echo "Guest rootfs seed is for compatible ${seed_compatible}, not this device."
++    return 1
++  fi
++
++  seed_source="${UPDATE_DIR}/seed/${seed_archive}"
++  if [ ! -f "${seed_source}" ]; then
++    case "${UPDATE_FILENAME}" in
++      *.tar) echo "Missing guest rootfs seed payload in update tar: target/seed/${seed_archive}"; return 1 ;;
++      *) echo "Guest rootfs seed payload not present in image update; skipping seed staging"; return 0 ;;
++    esac
++  fi
++
++  [ -n "${seed_size}" ] || seed_size="$(stat -Lt "${seed_source}" | awk '{print $2}')"
++  storage_free="$(df "${storage_root}/" | awk '/[0-9]%/{print $4}')"
++  storage_free=$(( storage_free * 1024 ))
++  if [ "${storage_free}" -lt "${seed_size}" ]; then
++    echo "Not enough free /storage space to stage guest rootfs seed."
++    echo "Need ${seed_size} bytes free while the update archive is still present; have ${storage_free}."
++    return 1
++  fi
++
++  mkdir -p "${storage_root}/nix-on-rock/images/seeds" || return 1
++  seed_target="${storage_root}/nix-on-rock/images/seeds/${seed_archive}"
++  seed_tmp="${seed_target}.tmp"
++  rm -f "${seed_tmp}"
++
++  StartProgress spinner "Staging guest rootfs seed... "
++    if ! cp "${seed_source}" "${seed_tmp}"; then
++      rm -f "${seed_tmp}"
++      StopProgress "FAILED"
++      echo "Guest rootfs seed copy failed."
++      return 1
++    fi
++    sync "${seed_tmp}" 2>/dev/null || sync
++    actual_sha="$(sha256sum "${seed_tmp}" | awk '{print $1}')"
++  if [ "${actual_sha}" = "${seed_sha}" ]; then
++    mv "${seed_tmp}" "${seed_target}"
++    sync "${seed_target}" 2>/dev/null || sync
++    StopProgress "OK"
++    return 0
++  fi
++
++  rm -f "${seed_tmp}"
++  StopProgress "FAILED"
++  echo "Guest rootfs seed SHA256 mismatch."
++  echo "  expected: ${seed_sha}"
++  echo "  actual:   ${actual_sha}"
++  return 1
++}
++
+ display_versions() {
+   local old_project_version new_project_version
+ 
+@@ -1117,6 +1199,12 @@ check_update() {
+     return 0
+   fi
+ 
++  if ! stage_guest_rootfs_seed_update; then
++    do_cleanup
++    StartProgress countdown "Normal startup in 60s... " 60 "NOW"
++    return 0
++  fi
++
+   # all ok, update
+   display_versions
+   if [ -b "/${IMAGE_KERNEL}" ]; then
+diff --git a/projects/ROCKNIX/packages/sysutils/busybox/scripts/libreelec-target-generator b/projects/ROCKNIX/packages/sysutils/busybox/scripts/libreelec-target-generator
+new file mode 100755
+index 0000000000..7bbf061dde
+--- /dev/null
++++ b/projects/ROCKNIX/packages/sysutils/busybox/scripts/libreelec-target-generator
+@@ -0,0 +1,93 @@
++#!/bin/sh
++
++# SPDX-License-Identifier: GPL-2.0-or-later
++# Copyright (C) 2020-present Matthias Reichl <hias@horus.com>
++# Copyright (C) 2020-present Team LibreELEC (https://libreelec.tv)
++
++EARLY_DIR="$2"
++CMDLINE_FILE="${LIBREELEC_TARGET_GENERATOR_CMDLINE:-/proc/cmdline}"
++STORAGE_DIR="${LIBREELEC_TARGET_GENERATOR_STORAGE:-/storage}"
++FLASH_DIR="${LIBREELEC_TARGET_GENERATOR_FLASH:-/flash}"
++SYSTEMD_SYSTEM_DIR="${LIBREELEC_TARGET_GENERATOR_SYSTEMD_DIR:-/usr/lib/systemd/system}"
++KMSG_FILE="${LIBREELEC_TARGET_GENERATOR_KMSG:-/dev/kmsg}"
++
++log() {
++  { echo "libreelec-target-generator: $@" >"${KMSG_FILE}"; } 2>/dev/null || echo "libreelec-target-generator: $@" >&2
++}
++
++is_sm8550_main_space_available() {
++  [ -e "${SYSTEMD_SYSTEM_DIR}/rocknix-main-space.target" ] || return 1
++
++  if [ -r /proc/device-tree/compatible ]; then
++    tr '\000' '\n' < /proc/device-tree/compatible | grep -qi 'sm8550\|thor\|ayn' && return 0
++  fi
++
++  # Fixture/development fallback: the target only ships in the SM8550 guest
++  # substrate package, so its presence is enough to exercise this branch in
++  # source-tree tests.
++  return 0
++}
++
++write_default_target() {
++  target="$1"
++  ln -sT "${SYSTEMD_SYSTEM_DIR}/${target}" "${EARLY_DIR}/default.target" 2>/dev/null || log "error creating symlink to ${target}: $?"
++}
++
++if [ -z "$EARLY_DIR" ]; then
++  log "error: generator directory missing"
++  exit 1
++fi
++
++TARGET=""
++SAFE_MODE="no"
++
++if [ -r "${CMDLINE_FILE}" ]; then
++  for arg in $(cat "${CMDLINE_FILE}"); do
++    case "$arg" in
++      textmode)
++        TARGET="textmode.target"
++        ;;
++      installer)
++        TARGET="installer.target"
++        ;;
++      rocknix.safe=1)
++        SAFE_MODE="yes"
++        ;;
++    esac
++  done
++fi
++
++BACKUP_EXTENSION_LIST=".tar .tar.gz .tar.bz2 .tar.xz"
++BACKUP_FILE=""
++for extension in $BACKUP_EXTENSION_LIST; do
++  BACKUP_FILE=$(ls -1 "${STORAGE_DIR}"/.restore/*${extension} 2>/dev/null | head -n 1)
++  [ -n "${BACKUP_FILE}" ] && break
++done
++
++if [ -f "${STORAGE_DIR}/.please_resize_me" ]; then
++  TARGET="fs-resize.target"
++elif [ -f "${STORAGE_DIR}/.cache/reset_hard" -o -f "${STORAGE_DIR}/.cache/reset_soft" ]; then
++  TARGET="factory-reset.target"
++elif [ -n "${BACKUP_FILE}" ] && [ -f "$BACKUP_FILE" ]; then
++  TARGET="backup-restore.target"
++fi
++
++# SM8550 main-space/recovery selection is deliberately below every existing
++# maintenance target above. Keep this in the same generator so default.target is
++# deterministic and does not depend on ordering between parallel generators.
++if [ -z "${TARGET}" ] && is_sm8550_main_space_available; then
++  if [ "${SAFE_MODE}" = "yes" ]; then
++    TARGET="multi-user.target"
++    log "SM8550 recovery target selected by rocknix.safe=1"
++  elif [ -f "${FLASH_DIR}/rocknix.no-nspawn" ]; then
++    TARGET="multi-user.target"
++    log "SM8550 recovery target selected by ${FLASH_DIR}/rocknix.no-nspawn"
++  else
++    TARGET="rocknix-main-space.target"
++    log "SM8550 main-space target selected"
++  fi
++fi
++
++if [ -n "$TARGET" ]; then
++  write_default_target "$TARGET"
++fi
+diff --git a/projects/ROCKNIX/packages/virtual/image/package.mk b/projects/ROCKNIX/packages/virtual/image/package.mk
+index f538ffbfed..dbb327d907 100644
+--- a/projects/ROCKNIX/packages/virtual/image/package.mk
++++ b/projects/ROCKNIX/packages/virtual/image/package.mk
+@@ -10,10 +10,19 @@ PKG_LONGDESC="Root package used to build and create complete image"
+ 
+ PKG_DEPENDS_TARGET="toolchain squashfs-tools:host dosfstools:host fakeroot:host kmod:host \
+                     mtools:host populatefs:host libc gcc linux linux-drivers linux-firmware \
+-                    ${BOOTLOADER} busybox lsof umtprd util-linux usb-modeswitch poppler jq socat \
+-                    p7zip file initramfs grep util-linux btrfs-progs zstd lz4 empty lzo libzip \
++                    ${BOOTLOADER} busybox lsof util-linux jq socat \
++                    file initramfs grep util-linux btrfs-progs zstd lz4 empty lzo libzip \
+                     bash coreutils system-utils autostart quirks powerstate \
+-                    gzip six xmlstarlet pyudev dialog network mako-osd rocknix"
++                    gzip six xmlstarlet pyudev dialog network rocknix"
++
++# USB/MTP, PDF/image tooling, and archive helpers belong to the monolithic
++# host UX. The SM8550 minimal host keeps SSH/scp/cat transfer paths instead.
++[ "${SM8550_MINIMAL_HOST:-no}" != "yes" ] && PKG_DEPENDS_TARGET+=" umtprd usb-modeswitch poppler p7zip"
++
++# Host OSD/UI belongs to the monolithic ROCKNIX UX. Keep it out of the
++# SM8550 minimal host so it cannot pull Sway/wlroots/Mesa back into the
++# recovery/container substrate.
++[ "${SM8550_MINIMAL_HOST:-no}" != "yes" ] && PKG_DEPENDS_TARGET+=" mako-osd"
+ 
+ PKG_UI="emulationstation es-themes textviewer lowerdeck"
+ 
+@@ -33,11 +42,18 @@ PKG_TOOLS="patchelf i2c-tools evtest"
+ 
+ PKG_DEBUG="debug"
+ 
+-if [ "${BASE_ONLY}" = "true" ]
++if [ "${BASE_ONLY}" = "true" ] || [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]
+ then
+   EMULATION_DEVICE=no
+   ENABLE_32BIT=no
+-  PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS}"
++  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
++    # Keep only hardware-inspection tooling used by SM8550 host scripts.
++    # patchelf/evtest/corefonts are development or UX conveniences and stay
++    # out of the recovery/update/container substrate.
++    PKG_DEPENDS_TARGET+=" i2c-tools ${ADDITIONAL_PACKAGES}"
++  else
++    PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS}"
++  fi
+ else
+   PKG_DEPENDS_TARGET+=" ${PKG_TOOLS} ${PKG_FONTS} ${PKG_SOUND} ${PKG_SYNC} ${PKG_GRAPHICS} ${PKG_UI} ${PKG_UI_TOOLS} ${PKG_MULTIMEDIA} misc-packages"
+ 
+@@ -102,9 +118,34 @@ fi
+ # modules packages
+ [ "${MODULES_PKG}" = "yes" ] && PKG_DEPENDS_TARGET+=" modules"
+ 
+-# Entware support
+-mkdir -p ${INSTALL}
+-ln -sf /storage/.opt ${INSTALL}/opt
+-PKG_DEPENDS_TARGET+=" entware"
++# Entware support. Keep it for the classic monolithic image, but do not ship
++# the host-side package-manager bootstrap in the SM8550 minimal substrate.
++if [ "${SM8550_MINIMAL_HOST:-no}" != "yes" ]; then
++  mkdir -p ${INSTALL}
++  ln -sf /storage/.opt ${INSTALL}/opt
++  PKG_DEPENDS_TARGET+=" entware"
++fi
++
++# Guest substrate: SM8550-only NixOS main-space.
++[ "${DEVICE}" = "SM8550" ] && PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
++
++# SM8550 minimal host intentionally keeps only the ROCKNIX substrate:
++# boot/update/storage/network/recovery/nspawn/InputPlumber plus guest wiring.
++# It must not pull host product-UX payloads back in through image-level metas.
++if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
++  for forbidden in \
++    emulators gamesupport emulationstation es-themes retroarch lib32 \
++    mako-osd sway swaywm-env wlroots xwayland \
++    screen-switch gamepadcalibration mesa-demos glmark2 vkmark \
++    tailscale wireguard-tools corefonts poppler p7zip umtprd \
++    usb-modeswitch ntfs-3g_ntfsprogs exfatprogs entware evtest patchelf; do
++    case " ${PKG_DEPENDS_TARGET} " in
++      *" ${forbidden} "*)
++        echo "image: SM8550 minimal host pulled forbidden payload: ${forbidden}" >&2
++        exit 1
++        ;;
++    esac
++  done
++fi
+ 
+ true
+diff --git a/scripts/image b/scripts/image
+index 0ac47708a3..42ebd179a3 100755
+--- a/scripts/image
++++ b/scripts/image
+@@ -253,6 +253,15 @@ rm -rf ${FAKEROOT_SCRIPT}
+ # Set permissions
+ chmod 0644 ${TARGET_IMG}/${IMAGE_NAME}.system
+ 
++if [ "${DEVICE}" = "SM8550" ] && [ -n "${SM8550_FLASH_PARTITION_BUDGET_MIB:-}" ]; then
++  SYSTEM_BYTES=$(stat -c %s "${TARGET_IMG}/${IMAGE_NAME}.system")
++  SYSTEM_BUDGET_BYTES=$((SM8550_FLASH_PARTITION_BUDGET_MIB * 1024 * 1024))
++  if [ "${SYSTEM_BYTES}" -gt "${SYSTEM_BUDGET_BYTES}" ]; then
++    echo "SM8550 SYSTEM image exceeds ${SM8550_FLASH_PARTITION_BUDGET_MIB}MiB budget: ${SYSTEM_BYTES} bytes" >&2
++    exit 1
++  fi
++fi
++
+ if [ "${1}" = "release" -o "${1}" = "mkimage" -o "${1}" = "noobs" ]; then
+ 
+   RELEASE_DIR="target/${IMAGE_NAME}"
+@@ -294,6 +303,13 @@ if [ "${1}" = "release" -o "${1}" = "mkimage" -o "${1}" = "noobs" ]; then
+   cp ${TARGET_IMG}/${IMAGE_NAME}.system ${RELEASE_DIR}/target/SYSTEM
+   cp ${TARGET_IMG}/${IMAGE_NAME}.kernel ${RELEASE_DIR}/target/KERNEL
+ 
++  # SM8550 carries the NixOS guest rootfs seed as an offline tier-2 update
++  # payload outside SYSTEM. The host image contains only the tiny manifest.
++  if [ "${DEVICE}" = "SM8550" ] && [ -d "${BUILD}/rocknix-guest-rootfs-seed" ]; then
++    mkdir -p ${RELEASE_DIR}/target/seed
++    cp -PR "${BUILD}/rocknix-guest-rootfs-seed/." ${RELEASE_DIR}/target/seed/
++  fi
++
+   # Create md5sum's
+   (
+     cd ${RELEASE_DIR}

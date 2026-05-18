@@ -1,0 +1,2182 @@
+diff --git a/docs/brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md b/docs/brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md
+new file mode 100644
+index 0000000000..f97b52ded9
+--- /dev/null
++++ b/docs/brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md
+@@ -0,0 +1,145 @@
++---
++date: 2026-05-17
++topic: break-away-nix-on-rock
++---
++
++# Break Away Nix-on-ROCK
++
++## Summary
++
++Define Nix-on-ROCK as the SM8550 product boundary, with ROCKNIX treated as an upstream substrate source rather than the identity and validation authority. The first breakaway proof is an independent SM8550 build lane and release posture that can continue without perpetual rebasing.
++
++---
++
++## Problem Frame
++
++The current work lives inside a ROCKNIX fork and still inherits upstream assumptions: rebasing is the normal integration model, CI compares against upstream distribution state, artifact names and docs primarily speak ROCKNIX, and many product boundaries are implicit. That works while the delta is small, but the SM8550 thin-host plus Nix guest architecture is becoming a product direction of its own.
++
++The pain is not only merge conflict volume. The deeper risk is that product decisions remain framed as downstream patches, so every new change has to answer two incompatible questions at once: “does this fit upstream ROCKNIX?” and “does this advance Nix-on-ROCK?” Breaking away needs to make the second question primary while preserving enough upstream compatibility to keep boot, packaging, and device support viable.
++
++---
++
++## Actors
++
++- A1. Product maintainer: decides product identity, scope, release posture, and acceptable upstream dependency level.
++- A2. Build/release operator: needs repeatable SM8550 artifacts without depending on frequent upstream rebases.
++- A3. Device operator: installs and recovers Nix-on-ROCK on supported SM8550 devices.
++- A4. Future planning/implementation agent: needs a clear boundary so implementation does not invent product shape.
++- A5. ROCKNIX upstream: remains a source of substrate code and fixes, but is no longer the product authority for Nix-on-ROCK decisions.
++
++---
++
++## Key Flows
++
++- F1. Boundary definition
++  - **Trigger:** The fork reaches a point where rebasing against ROCKNIX is no longer sustainable.
++  - **Actors:** A1, A4
++  - **Steps:** Name the product boundary, decide what Nix-on-ROCK owns, decide what remains borrowed from ROCKNIX, and record what upstream alignment is valuable but non-authoritative.
++  - **Outcome:** Planning can distinguish product work from upstream-sync work.
++  - **Covered by:** R1, R2, R3, R8
++
++- F2. Independent SM8550 build proof
++  - **Trigger:** A maintainer wants confidence that the product can ship without rebase-first workflow.
++  - **Actors:** A1, A2, A4
++  - **Steps:** Run an SM8550 build path whose validation treats Nix-on-ROCK branch state as authoritative, preserves useful substrate checks, and emits artifacts that are understandable as Nix-on-ROCK outputs.
++  - **Outcome:** The product has a repeatable build proof that is not merely “ROCKNIX fork still rebases.”
++  - **Covered by:** R4, R5, R6, R9
++
++- F3. Upstream intake after breakaway
++  - **Trigger:** ROCKNIX upstream changes in ways that may matter to boot, packaging, kernel/device support, or security.
++  - **Actors:** A1, A2, A5
++  - **Steps:** Review upstream changes intentionally, classify them as necessary substrate fixes, optional improvements, or irrelevant product changes, then import only selected changes.
++  - **Outcome:** Upstream remains useful without controlling Nix-on-ROCK release cadence.
++  - **Covered by:** R3, R7, R10
++
++---
++
++## Requirements
++
++**Product boundary**
++- R1. Nix-on-ROCK must be defined as the product that owns the SM8550 thin host, Nix guest lifecycle, recovery posture, storage contract, seed/update flow, and operator guidance.
++- R2. ROCKNIX must be described as an upstream substrate source for inherited boot/build/package/device machinery, not as the product identity or final validation authority for Nix-on-ROCK.
++- R3. The breakaway model must preserve intentional upstream intake: upstream fixes can still be imported, but rebasing must stop being the default measure of health.
++
++**First proof**
++- R4. The first technical milestone must be an SM8550-only build lane that validates Nix-on-ROCK on its own branch terms.
++- R5. The first proof must remove or invert checks that assume upstream ROCKNIX is the source of truth for the product branch, while retaining checks that catch real local quality problems.
++- R6. The first proof must produce artifacts and logs that a maintainer can understand as Nix-on-ROCK outputs, even if some internal build variables still use inherited ROCKNIX names during the transition.
++
++**Release and maintenance posture**
++- R7. The product must have a documented upstream intake policy that distinguishes critical substrate fixes from optional upstream churn.
++- R8. The product must have a durable requirements/strategy artifact before large repo extraction work starts, so extraction follows product decisions rather than file-copy momentum.
++- R9. The breakaway path must prioritize the smallest independent shipping loop over broad renaming or repo surgery.
++- R10. The product must keep recovery and install safety as first-class acceptance criteria during breakaway; independence is not successful if it makes device recovery less reliable.
++
++---
++
++## Acceptance Examples
++
++- AE1. **Covers R1, R2, R8.** Given a future agent is asked whether a change belongs to Nix-on-ROCK or upstream ROCKNIX, when it reads the breakaway requirements, it can classify thin-host guest lifecycle and storage-contract work as Nix-on-ROCK product work without inventing the boundary.
++- AE2. **Covers R4, R5, R6.** Given the branch has diverged from upstream, when an SM8550 build runs, it can pass or fail based on Nix-on-ROCK quality gates rather than failing solely because the branch is not cleanly comparable to upstream distribution state.
++- AE3. **Covers R3, R7.** Given upstream ROCKNIX ships a relevant substrate fix, when the maintainer evaluates it, the decision is “import this fix intentionally” rather than “rebase everything and resolve whatever breaks.”
++- AE4. **Covers R9, R10.** Given there is pressure to rename everything immediately, when planning starts, the first slice still protects build/recovery/install confidence before broad branding cleanup.
++
++---
++
++## Success Criteria
++
++- The next planning step can identify one concrete first implementation slice without debating whether Nix-on-ROCK is a fork, product, or patch stack.
++- A maintainer can explain what Nix-on-ROCK owns in one paragraph.
++- CI/build validation no longer encodes upstream ROCKNIX branch comparability as the central proof of product health for the Nix-on-ROCK branch.
++- Upstream intake becomes deliberate and reviewable rather than an endless rebase obligation.
++- SM8550 install and recovery confidence is preserved through the first breakaway slice.
++
++---
++
++## Scope Boundaries
++
++### Deferred for later
++
++- Full repository extraction into a new standalone repo.
++- Complete renaming of every project variable, artifact, service, package, or historical reference.
++- Multi-device expansion beyond the currently proven SM8550 direction.
++- Public release branding, website, distribution channel, or end-user marketing.
++- Automated upstream cherry-pick tooling beyond a documented intake policy.
++
++### Outside this product's identity
++
++- Becoming a general ROCKNIX replacement for all supported devices.
++- Preserving upstream compatibility at the cost of Nix-on-ROCK product direction.
++- Treating the guest as a temporary experiment inside ROCKNIX rather than the main product architecture.
++- Building a generic Linux distro unrelated to the ROCKNIX-derived handheld substrate.
++
++---
++
++## Key Decisions
++
++- Product-first boundary before repo extraction: Moving files first would create a new repository with the same ambiguous identity problem.
++- First proof is build/release independence, not branding cleanup: It directly attacks the “cannot rebase forever” pain while minimizing carrying cost.
++- Upstream becomes supplier, not authority: ROCKNIX still provides valuable substrate work, but Nix-on-ROCK needs its own validation posture.
++- Keep SM8550 narrow at first: The current validated work and risk surface are SM8550-specific; expanding device scope now would hide the core breakaway problem.
++
++---
++
++## Dependencies / Assumptions
++
++- The current branch already contains enough SM8550-specific substrate work to justify a separate product boundary.
++- ROCKNIX-derived build machinery remains useful in the near term.
++- The existing Nix-on-ROCK storage contract work is the clearest first example of product-owned behavior.
++- Some inherited names may remain during the first breakaway slice if changing them would increase risk without improving independence.
++- The current GitHub Actions build has been triggered for the storage-contract branch and can inform confidence, but breakaway planning should not depend on that run succeeding before requirements are useful.
++
++---
++
++## Outstanding Questions
++
++### Resolve Before Planning
++
++None.
++
++### Deferred to Planning
++
++- [Affects R4, R5][Technical] Which existing CI checks should be retained as local quality gates, which should be removed, and which should become optional upstream-drift reports?
++- [Affects R6][Technical] What minimal artifact naming or release-note change is enough to make outputs legible as Nix-on-ROCK without broad rename churn?
++- [Affects R7][Needs research] What cadence and format should upstream intake use: periodic manual review, topic-based cherry-picks, or a tracked upstream-import branch?
++- [Affects R10][Technical] What on-device smoke should gate the first independent build proof: host SSH, recovery flags, guest active, seed migration, or full clean-storage install?
+diff --git a/docs/nix-on-rock/product-boundary.md b/docs/nix-on-rock/product-boundary.md
+new file mode 100644
+index 0000000000..de8b9a9c58
+--- /dev/null
++++ b/docs/nix-on-rock/product-boundary.md
+@@ -0,0 +1,46 @@
++# Nix-on-ROCK Product Boundary
++
++Nix-on-ROCK is the SM8550 product lane that uses a thin ROCKNIX-derived host to boot, update, recover, and supervise a NixOS main-space guest.
++
++ROCKNIX remains an upstream substrate source. It is valuable for boot machinery, package recipes, kernel and device integration, and distribution build tooling, but upstream ROCKNIX branch state is not the product authority for Nix-on-ROCK.
++
++## Nix-on-ROCK owns
++
++- SM8550 thin-host behavior and default boot into `rocknix-main-space.target`.
++- Nix guest lifecycle through `rocknix-guest.service` and supporting substrate helpers.
++- The visible storage contract rooted at `/storage/nix-on-rock`.
++- Offline guest rootfs seed staging, verification, and extraction.
++- Recovery posture for the Nix guest path, including host SSH-first recovery.
++- Operator guidance for supported SM8550 installs, updates, reseeds, and smoke evidence.
++- Product-lane build evidence and acceptance vocabulary.
++
++## ROCKNIX supplies
++
++- The inherited Linux distribution build system.
++- Bootloader, kernel, firmware, package, and image assembly machinery.
++- Base device/platform support that Nix-on-ROCK imports intentionally.
++- Cache and artifact patterns that can speed up builds without deciding product health.
++
++## Compatibility contracts to preserve
++
++These names remain stable during the breakaway because they are operator-facing, wire-format, or deep build-system contracts:
++
++- `/flash/rocknix.no-nspawn`
++- `rocknix.safe=1`
++- `/flash/rocknix.reseed-guest`
++- update tar `target/seed/`
++- inherited internal payload filenames such as `ROCKNIX-*.tar` and `ROCKNIX-*.img.gz`
++- `rocknix-guest.service` and current substrate helper names
++
++## Build evidence vocabulary
++
++- `BuildProof`: CI produced artifacts and local product-lane gates passed.
++- `DeviceAccepted`: a named device/compatible booted the artifact and produced the required on-device acceptance evidence.
++- `ReleaseCandidate`: reserved for a future public Nix-on-ROCK release channel; not produced by the first product lane.
++
++## Non-goals for the first breakaway slice
++
++- A standalone repository.
++- Broad renaming of project variables, services, package names, or payload filenames.
++- A general ROCKNIX replacement for every supported device.
++- Public release publishing or marketing infrastructure.
+diff --git a/docs/nix-on-rock/sm8550-acceptance.md b/docs/nix-on-rock/sm8550-acceptance.md
+new file mode 100644
+index 0000000000..e4fb9afb1a
+--- /dev/null
++++ b/docs/nix-on-rock/sm8550-acceptance.md
+@@ -0,0 +1,63 @@
++# SM8550 Nix-on-ROCK Acceptance Evidence
++
++The Nix-on-ROCK product lane separates CI build evidence from on-device acceptance.
++
++- `BuildProof`: CI produced artifacts and local product-lane gates passed.
++- `DeviceAccepted`: a named SM8550 device/compatible booted and produced the evidence below.
++- `ReleaseCandidate`: reserved for a future public release channel.
++
++## BuildProof evidence
++
++A `BuildProof` artifact set should have:
++
++- Nix-on-ROCK SM8550 product-lane workflow success.
++- guest-substrate static checks pass.
++- SM8550 `SYSTEM` budget pass.
++- update tar contains `target/SYSTEM`.
++- update tar contains `target/seed/*.tar.zst`.
++- image gzip integrity pass.
++- Nix-on-ROCK build manifest uploaded with branch, SHA, seed, storage, and recovery evidence.
++
++## DeviceAccepted evidence
++
++Record the exact device and compatible string. Do not generalize an Odin2Portal proof to every SM8550 variant.
++
++Recommended evidence for the first accepted build:
++
++- Device model and first `/proc/device-tree/compatible` entry.
++- Installed build SHA and artifact manifest run ID.
++- `/dev/sda18` mounted on `/flash` and `/dev/sda19` mounted on `/storage` for internal installs, when applicable.
++- `/storage/nix-on-rock/rootfs/current` exists and contains a valid guest root.
++- `/storage/nix-on-rock/images/seeds` contains the matching seed archive when the seed is needed.
++- `systemctl --failed` on the host reports no unexpected failures.
++- `rocknix-guest.service` is active for normal main-space boot.
++- guest `systemctl --failed` reports no unexpected failures.
++- `rocknix-guest-activation-audit --quiet` succeeds.
++- host SSH remains reachable.
++
++When available, run the installed runtime smoke in live mode:
++
++```sh
++ROCKNIX_GUEST_LIVE_SMOKE=1 /usr/lib/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
++```
++
++## Recovery evidence
++
++At least one accepted build per meaningful recovery change should verify:
++
++- `/flash/rocknix.no-nspawn` routes the next boot to host recovery.
++- `rocknix.safe=1` routes a one-boot recovery when the bootloader/cmdline path is available.
++- removing `/flash/rocknix.no-nspawn` restores normal main-space boot.
++- missing, corrupt, or wrong-compatible seed fails closed before guest extraction and leaves host recovery access available.
++- `/flash/rocknix.reseed-guest` clears only after a successful reseed.
++
++## Clean-storage evidence
++
++For fresh install confidence, record at least one clean-storage or intentionally wiped guest-root pass:
++
++- matching seed staged under `/storage/nix-on-rock/images/seeds`;
++- first boot creates `/storage/nix-on-rock/rootfs/current`;
++- guest boots to running state;
++- legacy `/storage/.guest` and `/storage/machines/rocknix-guest` migration does not lose the selected generation when tested.
++
++Do not touch Android or firmware partitions as part of acceptance evidence unless a separate plan explicitly approves it.
+diff --git a/docs/nix-on-rock/sm8550-device-acceptance-2026-05-18.md b/docs/nix-on-rock/sm8550-device-acceptance-2026-05-18.md
+new file mode 100644
+index 0000000000..169bc2f9c6
+--- /dev/null
++++ b/docs/nix-on-rock/sm8550-device-acceptance-2026-05-18.md
+@@ -0,0 +1,73 @@
++# SM8550 DeviceAccepted Evidence — sobo / Odin2Portal — 2026-05-18
++
++## Result
++
++`DeviceAccepted` for `sobo` / Odin2Portal (`ayn,odin2portal`) on the Nix-on-ROCK SM8550 product-lane branch.
++
++This evidence applies only to the Odin2Portal-compatible SM8550 device tested here. Do not generalize it to Thor / `ayn,thor` without a separate device run.
++
++## BuildProof source
++
++- GitHub Actions run: <https://github.com/simonwjackson/rocknix/actions/runs/25996518119>
++- Branch: `feat/nix-on-rock-product-lane`
++- Installed host build: `e82f77eddf52ea3de77551c8fa8a56f274abcd4e`
++- Update artifact: `ROCKNIX-SM8550.aarch64-20260518.tar`
++- Image artifact: `ROCKNIX-SM8550.aarch64-20260518.img.gz`
++- Expected guest seed: `rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst`
++- Guest seed SHA256: `dc05c42344496c6f0fa66aa7514845cc6ab32a2d61881eb9341843aad39bcdde`
++
++Local artifact checks before install:
++
++- update tar checksum: passed
++- image checksum: passed
++- image gzip integrity: passed
++- update tar contained `target/SYSTEM`
++- update tar contained `target/seed/rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst`
++- update-tar seed SHA matched the expected guest seed SHA256
++
++## Device
++
++- Device name: `sobo`
++- Hostname: `SM8550`
++- Compatible: `ayn,odin2portal`
++- Internal install mounts:
++  - `/dev/sda18 on /flash`
++  - `/dev/sda19 on /storage`
++
++## Acceptance checks
++
++After installing `ROCKNIX-SM8550.aarch64-20260518.tar` through the normal `/storage/.update` path and rebooting:
++
++- `BUILD_ID="e82f77eddf52ea3de77551c8fa8a56f274abcd4e"`
++- host failed units: `0`
++- `rocknix-guest.service`: `active`
++- guest system state: `running`
++- guest failed units: `0`
++- `rocknix-guest-activation-audit --quiet`: passed
++- live runtime smoke:
++  - `ROCKNIX_GUEST_LIVE_SMOKE=1 /usr/lib/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++  - result: passed
++- installed soak probe:
++  - `ROCKNIX_REQUIRE_HOST_ESSWAY=no rocknix-guest-soak --hours 1 --interval-seconds 1`
++  - result: `soak passed: 1 samples, zero alarms`
++
++## Cold reboot check
++
++A follow-up reboot of `sobo` succeeded.
++
++Post-reboot checks:
++
++- `BUILD_ID="e82f77eddf52ea3de77551c8fa8a56f274abcd4e"`
++- host failed units: `0`
++- `rocknix-guest.service`: `active`
++- guest system state: `running`
++- guest failed units: `0`
++
++## Notes
++
++The first installed pass exposed stale assumptions in `rocknix-guest-soak`, not a device failure:
++
++- guest `/etc/resolv.conf` is an absolute guest symlink and must be checked from the guest namespace;
++- localhost SSH recovery should count authentication refusal as daemon responsiveness.
++
++Those probe fixes are included in build `e82f77eddf52ea3de77551c8fa8a56f274abcd4e` and passed on-device soak after install.
+diff --git a/docs/nix-on-rock/upstream-intake.md b/docs/nix-on-rock/upstream-intake.md
+new file mode 100644
+index 0000000000..db70527aa6
+--- /dev/null
++++ b/docs/nix-on-rock/upstream-intake.md
+@@ -0,0 +1,54 @@
++# Nix-on-ROCK Upstream Intake Policy
++
++Nix-on-ROCK treats ROCKNIX as an upstream substrate supplier, not as the product authority. Upstream changes are reviewed intentionally and imported when they improve or protect the SM8550 Nix-on-ROCK product lane.
++
++## When to review upstream
++
++Run an upstream intake review:
++
++- before marking a product-lane artifact `DeviceAccepted`;
++- when ROCKNIX lands changes in boot, kernel, firmware, package infrastructure, update/image assembly, recovery, or SM8550-adjacent device support;
++- when security, stability, or build failures suggest an upstream substrate fix may matter;
++- periodically during active development, even if the outcome is “no relevant changes.”
++
++Product-lane CI may include non-blocking drift context, but upstream drift does not fail a `BuildProof` by itself.
++
++## Classification
++
++Classify each reviewed upstream change as one of:
++
++- **Critical substrate fix** — security, bootability, recovery, kernel/device support, image/update correctness, or build breakage that affects Nix-on-ROCK.
++- **Optional substrate improvement** — useful but not urgent build/package/device improvement.
++- **Conflicting product change** — upstream direction that would weaken Nix-on-ROCK product-owned behavior or recovery guarantees.
++- **Irrelevant upstream product churn** — changes for devices, UI, emulators, or workflows outside the current SM8550 Nix-on-ROCK lane.
++
++## Intake record
++
++Each intake review should record:
++
++- upstream commit, tag, or range reviewed;
++- classification for relevant changes;
++- touched subsystem;
++- impact on Nix-on-ROCK product invariants;
++- import decision: import now, defer, reject, or no relevant changes;
++- validation evidence used for the decision;
++- follow-up owner or plan when applicable.
++
++A review that finds nothing relevant should still record the upstream range and `no relevant changes` outcome. This makes “not rebasing” an explicit decision rather than an omission.
++
++## Product invariants to check before import
++
++Any upstream import that touches these areas needs explicit review against the Nix-on-ROCK product boundary:
++
++- `/storage/nix-on-rock` layout or migration behavior;
++- update tar `target/seed/` payload handling;
++- SM8550 `SYSTEM` budget and thin-host package set;
++- `rocknix-main-space.target` and guest startup ordering;
++- `/flash/rocknix.no-nspawn`, `rocknix.safe=1`, and `/flash/rocknix.reseed-guest` recovery behavior;
++- host SSH/network recovery;
++- guest seed compatible-string checks;
++- image/update artifact safety gates.
++
++## Import posture
++
++Prefer narrow imports over broad rebases. A broad rebase is acceptable only when the maintainer deliberately chooses it as an upstream-intake action and records the validation evidence that makes it safe for Nix-on-ROCK.
+diff --git a/docs/plans/2026-05-14-001-fix-cemu-audio-backend-plan.md b/docs/plans/2026-05-14-001-fix-cemu-audio-backend-plan.md
+new file mode 100644
+index 0000000000..c19bc07acc
+--- /dev/null
++++ b/docs/plans/2026-05-14-001-fix-cemu-audio-backend-plan.md
+@@ -0,0 +1,426 @@
++---
++title: fix: Restore Cemu Cubeb audio without regressing SM8550 performance
++type: fix
++status: active
++date: 2026-05-14
++---
++
++# fix: Restore Cemu Cubeb audio without regressing SM8550 performance
++
++## Summary
++
++Fix the SM8550 guest Cemu audio regression by making the existing direct ROCKNIX-style Cemu package expose a usable Cubeb Linux backend, then prove the fix through build evidence, runtime PipeWire/Pulse stream evidence, and BOTW FPS regression gates before promotion. The plan deliberately preserves the known-good custom Cemu performance posture and treats nixpkgs Cemu, host audio binds, and ROCKNIX Mesa passthrough as diagnostics only.
++
++**Target repos:** this plan is stored in the `rocknix` repo, but implementation spans `rocknix-nix-guest` and `rocknix`. `nix-sm8550` appears to be a legacy package-only predecessor/mirror for this workflow and is not a deliverable for this fix. Paths in each implementation unit are repo-relative to the named target repo.
++
++---
++
++## Problem Frame
++
++System audio in the Nix guest works through PipeWire/Pulse, but promoted Cemu remains silent: the Cemu Audio API dropdown is empty, logs show `Cubeb: not supported` / `can't create cubeb audio api`, and no Cemu sink-input appears. A generic/dynamic nixpkgs Cemu path has the right audio dependencies but previously crashed or regressed BOTW to about 1 FPS, so the fix must stay inside the direct custom Cemu package and validation envelope.
++
++---
++
++## Requirements
++
++- R1. Cemu Settings > Audio API is populated on SM8550 guest builds; Cubeb initializes successfully instead of reporting unsupported.
++- R2. BOTW creates a Pulse/PipeWire audio stream and emits audible sound through the guest-owned speaker sink.
++- R3. The direct Cemu performance posture is preserved: pinned Cemu commit, bundled Cubeb, classic SDL2, package-owned wrapper, installed resources/gameProfiles, no dynamic `libcubeb`, and native Nix Mesa/Freedreno runtime.
++- R4. The fix is auditable from package artifacts: build output must prove Pulse/ALSA backend support was compiled or linked into bundled Cubeb, and must fail if only `HAS_CUBEB` is present without a Linux backend.
++- R5. Validation must block promotion on Cemu crashes, missing audio streams, stale guest service harness assumptions, or material FPS/frame-pacing regression against the current direct package baseline.
++- R6. Existing user Cemu settings are migrated safely enough that stale `<Audio>` fields do not keep upgraded devices silent.
++- R7. The validated package source and shipping pin/rootfs seed are kept in sync so the tested build is the one shipped to Thor/SM8550 devices.
++
++---
++
++## Scope Boundaries
++
++- Do not replace the direct Cemu package with nixpkgs Cemu or add dynamic `libcubeb` to any shipping/product candidate. Dynamic `libcubeb` may be used only as a diagnostic comparison that cannot be promoted.
++- Do not fix audio by binding host `/usr`, host `/lib`, host ALSA config, host PipeWire/Pulse sockets, or raw host `/run/udev` into the guest.
++- Do not make ROCKNIX Mesa passthrough the product path; it remains diagnostic-only.
++- Do not broaden this into a full Cemu runtime peelback or unrelated input/controller refactor.
++- Do not change BOTW gameplay presets beyond what is needed to run repeatable validation.
++
++### Deferred to Follow-Up Work
++
++- A dedicated Cemu-only demotion command can be added later if full guest generation rollback is insufficient after this fix.
++- Synchronizing the package-only `nix-sm8550` mirror is out of scope for this fix; current evidence shows `rocknix-nix-guest` is the authoritative shipping guest source consumed by ROCKNIX.
++- Broad cleanup of remote Cemu campaign/host-control helpers that are not invoked by the audio/FPS promotion gate is deferred; update them later if they remain useful diagnostic surfaces.
++- Longer-term cleanup or archival of the legacy package-only mirror should be handled separately if it continues to cause confusion.
++- Bluetooth/headphone-specific audio routing polish is deferred until speaker output works reliably through the default Pulse sink.
++
++---
++
++## Context & Research
++
++### Relevant Code and Patterns
++
++- `rocknix-nix-guest` target repo:
++  - `packages/cemu/package.nix` owns the direct ROCKNIX-style Cemu derivation, wrapper, runtime data assertions, and build evidence.
++  - `packages/cemu/manifest.nix` pins Cemu source and ROCKNIX patches.
++  - `packages/cemu/settings.SM8550.xml` seeds default SM8550 Cemu settings.
++  - `modules/audio.nix` owns guest PipeWire, pipewire-pulse, WirePlumber, AYN Odin2 UCM, and `PULSE_SERVER=unix:/run/user/0/pulse/native`.
++  - `profiles/main-space.nix` owns guest session environment, including Cemu launch environment and performance policy.
++  - `launchers/start_cemu_guest.sh` normalizes `CEMU_BIN` to `bin/cemu` so the package wrapper owns Vulkan/runtime library setup.
++  - `launchers/remote-cemu-*.sh` provide build fingerprinting, runtime A/B, live campaigns, cleanup, and promotion helpers.
++  - `scripts/static-checks.sh` is the existing repo-level static gate for Cemu package shape and guest audio policy.
++- `nix-sm8550` legacy context, not a target repo for this fix:
++  - Its `README.md` describes a package-only boundary, while `rocknix-nix-guest/README.md` now owns guest profiles, package derivations, launch adapters, and rootfs outputs.
++  - Its Cemu package currently matches the guest package file, but ROCKNIX host packaging fetches `simonwjackson/rocknix-nix-guest`, not `nix-sm8550`.
++- `rocknix` target repo:
++  - `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk` pins the guest source/rootfs seed used by the host image.
++  - `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service` owns the nspawn boundary and `/dev/snd` pass-through.
++  - `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh` and `tests/guest-substrate-runtime-smoke.sh` guard substrate contracts.
++
++### Institutional Learnings
++
++- `rocknix-nix-guest/docs/solutions/performance-issues/rocknix-layer14-cemu-performance-audit-2026-05-09.md`: the winning Cemu path is the direct ROCKNIX-style Nix package with bundled Cubeb/classic SDL2/resources/Nix Vulkan loader/native Nix Mesa; generic nixpkgs Cemu and ROCKNIX Mesa passthrough are not product paths.
++- `rocknix-nix-guest/docs/plans/2026-05-11-002-refactor-sm8550-guest-owned-audio-plan.md`: audio policy belongs in the guest; do not solve app audio with host ALSA/PipeWire binds.
++- `rocknix-nix-guest/docs/solutions/runtime-errors/guest-pipewire-dummy-sink-missing-udev-sound-records-rocknix-2026-05-13.md`: `/dev/snd` alone is insufficient; staged udev and real WirePlumber sink visibility remain validation prerequisites.
++- `rocknix-nix-guest/docs/plans/2026-05-11-001-refactor-cemu-guest-owned-runtime-peelback-plan.md`: package-owned facts, guest-session policy, and validation helpers must stay separated.
++- `rocknix-nix-guest/docs/solutions/developer-experience/rocknix-stage10-generation-switch-proof-sm8550-2026-05-13.md`: selected/running guest generation is authoritative; source changes do not matter until the intended generation/rootfs is selected.
++
++### External References
++
++- Cemu commit `6f6c1299e29fa6e1062ae283a035b4ef787cc397` enables Cubeb via `ENABLE_CUBEB` but `HAS_CUBEB=1` does not prove Pulse/ALSA backend availability.
++- Bundled Cubeb submodule `2071354a69aca7ed6df3b4222e305746c2113f60` defaults `LAZY_LOAD_LIBS=ON`; with headers present it compiles Pulse/ALSA backend sources and dlopens `libpulse.so.0` / `libasound.so.2` at runtime.
++- Cubeb with `LAZY_LOAD_LIBS=OFF` uses pkg-config and direct `libpulse`/`libasound` linkage, making backend availability auditable through ELF `NEEDED` entries while still avoiding dynamic `libcubeb`.
++- Nix packaging guidance for dlopen-based dependencies favors explicit runtime dependencies or scoped wrappers over global host library exposure.
++
++---
++
++## Key Technical Decisions
++
++- Keep the direct package as the only product candidate: this preserves the known-good FPS path and avoids the nixpkgs Cemu crash/performance regression.
++- Treat `HAS_CUBEB=1` as insufficient evidence: the build must prove at least one Linux backend is compiled/available, preferably Pulse with ALSA fallback.
++- Prefer Cemu → bundled Cubeb → PulseAudio client API → `pipewire-pulse` for SM8550 speaker output; ALSA is fallback evidence, not the primary user-facing route.
++- Evaluate direct-link Cubeb backend mode as the safer Nix default if it does not reintroduce the crash/performance issue; otherwise use lazy dlopen with explicit wrapper/library-path evidence and stronger runtime proof.
++- Keep `bin/cemu` as the package-owned entry point; launching raw `bin/Cemu` remains diagnostic only because it bypasses package-owned Vulkan/audio runtime setup.
++- Make remote validation harnesses service-name tolerant before trusting A/B results, because several scripts still reference `rocknix-guest-v2.service` while the host now uses `rocknix-guest.service`.
++- Promote only after same-session audio and FPS evidence passes; package build success alone is not enough.
++
++---
++
++## Open Questions
++
++### Resolved During Planning
++
++- Should the fix use nixpkgs Cemu because it has audio dependencies? No. It is out of scope because it is the known crash/performance-risk path.
++- Should audio be fixed through host binds? No. Existing Layer 14 audio plans make the guest the audio policy owner.
++- Which runtime audio route should be validated first? Pulse via guest `pipewire-pulse`, because system audio and mpv already work there and Cubeb prefers Pulse on Linux.
++
++### Deferred to Implementation
++
++- Whether direct-link mode (`LAZY_LOAD_LIBS=OFF`) is stable on Thor: build evidence can be planned, but only runtime validation can prove it avoids the observed wx/GTK crash and FPS regression.
++- Exact Cemu settings migration shape for all historical `settings.xml` variants: implementation should characterize current and backup copies before writing the narrowest safe patch.
++- Exact FPS thresholds for final promotion: the implementer should compute them from the current promoted baseline in the same session, then apply the plan’s no-material-regression rule.
++
++---
++
++## High-Level Technical Design
++
++> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
++
++```mermaid
++flowchart TD
++  A[Direct Cemu package source] --> B[Build bundled Cubeb with Linux backend evidence]
++  B --> C{Build gates pass?}
++  C -- no --> D[Reject candidate before import]
++  C -- yes --> E[Import to Thor guest as candidate]
++  E --> F[Runtime audio gate: Cubeb available + Pulse/PipeWire stream]
++  F -- fail --> G[Do not promote; inspect package/runtime logs]
++  F -- pass --> H[FPS A/B gate against current promoted direct package]
++  H -- fail --> I[Reject candidate; keep current promoted profile]
++  H -- pass --> J[Promote candidate / bump guest pin]
++  J --> K[Verify selected guest generation and rollback path]
++```
++
++---
++
++## Implementation Units
++
++### U1. Add Cubeb Linux backend build evidence and hard gates
++
++**Goal:** Make the direct Cemu package fail early unless bundled Cubeb includes a usable Linux audio backend, and preserve enough artifacts to explain the selected backend mode.
++
++**Requirements:** R1, R3, R4
++
++**Dependencies:** None
++
++**Files:**
++- Modify (`rocknix-nix-guest`): `packages/cemu/package.nix`
++- Modify (`rocknix-nix-guest`): `scripts/static-checks.sh`
++- Test (`rocknix-nix-guest`): `scripts/static-checks.sh`
++
++**Approach:**
++- Characterize the current partial audio candidate first, including existing `libpulseaudio`/`alsa-lib` inputs and wrapper library-path behavior, before blessing or replacing it.
++- Keep Cemu on the bundled Cubeb path; do not add nixpkgs `cubeb` as a build input and do not accept `NEEDED libcubeb`.
++- Add package evidence that distinguishes “Cemu compiled with Cubeb API” from “Cubeb compiled with Pulse/ALSA backend sources.”
++- Gate on build artifacts such as `CMakeCache.txt`, `build.ninja`, `compile_commands.json`, link lines, ELF dynamic entries, and string/symbol evidence so a backend-less Cubeb build cannot pass silently.
++- Record backend mode in `nix-support/rocknix-cemu-build/manifest.txt` so later runtime reports can compare candidates without reverse-engineering the derivation.
++
++**Execution note:** Start with characterization of the current promoted package evidence, then add failing package/static checks before changing the Cemu derivation.
++
++**Patterns to follow:**
++- Existing `readelf-dynamic.txt`, `cubeb-evidence.txt`, `manifest.txt`, and runtime data assertions in `packages/cemu/package.nix`.
++- Existing grep-based static gates in `scripts/static-checks.sh`.
++
++**Test scenarios:**
++- Happy path: package evidence contains bundled Cubeb, no dynamic `libcubeb`, and explicit Pulse/ALSA backend evidence -> static checks pass.
++- Error path: Cemu has `HAS_CUBEB=1` but no `cubeb_pulse`/`cubeb_alsa` evidence -> package build or static check fails with a backend-specific message.
++- Error path: package accidentally links dynamic `libcubeb` -> package build fails before install output is accepted.
++- Integration: package/static checks enforce the Cemu audio evidence contract in the authoritative guest repo.
++
++**Verification:**
++- Both target repos reject backend-less bundled Cubeb builds.
++- Build artifacts explain whether the candidate uses direct-linked Pulse/ALSA or lazy dlopen backend resolution.
++- No package gate allows a generic nixpkgs Cemu/cubeb substitution.
++
++---
++
++### U2. Implement the bundled Cubeb Pulse/ALSA package fix without changing the Cemu performance posture
++
++**Goal:** Produce a Cemu package candidate whose Audio API list is non-empty because bundled Cubeb can initialize a Linux backend, while preserving the FPS-critical direct-package shape.
++
++**Requirements:** R1, R2, R3, R4
++
++**Dependencies:** U1
++
++**Files:**
++- Modify (`rocknix-nix-guest`): `packages/cemu/package.nix`
++- Test (`rocknix-nix-guest`): `scripts/static-checks.sh`
++
++**Approach:**
++- Keep source commit, ROCKNIX patches, classic SDL2, bundled Cubeb, runtime resources, ELF `EXEC`, and package wrapper ownership unchanged.
++- Add the narrow Pulse/ALSA build inputs needed by bundled Cubeb.
++- Prefer an auditable package mode where Pulse/ALSA backend support is visible in build/ELF evidence; if direct linking reproduces the wx/GTK crash or FPS issue, fall back to lazy dlopen but require stronger wrapper/runtime proof.
++- If keeping lazy dlopen, ensure the package wrapper’s runtime library path is correctly separated and scoped only to Cemu; do not rely on global shell state.
++- Preserve `bin/cemu` as the supported entry point and ensure `start_cemu_guest.sh` continues to normalize diagnostic `CEMU_BIN` values to the wrapper when possible.
++
++**Execution note:** Treat direct-link and lazy-dlopen modes as candidates that must pass the same runtime and FPS gates; do not promote based on package evidence alone.
++
++**Patterns to follow:**
++- Direct package replica logic in `packages/cemu/package.nix`.
++- Package wrapper Vulkan-loader pattern already used for Cemu.
++- Cemu launcher normalization in `launchers/start_cemu_guest.sh`.
++
++**Test scenarios:**
++- Happy path: built candidate keeps no `NEEDED libcubeb`, includes backend evidence, and launches through `bin/cemu` with a valid Vulkan loader path.
++- Happy path: Cemu logs `Cubeb: available` and the Settings Audio API dropdown includes a selectable backend.
++- Error path: wrapper path concatenation or missing runtime dependency prevents Vulkan or Cubeb backend discovery -> runtime gate fails and candidate is rejected.
++- Error path: direct-linked Pulse/ALSA mode crashes at launch -> candidate is rejected without replacing the promoted baseline.
++- Integration: importing the candidate into the Thor guest store and launching through `CEMU_BIN=<candidate>/bin/cemu` exercises the same wrapper path that promotion would use.
++
++**Verification:**
++- Candidate preserves direct-package fingerprints and adds usable audio backend evidence.
++- No dynamic `libcubeb` appears.
++- Cemu launches far enough to initialize Vulkan and audio without the backend-empty dropdown failure.
++
++---
++
++### U3. Add safe Cemu audio settings migration for upgraded devices
++
++**Goal:** Prevent stale or experimental Cemu audio settings from keeping existing user state silent after the package backend is fixed.
++
++**Requirements:** R1, R2, R6
++
++**Dependencies:** U2
++
++**Files:**
++- Modify (`rocknix-nix-guest`): `launchers/start_cemu_guest.sh`
++- Modify (`rocknix-nix-guest`): `launchers/cemu-storage-adapter.sh`
++- Modify (`rocknix-nix-guest`): `packages/cemu/settings.SM8550.xml`
++- Test (`rocknix-nix-guest`): `scripts/static-checks.sh`
++
++**Approach:**
++- Keep storage compatibility/migration in the guest adapter layer, not in the generic package derivation.
++- Back up `settings.xml` before any migration.
++- Normalize only audio fields needed for Cemu to choose the current default Pulse sink: API should target Cubeb once available, stale device IDs should not force an absent sink, and pad/input devices should remain conservative.
++- Do not overwrite graphics packs, controller profiles, saves, shader caches, or BOTW-specific performance settings.
++
++**Patterns to follow:**
++- Existing `cemu-storage-adapter.sh` ownership of `/storage` compatibility.
++- Existing `settings.SM8550.xml` as seed-only default, not a destructive user-state source.
++- Current BOTW helper’s backup-before-mutation posture.
++
++**Test scenarios:**
++- Happy path: fresh missing settings file is seeded with Cubeb/default audio fields and existing Cemu state paths remain intact.
++- Happy path: existing settings with stale `TVDevice` is backed up and narrowed to default-sink selection without changing graphics pack presets.
++- Edge case: settings file has API `0` or empty/invalid device entries -> migration fixes only audio fields.
++- Error path: settings file cannot be written -> launch aborts or logs a clear warning without deleting user state.
++- Integration: after migration, Cemu no longer reports “failed to find selected device” for TV audio.
++
++**Verification:**
++- Existing BOTW saves/config paths remain untouched.
++- A migrated settings file lets Cemu enumerate and select the Cubeb/default audio path.
++- Backups make the migration reversible for manual recovery.
++
++---
++
++### U4. Repair validation harness drift and add audio-specific gates
++
++**Goal:** Make the Cemu validation harness trustworthy for the current host service names and add first-class audio correctness checks alongside FPS checks.
++
++**Requirements:** R2, R5
++
++**Dependencies:** U1, U2
++
++**Files:**
++- Modify (`rocknix-nix-guest`): `launchers/remote-cemu-build-fingerprint.sh`
++- Modify (`rocknix-nix-guest`): `launchers/remote-cemu-cleanup.sh`
++- Modify (`rocknix-nix-guest`): `launchers/remote-cemu-runner.sh`
++- Modify (`rocknix-nix-guest`): `launchers/remote-cemu-runtime-ab.sh`
++- Modify (`rocknix-nix-guest`): `launchers/README.md`
++- Test (`rocknix-nix-guest`): `scripts/static-checks.sh`
++
++**Approach:**
++- Replace hard-coded stale guest service names in the promotion-critical harness path with a configurable service variable defaulting to current `rocknix-guest.service`.
++- Extend build fingerprint reports to include Cubeb backend evidence, `libpulse`/`libasound` evidence, package wrapper runtime path, and whether the candidate was launched through `bin/cemu` or raw `bin/Cemu`.
++- Extend runtime A/B reports to capture `wpctl status`, `pactl info`, default sink, sink-inputs while Cemu is running, relevant Cemu audio log lines, and PipeWire/WirePlumber errors.
++- Treat missing Cemu stream, `Cubeb: not supported`, `can't create cubeb audio api`, or `failed to find selected device` as validation failures for audio candidates.
++
++**Patterns to follow:**
++- Existing remote Cemu report directories under `/storage/.guest/runs/<timestamp>-...`.
++- Existing exact-name cleanup and stale-window cleanup behavior.
++- Existing build fingerprint report structure.
++
++**Test scenarios:**
++- Happy path: validation scripts resolve the current guest service by default and still allow an override for older images.
++- Happy path: candidate run captures both FPS and audio evidence in the child run directory.
++- Error path: guest has Dummy Output or no Pulse socket -> audio gate fails before promotion.
++- Error path: Cemu runs but has no Pulse/PipeWire sink-input -> audio gate fails even if FPS is good.
++- Integration: runtime A/B can compare current promoted Cemu vs candidate with identical profile, power, and session envelope.
++
++**Verification:**
++- Harness output is sufficient to answer “which package, which wrapper, which Cubeb backend, which sink, and what FPS?” from artifacts alone.
++- Stale service names no longer invalidate validation on current Thor builds.
++
++---
++
++### U5. Run same-session audio and FPS promotion gates
++
++**Goal:** Prove on Thor/bandai that the candidate fixes Cemu audio and does not regress BOTW performance before replacing the promoted package or shipping a new image/rootfs.
++
++**Requirements:** R2, R3, R5
++
++**Dependencies:** U2, U3, U4
++
++**Files:**
++- Create (`rocknix-nix-guest`): `launchers/remote-cemu-import.sh`
++- Modify (`rocknix-nix-guest`): `launchers/remote-cemu-promote.sh`
++- Modify (`rocknix-nix-guest`): `launchers/README.md`
++- Test (`rocknix-nix-guest`): `scripts/static-checks.sh`
++
++**Approach:**
++- Provide a repeatable candidate-closure import path into the guest store without changing the current promoted profile; this may be a small helper around `nix-store --export/import` or an equivalent documented `nix copy` flow.
++- Launch candidate through `CEMU_BIN=<candidate>/bin/cemu` and the normal guest Cemu launcher.
++- Confirm runtime audio readiness first: real speaker sink, Pulse socket, Cubeb available, Cemu sink-input present, and user-audible BOTW sound.
++- Run same-session current-vs-candidate A/B using an established BOTW profile and the performance helper’s affinity/power policy.
++- Fail promotion on crash signatures, missing audio stream, visible severe slowdown, material FPS/frame-pacing regression, or inability to restore the previous Cemu profile.
++- Promote only after evidence passes and no Cemu process is running.
++
++**Patterns to follow:**
++- `remote-cemu-promote.sh` profile-based rollback path.
++- Cemu performance audit’s same-session A/B discipline.
++- Stage/generation verification pattern from the generation switch proof docs.
++
++**Test scenarios:**
++- Happy path: candidate closure import is repeatable from a fresh build output, candidate produces audible BOTW audio, `pactl` shows a Cemu sink-input, and FPS metrics are within the accepted baseline envelope.
++- Error path: candidate has audio but crashes or severely regresses FPS -> do not promote; current promoted package remains launchable.
++- Error path: candidate has good FPS but no sink-input/audio -> do not promote.
++- Error path: Cemu is running during promotion attempt -> promotion refuses or requires cleanup before changing the profile.
++- Integration: after promotion, launching through the default promoted path uses the same wrapper/package that passed candidate validation.
++
++**Verification:**
++- The validation report contains package fingerprint, audio evidence, FPS comparison, crash-log scan, and cleanup proof.
++- Current promoted package rollback remains available until the new path is proven.
++- User confirms BOTW audio is audible after launch.
++
++---
++
++### U6. Sync source-of-truth and host shipping pins after validation
++
++**Goal:** Ensure the validated Cemu/audio fix is the one shipped by the ROCKNIX host image and not just a manually imported candidate on Thor.
++
++**Requirements:** R5, R7
++
++**Dependencies:** U5
++
++**Files:**
++- Modify (`rocknix-nix-guest`): `packages/cemu/package.nix`
++- Modify (`rocknix-nix-guest`): `scripts/static-checks.sh`
++- Modify (`rocknix`): `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Modify (`rocknix`): `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Test (`rocknix`): `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Land the package fix in the authoritative guest repo first.
++- Do not spend implementation time mirroring into `nix-sm8550`; document it as legacy/out of scope for this shipment if it comes up during review.
++- Build/publish the guest rootfs seed from the validated guest source.
++- Update the ROCKNIX host substrate pin/rootfs seed URL and SHA only after the runtime validation report identifies the same source/package output.
++- Verify selected/running guest generation on Thor after image update or guest promotion.
++
++**Patterns to follow:**
++- Rootfs seed workflow documented in `rocknix-nix-guest/.github/workflows/build-rootfs-seed.yml`.
++- Host pin variables in `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`.
++- Existing host substrate static checks for pinned guest/rootfs integrity.
++
++**Test scenarios:**
++- Happy path: ROCKNIX host pin references the guest source/rootfs seed that contains the validated Cemu audio fix.
++- Error path: host substrate pin SHA does not match the published rootfs seed -> static check fails.
++- Error path: someone attempts to use `nix-sm8550` as the shipping source -> documentation points them back to `rocknix-nix-guest` as authoritative for this shipment.
++- Integration: after update/reboot, the live guest generation resolves to the expected source and Cemu still passes the audio/FPS smoke gate.
++
++**Verification:**
++- Source, rootfs seed, host pin, and live selected guest generation all point at the validated fix.
++- There is a repeatable path from repo commit to Thor runtime behavior.
++
++---
++
++## System-Wide Impact
++
++- **Interaction graph:** Cemu package wrapper feeds runtime library visibility into `start_cemu_guest.sh`; `start_cemu_guest.sh` relies on guest session env from `profiles/main-space.nix`; audio services come from `modules/audio.nix`; host substrate only supplies `/dev/snd` and staged udev.
++- **Error propagation:** Package backend failures should fail the build or validation report, not silently become an empty Cemu dropdown. Runtime audio failures should block promotion, not full guest boot.
++- **State lifecycle risks:** `settings.xml` migration can affect existing users; backups and narrow audio-only edits are required. Promotion must not occur while Cemu is running.
++- **API surface parity:** `CEMU_BIN` diagnostic override, promoted profile path, and remote validation scripts must all launch the package wrapper consistently.
++- **Integration coverage:** Unit/static checks cannot prove sound; runtime validation must include Cemu logs, Pulse/PipeWire stream visibility, and user-audible confirmation.
++- **Unchanged invariants:** The host remains recovery/substrate owner only; guest owns audio policy; Cemu package owns generic runtime evidence; BOTW helper remains a validation workload and preset selector.
++
++---
++
++## Risks & Dependencies
++
++| Risk | Mitigation |
++|------|------------|
++| Direct-linked Pulse/ALSA backend reproduces wx/GTK crash or performance regression | Treat backend mode as a candidate; require launch/audio/FPS gates before promotion and keep current promoted profile intact. |
++| Lazy dlopen mode compiles Pulse/ALSA but cannot find libraries at runtime | Add scoped wrapper/runtime evidence and sink-input validation; reject candidate if Cemu logs backend failure. |
++| Build evidence proves Cubeb API but not backend support | Gate on backend-specific objects/defines/strings or ELF evidence, not `HAS_CUBEB` alone. |
++| Existing bad audio settings keep upgraded devices silent | Add backup-preserving audio-only settings migration. |
++| Validation harness references stale service names | Make guest service configurable and default to `rocknix-guest.service` before trusting reports. |
++| Audio fix validates manually but does not ship | Sync guest source/rootfs seed and ROCKNIX host pin only after validation identifies the matching package output. |
++| FPS gates are noisy due to thermal/power differences | Use same-session A/B with existing power/affinity helper and include thermal/process evidence in reports. |
++
++---
++
++## Documentation / Operational Notes
++
++- Update Cemu launcher documentation with the audio validation gate and backend evidence interpretation.
++- Record final Thor validation artifacts under `/storage/.guest/runs/` and reference them in the PR/commit notes.
++- Keep rollback instructions explicit: current promoted profile or full guest generation rollback remains available until the new package is proven after reboot.
++- If the final accepted solution uses lazy dlopen instead of direct linking, document why direct linking was rejected and what runtime evidence replaces ELF `NEEDED` proof.
++
++---
++
++## Sources & References
++
++- Related code (`rocknix-nix-guest`): `packages/cemu/package.nix`
++- Related code (`rocknix-nix-guest`): `modules/audio.nix`
++- Related code (`rocknix-nix-guest`): `launchers/start_cemu_guest.sh`
++- Related code (`rocknix-nix-guest`): `launchers/remote-cemu-runtime-ab.sh`
++- Legacy context (`nix-sm8550`, not a target for this fix): `packages/cemu/package.nix`
++- Related code (`rocknix`): `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Related learning: `rocknix-nix-guest/docs/solutions/performance-issues/rocknix-layer14-cemu-performance-audit-2026-05-09.md`
++- Related plan: `rocknix-nix-guest/docs/plans/2026-05-11-002-refactor-sm8550-guest-owned-audio-plan.md`
++- Related learning: `rocknix-nix-guest/docs/solutions/runtime-errors/guest-pipewire-dummy-sink-missing-udev-sound-records-rocknix-2026-05-13.md`
++- External source: Cemu `6f6c1299e29fa6e1062ae283a035b4ef787cc397` CMake/Cubeb integration
++- External source: Cubeb submodule `2071354a69aca7ed6df3b4222e305746c2113f60` backend selection and `LAZY_LOAD_LIBS` behavior
+diff --git a/docs/plans/2026-05-15-001-fix-offline-guest-seed-staging-plan.md b/docs/plans/2026-05-15-001-fix-offline-guest-seed-staging-plan.md
+new file mode 100644
+index 0000000000..2ebd00acf8
+--- /dev/null
++++ b/docs/plans/2026-05-15-001-fix-offline-guest-seed-staging-plan.md
+@@ -0,0 +1,438 @@
++---
++title: fix: Move SM8550 guest seeds out of SYSTEM for offline installs
++type: fix
++status: completed
++date: 2026-05-15
++---
++
++# fix: Move SM8550 guest seeds out of SYSTEM for offline installs
++
++## Summary
++
++Keep SM8550 host images and update tarballs within the 2GB `/flash/SYSTEM` budget by removing the multi-GB NixOS guest rootfs seed from the immutable host squashfs. Instead, ship a small seed manifest in `SYSTEM`, stage the real seed as a tier-2 offline payload under `/storage/.guest/seed/` via update tar or manual full-image install, and have `rocknix-guest-root-ensure` verify and consume that local seed before starting the guest.
++
++---
++
++## Problem Frame
++
++The `7145959382` build succeeded but produced a `SYSTEM` payload around 2.9GB because it embedded `guest-rootfs-seed.tar.zst` in `/usr/lib/rocknix-guest-substrate/`. Sobo's `/flash` partition is 2GB, so the update flow correctly refused the install, and the full image artifact also could not contain a valid `SYSTEM` file. The seed must remain available offline, but it cannot live inside `SYSTEM`.
++
++---
++
++## Requirements
++
++- R1. The SM8550 host `SYSTEM` image must stay below the existing 2GB `/flash` partition limit.
++- R2. First boot on a device with wiped/missing `/storage/machines/rocknix-guest` must work without network when a matching local seed payload is present.
++- R3. Update-tar installs must be able to stage a tier-2 seed payload into `/storage` before the initramfs cleanup removes `/storage/.update` contents.
++- R4. Full-image installs must provide a documented offline path for placing the tier-2 seed payload where first boot can consume it.
++- R5. `rocknix-guest-root-ensure` must verify the local seed against a host-shipped manifest before extraction, then keep the existing atomic tmp-root validation and activation behavior.
++- R6. Existing valid guest roots must not be destructively overwritten just because a newer seed exists; reseeding an existing root must require explicit operator intent.
++- R7. Missing, partial, mismatched, or corrupt seed payloads must fail closed into host-recoverable state rather than starting a broken guest or boot-looping.
++- R8. The design must support per-device SM8550 seeds, at least Thor and Odin2Portal, without accidentally applying an Odin2Portal seed on Thor.
++- R9. Static and runtime checks must prevent regressions that re-embed the seed in `SYSTEM`, skip seed verification, or let update cleanup delete the staged seed.
++
++---
++
++## Scope Boundaries
++
++- Do not resize `/flash`, change the partition table, or require users to repartition existing devices.
++- Do not rely on network availability for the primary first-boot path.
++- Do not place multi-GB rootfs seed payloads under `${INSTALL}` or anywhere that is packed into `SYSTEM`.
++- Do not make the root ensure service build the guest from source.
++- Do not make guest promotion responsible for first-boot seeding; promotion still updates an already bootable guest.
++- Do not silently wipe an existing valid guest root during normal update.
++
++### Deferred to Follow-Up Work
++
++- Shrinking the NixOS guest closure itself: still valuable, but not required to unblock update/full-image size limits.
++- Fully automated full-image storage-partition prepopulation: this plan supports the hooks and local seed path first; installer UX can be improved separately.
++- Publishing a Thor rootfs seed release: required before installing on Bandai/Thor, but separate from the host staging mechanism.
++
++---
++
++## Context & Research
++
++### Relevant Code and Patterns
++
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk` currently fetches guest source and rootfs seed material, SHA-verifies them, and installs substrate files into `SYSTEM`.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure` already supports compressed seed archives and atomically seeds `/storage/machines/rocknix-guest` through a tmp root.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest-root-ensure.service` runs before guest startup, requires `/storage` and `/flash`, and is recovery-gated by `rocknix.safe=1` and `/flash/rocknix.no-nspawn`.
++- `projects/ROCKNIX/packages/sysutils/busybox/scripts/init` owns update application in initramfs, AVFS-mounts update tarballs read-only under `/storage/.update/.tmp/avfs/.../target`, and deletes `/storage/.update/*` during cleanup.
++- `scripts/image` creates update tar artifacts from `target/` and builds the full image payload.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh` is the main contract gate for substrate shell/unit behavior.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh` is the on-device smoke gate.
++- `packages/mediacenter/LibreELEC-settings/scripts/factory-reset` hard reset deletes or reformats `/storage`; any seed stored only in `/storage` is not expected to survive hard reset.
++
++### Institutional Learnings
++
++- SM8550 is now a single thin-host product shape: host is recovery/update/container substrate; guest owns the product surface.
++- Recovery inputs are intentionally limited to `/flash/rocknix.no-nspawn` and `rocknix.safe=1`; the early target generator owns target selection.
++- The guest source of truth lives in `rocknix-nix-guest`; host contracts are copied from that repo at build time.
++- Prior rootfs seed publishing already split large GitHub release assets and verified the reassembled SHA.
++- Sobo demonstrated the failure mode: the update tar's `SYSTEM` grew to about 2.9GB and initramfs refused it because `/flash` is 2GB.
++
++### External References
++
++- None needed. This plan is driven by local ROCKNIX boot/update constraints and GitHub release asset behavior already observed in this workflow.
++
++---
++
++## Key Technical Decisions
++
++- **Use a tier-1 manifest in `SYSTEM`, not a tier-1 seed payload.** The host image needs only enough immutable information to identify and verify the correct tier-2 seed: revision, device/compatible selector, filename, size, SHA256, and release/source metadata.
++- **Use `/storage/.guest/seed/` as the canonical tier-2 staging area.** `/storage/.guest` is already the explicit host/guest control seam, is writable, is not swept by initramfs update cleanup, and is already used by substrate promotion/import state. The seed path remains host-owned even though it sits under the seam.
++- **Use runtime compatible-string dispatch for per-device seeds.** The tier-1 manifest should enumerate compatible-string entries, and `rocknix-guest-root-ensure` should read `/proc/device-tree/compatible` to select the matching staged seed. This avoids adding a host build matrix axis for Thor vs Odin2Portal.
++- **Let SM8550 update tarballs carry the seed under `target/seed/`, then hoist it before writing `SYSTEM`.** The initramfs should AVFS-mount the update tar, verify the seed from the mounted `target/seed/` path, copy it into `/storage/.guest/seed/`, and only then write the new `SYSTEM`; otherwise a crash between `SYSTEM` write and seed staging can leave a new host looking for a missing seed.
++- **Do not consume a newer seed over an existing valid guest root unless explicitly requested.** Normal update should stage the seed for future recovery/fresh-root tests but leave the running persistent root to the promotion path.
++- **Verify seed bytes at consumption time.** Once the seed is stored in writable `/storage`, SHA verification must happen in `rocknix-guest-root-ensure` immediately before extraction, not only during CI or package build.
++- **Treat hard factory reset as destructive to the local seed.** Because hard reset reformats or deletes `/storage`, recovery documentation must state that a local seed must be re-copied after hard reset unless the full installer later learns to prepopulate storage again.
++
++---
++
++## Open Questions
++
++### Resolved During Planning
++
++- Should first boot depend on network? No. Host networking is not guaranteed before the guest exists, and Tailscale is guest-owned.
++- Should `/flash/SYSTEM` be resized? No. That would be destructive, device-specific, and incompatible with existing update assumptions.
++- Should the full seed remain in `SYSTEM` compressed? No. Even compressed, the Odin2Portal seed makes `SYSTEM` exceed the 2GB partition.
++- Should `/storage/.update` be the long-lived seed location? No. Initramfs cleanup deletes that directory after successful update.
++
++### Deferred to Implementation
++
++- Exact manifest format: JSON is preferred for extensibility, but the implementer may choose shell-readable key/value if it keeps busybox parsing safer.
++- Exact full-image installer hook: implementation should inspect current image/install tooling and choose the smallest path that can copy a seed into `/storage/.guest/seed/` or document manual two-file install.
++
++---
++
++## High-Level Technical Design
++
++> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
++
++```mermaid
++flowchart TD
++  A[Build/publish per-device guest seed release] --> B[Host build fetches seed metadata]
++  B --> C[Host SYSTEM includes tiny seed manifest only]
++  B --> D[Update carries seed; full image references separate seed payload]
++  D --> E[Install/update stages seed under /storage/.guest/seed]
++  C --> F[rocknix-guest-root-ensure reads manifest]
++  E --> F
++  F --> G{guest root exists and valid?}
++  G -- yes --> H[leave root intact; guest promotion owns updates]
++  G -- no --> I{matching seed present and SHA ok?}
++  I -- no --> J[fail closed; host recovery remains available]
++  I -- yes --> K[extract to tmp root]
++  K --> L[validate profile/init/marker]
++  L --> M[atomic mv to /storage/machines/rocknix-guest]
++  M --> N[start guest]
++```
++
++---
++
++## Implementation Units
++
++### U1. Replace embedded seed payload with a manifest-only host contract
++
++**Goal:** Keep `SYSTEM` small by removing the copied `guest-rootfs-seed.tar.zst` from `${INSTALL}` while preserving immutable metadata needed to verify a local tier-2 seed.
++
++**Requirements:** R1, R5, R8, R9
++
++**Dependencies:** None
++
++**Files:**
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Keep build-time seed URL/SHA variables so CI can validate the published seed when desired, but do not copy the seed archive into `${INSTALL}`.
++- Install a small manifest under `/usr/lib/rocknix-guest-substrate/` that records each supported compatible string, expected seed revision, SHA256, size if known, filename, and source URL(s).
++- Preserve fail-closed behavior for missing seed pins; a host build should not ship without knowing what seed it expects.
++- Invert the current static-check expectation that requires `guest-rootfs-seed.tar.zst` in the host package: checks should reject any `package.mk` line that copies `guest-rootfs-seed*` into `${INSTALL}` and should require manifest-only metadata instead.
++
++**Patterns to follow:**
++- Existing SHA verification and placeholder fail-closed checks in `package.mk`.
++- Existing grep/order assertions in `guest-substrate-static-checks.sh`.
++
++**Test scenarios:**
++- Happy path: `package.mk` installs seed manifest metadata and does not install `guest-rootfs-seed.tar.zst` into `${INSTALL}`.
++- Error path: placeholder seed SHA or missing seed URL metadata still fails static checks/build contract.
++- Error path: any future `cp` of the seed tarball into `/usr/lib/rocknix-guest-substrate/` is rejected by static checks.
++- Integration: full SM8550 image build produces a `SYSTEM` small enough to fit the 2GB `/flash` partition.
++
++**Verification:**
++- Static checks pass and prove manifest-only packaging.
++- The generated `SYSTEM` no longer contains a multi-GB seed archive.
++
++### U2. Teach root ensure to consume verified tier-2 seeds from `/storage/.guest/seed/`
++
++**Goal:** Let first boot seed the guest root from a local offline payload outside `SYSTEM`, while preserving the existing atomic activation and recovery-safe failure behavior.
++
++**Requirements:** R2, R5, R6, R7, R8, R9
++
++**Dependencies:** U1
++
++**Files:**
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++
++**Approach:**
++- Add an env-overridable tier-2 seed directory, defaulting to `/storage/.guest/seed`.
++- Replace the default seed archive path under `/usr/lib/rocknix-guest-substrate/` with manifest-driven lookup of `/storage/.guest/seed/<expected-filename>`; retain env overrides for fixtures and manual diagnostics.
++- Read `/proc/device-tree/compatible`, match it against the host-shipped manifest, resolve the expected seed file, and verify SHA256 before extraction.
++- Preserve current behavior when `/storage/machines/rocknix-guest` is already valid: validate and exit rather than reseeding. U5 owns explicit reseed mechanics.
++- Keep symlink, mountpoint, lock, tmp marker, profile, `/init`, and `/sbin/init` validation unchanged.
++
++**Patterns to follow:**
++- Existing `seed_guest_root`, `validate_rootfs`, `cleanup_stale_helper_temps`, and lock handling in `rocknix-guest-root-ensure`.
++- Existing env-override style in substrate scripts so tests can use temporary fixtures.
++
++**Test scenarios:**
++- Happy path: with missing guest root and matching seed in `/storage/.guest/seed`, root ensure verifies SHA, extracts to tmp, validates, and activates root.
++- Happy path: with existing valid guest root and newer staged seed, root ensure exits without modifying the root because U5 owns explicit reseed.
++- Error path: missing seed file produces a clear failure and leaves no activated partial root.
++- Error path: SHA mismatch prevents extraction and leaves the staged seed untouched for diagnosis.
++- Error path: archive extracts but rootfs lacks `/nix`, selected profile, or executable init; activation does not happen.
++- Edge case: interrupted prior extraction with owned in-progress marker is cleaned; unowned temp path is refused.
++- Integration: runtime smoke can report whether tier-2 seed is present, missing, consumed, or mismatched.
++
++**Verification:**
++- Fixture tests cover archive seeding from `/storage/.guest/seed`.
++- Existing root preservation is proven so normal updates do not wipe user guest state.
++
++### U3. Add update-tar tier-2 seed staging before SYSTEM write
++
++**Goal:** Allow update tarballs to carry an offline seed payload and stage it into `/storage/.guest/seed/` before initramfs writes the new `SYSTEM` and before `/storage/.update` cleanup runs.
++
++**Requirements:** R1, R3, R5, R7, R8, R9
++
++**Dependencies:** U1
++
++**Files:**
++- Modify: `scripts/image`
++- Modify: `projects/ROCKNIX/packages/sysutils/busybox/scripts/init`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Extend SM8550 update artifact generation so the update tar includes the seed payload under `target/seed/`, making it reachable after the existing AVFS update flow rebinds `UPDATE_DIR` to the mounted `target/` directory.
++- Extend `check_update` with this exact order: AVFS-mount the update tar, verify the seed under `${UPDATE_DIR}/seed/`, ensure `/storage` has at least the staged seed size free while the source tar is still present, copy the seed into `/storage/.guest/seed/`, then write the new `SYSTEM` to `/flash`, then run normal cleanup.
++- Ensure initramfs cleanup never deletes the already-hoisted seed; the source tar under `/storage/.update` can still be deleted normally.
++- Keep compatibility checks and MD5 checks for `KERNEL`/`SYSTEM` unchanged.
++
++**Patterns to follow:**
++- Existing initramfs update ordering and cleanup in `projects/ROCKNIX/packages/sysutils/busybox/scripts/init`.
++- Existing update tar creation in `scripts/image`.
++
++**Test scenarios:**
++- Happy path: update tar with seed payload under `target/seed/` stages seed to `/storage/.guest/seed/`, verifies it, writes `SYSTEM`, and cleanup leaves staged seed intact.
++- Error path: seed SHA mismatch aborts before writing the new `SYSTEM`.
++- Error path: insufficient `/storage` space for seed staging aborts before writing the new `SYSTEM`.
++- Error path: update tar without required SM8550 seed metadata fails clearly or follows an explicit compatibility rule.
++- Integration: static checks prove seed staging occurs before `update_file System` and before cleanup.
++
++**Verification:**
++- An SM8550 update tar no longer contains an oversized `SYSTEM` and carries the seed payload under `target/seed/`.
++- Update failure modes preserve the currently bootable host image.
++
++### U4. Support offline full-image/two-file install flow
++
++**Goal:** Provide a practical full-install path where the host image stays small and the user can supply the seed locally without network.
++
++**Requirements:** R2, R4, R5, R7, R8
++
++**Dependencies:** U1, U2
++
++**Files:**
++- Modify: `scripts/image`
++- Modify: `scripts/mkimage`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Keep the full host image valid without embedding the seed in the FAT `/flash` partition; artifact publication and pairing lives in U7.
++- Make the expected manual install location unambiguous: `/storage/.guest/seed/<manifest-expected-name>.tar.zst` plus any sidecar needed by the manifest.
++- If the full-image creation path can prepopulate the storage partition safely, add that hook; otherwise explicitly document the two-file install as the supported first step.
++- Keep missing-seed behavior recoverable: host SSH/recovery should come up and report the missing seed rather than producing an invalid image artifact or broken `SYSTEM`.
++**Patterns to follow:**
++- Existing GitHub artifact naming for `ROCKNIX-image-*` and `ROCKNIX-update-*`.
++- Existing rootfs seed release assets from `rocknix-nix-guest`.
++
++**Test scenarios:**
++- Happy path: full image artifact contains a valid `SYSTEM` file under 2GB.
++- Happy path: after flashing full image and copying seed to `/storage/.guest/seed`, first boot seeds guest root offline.
++- Error path: full image without seed boots host recovery/SSH and reports missing seed clearly.
++- Integration: full-image install documentation points at the same manifest-selected seed filename and `/storage/.guest/seed/` location used by update installs.
++
++**Verification:**
++- The generated full image can be inspected and contains `KERNEL` and `SYSTEM`.
++- The generated image does not depend on network to seed when a local seed is present.
++
++### U5. Add explicit reseed and stale-root policy
++
++**Goal:** Prevent stale `/storage` from hiding first-boot bugs while also preventing normal updates from destructively overwriting a valid guest root.
++
++**Requirements:** R2, R6, R7, R9
++
++**Dependencies:** U2
++
++**Files:**
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-activation-audit`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++
++**Approach:**
++- Define a clear operator-controlled reseed trigger: `/flash/rocknix.reseed-guest` for devices and an env override for tests. Operators create the `/flash` flag explicitly from recovery/SSH after remounting `/flash` writable.
++- When reseed is requested, require guest service to be inactive, verify the seed first, stage a replacement root separately, validate it, rename the previous root to `<root>.previous`, activate the new root atomically, and clear `/flash/rocknix.reseed-guest` only after success.
++- If the replacement validates but the old root cannot be moved aside, fail closed and leave the old root active.
++- Make audit output show current guest root revision, seed-complete revision, manifest expected revision, staged seed status, and reseed flag status.
++- Do not treat a post-promotion root as stale merely because its original seed-complete marker is older than the current manifest.
++
++**Patterns to follow:**
++- Read-only posture of `rocknix-guest-activation-audit`.
++- Existing manual hold files under `/storage/.guest`.
++
++**Test scenarios:**
++- Happy path: explicit reseed flag on a stopped guest replaces a valid old root with a validated new root.
++- Error path: reseed flag while guest is active is refused.
++- Error path: reseed candidate validates poorly and the original root remains available.
++- Edge case: promoted guest revision newer than seed marker is not falsely considered stale.
++- Integration: audit reports seed/root state without mutating anything.
++
++**Verification:**
++- Operators have a supported clean-root test path without wiping unrelated `/storage` data.
++- Normal update leaves existing roots intact.
++
++### U6. Refresh recovery and install documentation
++
++**Goal:** Make the new two-tier layout understandable from device recovery without relying on conversation history.
++
++**Requirements:** R4, R7, R8
++
++**Dependencies:** U1, U2, U3, U4, U5
++
++**Files:**
++- Modify: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md` or create a focused SM8550 seed note under `documentation/PER_DEVICE_DOCUMENTATION/SM8550/`
++- Modify in `rocknix-nix-guest`: `docs/contracts/HOW-TO-FALL-BACK.md`
++- Modify in `rocknix-nix-guest`: `README.md`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh` if new copied-doc assertions are required
++
++**Approach:**
++- Document the two-file offline install/update flow, including where to copy seed payloads and how to verify the expected SHA.
++- Document the failure mode: missing seed means host should remain recoverable, but guest will not start.
++- Document Thor vs Odin2Portal seed selection so users do not install a seed for the wrong SM8550 device.
++- Update fallback docs in `rocknix-nix-guest` because host image copies those docs from the guest source.
++- Land guest-repo documentation changes first, then bump `PKG_NIX_GUEST_REV`/SHA in the host before enabling any static check that requires those copied docs.
++
++**Patterns to follow:**
++- Existing copied contract docs from `rocknix-nix-guest/docs/contracts/`.
++- Existing SM8550 per-device docs.
++
++**Test scenarios:**
++- Test expectation: documentation review plus optional static-check assertions for required copied docs once the host is bumped to a guest revision containing them.
++
++**Verification:**
++- A recovery SSH user can identify expected seed path, expected SHA, and safe reseed/recovery steps from on-device docs.
++
++### U7. Update CI and artifact gates for split host/seed delivery
++
++**Goal:** Ensure CI proves the host artifact is installable and the seed artifact is available without reintroducing the over-2GB `SYSTEM` regression.
++
++**Requirements:** R1, R3, R4, R8, R9
++
++**Dependencies:** U1, U3, U4
++
++**Files:**
++- Modify: `.github/workflows/build-nightly.yml`
++- Modify: `.github/workflows/build-aarch64.yml`
++- Modify: `.github/workflows/build-aarch64-image.yml`
++- Modify: `.github/workflows/build-image-only.yml`
++- Modify: `projects/ROCKNIX/devices/SM8550/options`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Declare an SM8550 host image budget such as `SM8550_FLASH_PARTITION_BUDGET_MIB=1900` in `projects/ROCKNIX/devices/SM8550/options` and have CI fail if generated `SYSTEM` is missing or exceeds that budget.
++- Publish or reference the matching tier-2 seed artifact clearly alongside the host artifacts; update-tar artifacts should carry the seed under `target/seed/`, while full-image artifacts should point to the separate seed asset/manual staging path.
++- Keep PR/static checks manifest-only where possible; reserve multi-GB seed download verification for release/nightly paths that need end-to-end proof.
++- If the fast-iteration CI path has file-based allowlists, block it for the specific initramfs update, image layout, and seed staging files touched here unless its artifact checks are intentionally expanded.
++
++**Patterns to follow:**
++- Existing build integrity gates in `.github/workflows/build-nightly.yml` and `.github/workflows/build-image-only.yml`.
++- Existing rootfs seed release workflow in `rocknix-nix-guest`.
++
++**Test scenarios:**
++- Happy path: CI fails if the full image artifact lacks `SYSTEM`.
++- Happy path: CI fails if `SYSTEM` exceeds the configured SM8550 partition budget.
++- Error path: CI fails if an SM8550 host artifact lacks seed manifest metadata.
++- Error path: CI fails if a seed artifact is present but does not match the manifest SHA.
++
++**Verification:**
++- The artifact list makes it obvious which host image/update pairs with which guest seed.
++- Future over-size images fail before anyone attempts to install them.
++
++---
++
++## System-Wide Impact
++
++- **Interaction graph:** The change crosses build packaging (`package.mk`), update tar/image creation (`scripts/image`, `scripts/mkimage`), initramfs update application (`busybox/scripts/init`), first-boot seeding (`rocknix-guest-root-ensure`), recovery docs, and CI artifact validation.
++- **Error propagation:** Seed staging errors during update must abort before writing `SYSTEM`; seed consumption errors during boot must prevent guest startup but leave host recovery available.
++- **State lifecycle risks:** `/storage/.update` is temporary and swept; `/storage/.guest/seed` is persistent across normal updates but not hard factory reset; `/storage/machines/rocknix-guest` remains the authoritative guest root.
++- **API surface parity:** Any device-specific seed manifest must align with the guest repo's device-profile/compatible dispatch so Thor and Odin2Portal cannot drift.
++- **Integration coverage:** Unit-style shell fixtures are not enough; at least one update artifact inspection and one wiped-root on-device or image-root smoke should validate the cross-layer flow.
++- **Unchanged invariants:** Recovery flags remain `/flash/rocknix.no-nspawn` and `rocknix.safe=1`; guest promotion remains separate from first-boot seeding; existing valid guest roots are not replaced by default.
++
++---
++
++## Risks & Dependencies
++
++| Risk | Mitigation |
++|------|------------|
++| Tier-2 seed is staged after `SYSTEM`, leaving a new host without matching seed after power loss | AVFS-mount update tar, verify/copy seed into `/storage/.guest/seed`, then write `SYSTEM` |
++| AVFS teardown or `/storage/.update` cleanup happens before seed hoist | Hoist seed out of `${UPDATE_DIR}/seed/` while AVFS is still mounted and statically assert ordering |
++| `/storage` lacks temporary headroom because the update tar and staged seed coexist until cleanup | Check free space is at least the seed size before copying the seed to `/storage/.guest/seed/` |
++| Wrong device seed is consumed | Manifest must encode device/compatible identity and root ensure must match before extraction |
++| Existing guest root hides fresh-seed bugs | Add explicit reseed flag and validation workflow for clean-root tests |
++| Hard factory reset removes `/storage/.guest/seed` | Document this as destructive and require re-copying the seed or a future storage-prepopulation installer enhancement |
++| Multi-GB seed checks slow every PR | Keep PR/static checks manifest-only; run full seed byte verification on release/nightly artifact paths |
++| Full image artifact appears successful but lacks `SYSTEM` | Add artifact inspection gate for `SYSTEM` presence and size |
++
++---
++
++## Documentation / Operational Notes
++
++- Sobo/Odin2Portal should use the Odin2Portal seed; Bandai/Thor must wait for a Thor seed or per-device manifest support.
++- Update tar is no longer a single self-contained `/flash` payload for SM8550; it either carries or is paired with a tier-2 seed payload staged into `/storage`.
++- For data-preserving updates, existing `/storage/machines/rocknix-guest` remains intact; the staged seed is for missing-root/reseed/fresh-install cases.
++- For clean validation, operators should either wipe only `/storage/machines/rocknix-guest` with a matching seed staged, or use the explicit reseed flag once implemented.
++
++---
++
++## Alternative Approaches Considered
++
++- **Keep seed compressed in `SYSTEM`:** rejected because the compressed Odin2Portal seed makes `SYSTEM` exceed sobo's 2GB `/flash` partition.
++- **Download seed on first boot:** rejected as the primary path because host network is not guaranteed and Tailscale is guest-owned.
++- **Resize `/flash`:** rejected because it is destructive, device-specific, and incompatible with the existing update fleet.
++- **Shrink the guest closure first:** useful long-term, but too uncertain to be the immediate solution for an update-blocking partition limit.
++- **Use `/storage/.update` as persistent seed storage:** rejected because initramfs cleanup deletes it after update.
++
++---
++
++## Success Metrics
++
++- SM8550 `SYSTEM` remains comfortably below 2GB after host build.
++- Full image artifact contains both `KERNEL` and `SYSTEM` and passes size inspection.
++- Update tar install on sobo no longer fails at `Checking size: FAILED` due to seed bloat.
++- Wiped guest root plus staged matching seed boots into the Odin2Portal guest without network.
++- Missing or mismatched seed leaves host SSH recovery available with clear logs.
++
++---
++
++## Sources & References
++
++- Related code: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Related code: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure`
++- Related code: `projects/ROCKNIX/packages/sysutils/busybox/scripts/init`
++- Related code: `scripts/image`
++- Related code: `packages/mediacenter/LibreELEC-settings/scripts/factory-reset`
++- Related test: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Related test: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++- Guest source repo: `rocknix-nix-guest/docs/contracts/HOW-TO-FALL-BACK.md`
+diff --git a/docs/plans/2026-05-16-001-refactor-nix-on-rock-storage-contract-plan.md b/docs/plans/2026-05-16-001-refactor-nix-on-rock-storage-contract-plan.md
+new file mode 100644
+index 0000000000..820926090e
+--- /dev/null
++++ b/docs/plans/2026-05-16-001-refactor-nix-on-rock-storage-contract-plan.md
+@@ -0,0 +1,440 @@
++---
++title: refactor: Establish nix-on-rock storage contract
++type: refactor
++status: active
++date: 2026-05-16
++---
++
++# refactor: Establish nix-on-rock storage contract
++
++## Summary
++
++Replace the prototype-shaped SM8550 storage seam (`/storage/.guest` plus `/storage/machines/rocknix-guest`) with a deliberate, visible `/storage/nix-on-rock` contract. The plan keeps the working thin-host/guest architecture intact while introducing a safe migration path, preserving recovery flags, and tightening tests/docs around path ownership.
++
++---
++
++## Problem Frame
++
++The SM8550 custom build now works: the ROCKNIX host boots, stages offline guest seeds, starts the NixOS main system, and remains recoverable over SSH. The remaining problem is architectural hygiene: the host/guest seam still exposes prototype names and mixed-purpose directories that make the product contract harder to reason about and easier to regress.
++
++---
++
++## Requirements
++
++- R1. The durable host↔Nix main-system storage contract must use a visible, intentional root under `/storage/nix-on-rock`.
++- R2. The new layout must separate active rootfs data, image/seed artifacts, operator requests, observed state, and transient staging.
++- R3. Existing devices with `/storage/machines/rocknix-guest` and `/storage/.guest` must migrate without reseeding, data loss, or generation loss.
++- R4. Fresh installs with only a staged offline seed must still boot without network and fail closed when the seed is missing, corrupt, or incompatible.
++- R5. Normal updates must continue to stage rootfs seeds before writing `SYSTEM`, while preserving the in-the-wild update-tar `target/seed/` payload contract.
++- R6. Recovery affordances must remain stable: `/flash/rocknix.no-nspawn`, `rocknix.safe=1`, and `/flash/rocknix.reseed-guest` stay valid.
++- R7. The host must preserve the single intentional host↔guest exchange seam and avoid broad product-storage binds.
++- R8. Static and runtime checks must enforce the new path contract, migration behavior, update staging order, and backcompat window.
++- R9. User-facing SM8550 docs and shipped fallback notes must describe the new layout and the legacy-path migration clearly.
++
++---
++
++## Scope Boundaries
++
++- Do not shrink the NixOS guest closure or change its package set.
++- Do not replace `systemd-nspawn` or rework cgroup/device passthrough.
++- Do not change the partition layout, `/flash` size, or internal install formatting.
++- Do not rename `/flash/rocknix.no-nspawn`, `rocknix.safe=1`, or `/flash/rocknix.reseed-guest` in this plan.
++- Do not rename the update tar's `target/seed/` wire layout in this plan.
++- Do not rename systemd units, the `--machine=rocknix-guest` label, or `ROCKNIX_GUEST_*` environment overrides in this plan unless needed as additive aliases.
++- Do not rename guest-root internal marker files such as `etc/rocknix-guest-revision` or `etc/rocknix-guest-root-seed-complete` in this plan.
++
++### Deferred to Follow-Up Work
++
++- Remove legacy `/storage/.guest` and `/storage/machines/rocknix-guest` compatibility after at least one successful release window.
++- Coordinate a guest-side native path rename so the guest no longer needs to see any legacy `/storage/.guest` compatibility bind.
++- Rename the package directory or shipped helper names from `rocknix-guest-*` to `nix-on-rock-*` if the storage contract lands cleanly.
++- Move persistent substrate logs into `/storage/nix-on-rock/log/` if a concrete writer/reader is added.
++- Replace hardcoded `/dev/input/event*` and `/dev/snd/pcm*` passthrough with generated device allowlists.
++- Clean stale real-device artifacts discovered in storage audits that are unrelated to the new contract.
++
++---
++
++## Context & Research
++
++### Relevant Code and Patterns
++
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk` installs the immutable host substrate, guest source, seed manifest, runtime smoke test, and fallback docs.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure` owns first-boot seeding, explicit reseed, root validation, symlink rejection, and atomic root activation.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start` builds the `systemd-nspawn` argument list, binds the host/guest exchange path, and applies runtime `DeviceAllow=` entries.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote` stages packaged guest source and switches the selected guest profile.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-generation-import` and `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-generation-switch` use `/storage/.guest` for manual A/B generation state.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service` records the current working directory and recovery gating for the guest service.
++- `projects/ROCKNIX/packages/sysutils/busybox/scripts/init` stages `target/seed/` update payloads into the persistent storage seam before writing `SYSTEM`.
++- `scripts/image` packages the SM8550 update seed payload outside `SYSTEM`.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh` is the main literal contract gate for paths, service wiring, update order, and prohibited regressions.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh` is the on-device smoke surface for the active root, staged seed, service health, and recovery posture.
++- `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md` is the host-repo user-facing path contract and must change in lockstep.
++- Guest-repo contract docs under `rocknix-nix-guest: docs/contracts/` are the source for copied on-image docs. The active docs that need this pass are `HOW-TO-FALL-BACK.md`, `layer14-main-space-contract.md`, `layer14-soak-checklist.md`, and likely `layer14-dev-env-profile.md` for its live-edit examples. Older layer9–13 contracts and historical plans mention legacy paths but are archival unless explicitly marked current.
++
++### Institutional Learnings
++
++- `docs/plans/2026-05-15-001-fix-offline-guest-seed-staging-plan.md` established the offline seed split: small manifest in `SYSTEM`, multi-GB seed outside `SYSTEM`, and first-boot extraction from persistent storage.
++- Recent SM8550 fixes show that recovery substrate spans multiple packages: guest-substrate scripts, busybox init/generator, openssh, iwd, virtual image packaging, and CI artifact checks.
++- Prior seam renames were safest when shipped as rename + compatibility first, then compatibility removal in a later commit/release.
++- Contract docs are centralized in the `rocknix-nix-guest` source tarball; host docs and copied fallback material must be kept in sync when user-facing paths change.
++
++### External References
++
++- `systemd-nspawn` convention places machine root filesystems under `/var/lib/machines/<machine>`, but this build uses `--directory=` and `--register=no`; a clearer storage contract can choose a product-specific rootfs path.
++- Container/storage tools commonly distinguish rootfs/container state, images, staging, and logs; those conventions support the proposed internal split.
++- Appliance-style systems such as balenaOS separate read-only host OS from persistent state partitions; this supports treating `/storage/nix-on-rock` as a deliberate product contract rather than hidden scratch.
++
++---
++
++## Key Technical Decisions
++
++- **Canonical durable root:** Use `/storage/nix-on-rock` for all persistent host-managed Nix-on-ROCK state. It is visible, specific, and durable without overloading hidden dotdirs or generic names.
++- **Internal layout:** Use `rootfs/`, `images/`, `requests/`, `state/`, and `staging/` because they map to standard operational concepts rather than implementation-era names. Defer `log/` until this work moves a concrete persistent log writer.
++- **Rootfs shape:** Use `/storage/nix-on-rock/rootfs/current` for the active NixOS root and `/storage/nix-on-rock/rootfs/previous` for explicit reseed rollback. This avoids awkward `rootfs.previous` siblings while keeping active and rollback roots adjacent.
++- **Seed image shape:** Stage offline rootfs seed archives under `/storage/nix-on-rock/images/seeds/`, optionally nested by compatible/device when multiple SM8550 variants are supported.
++- **Request vs state split:** Files representing desired operator/updater intent belong under `requests/`; facts observed or written by the host substrate belong under `state/`.
++- **Staging split:** Packaged source, import candidates, promote result handoffs, and migration-in-progress material belong under `staging/`; they are transitional, not durable truth.
++- **Recovery exception:** Keep `/flash/rocknix.*` flags unchanged. Their names are already public recovery affordances and are more valuable as stable operator strings than as part of a vocabulary cleanup.
++- **Wire-format exception:** Keep update tar `target/seed/` unchanged. The rename is for persistent on-device layout, not published artifact compatibility.
++- **Compatibility window:** New helpers default to the new path contract but detect and migrate legacy paths. Legacy aliases remain for one release window and are later rejected by static checks.
++- **Guest-view compatibility:** Initially bind the new host exchange/staging area to the guest in a way that preserves the guest's legacy expectations. A native guest-side rename is follow-up work.
++
++---
++
++## Open Questions
++
++### Resolved During Planning
++
++- Should the durable path stay hidden with a dot prefix? No. The seam is operationally important and should be inspectable.
++- Should the path be named after ROCKNIX? No. `nix-on-rock` better names the combined Nix-on-ROCK seam without making the host distro the center of the storage contract.
++- Should `/storage` remain the physical home? Yes. `/flash` is small/FAT, the host root is immutable, and `/storage` is the durable large writable partition.
++- Should recovery flags be renamed for vocabulary consistency? No. They are public, externally readable recovery contracts and should remain stable.
++
++### Deferred to Implementation
++
++- Exact low-level alias implementation: U3 fixes the semantic model as one canonical host exchange directory plus a legacy guest-visible bind; implementation should choose the safest unit/script mechanics for that model.
++- Exact fixture harness for migration tests: implementation should extend the existing shell static-check fixture style rather than inventing a separate test runner.
++
++---
++
++## Output Structure
++
++```text
++/storage/nix-on-rock/
++  rootfs/
++    current/                 # active extracted NixOS root filesystem
++    previous/                # explicit reseed rollback root
++  images/
++    seeds/                   # offline rootfs seed archives and per-seed metadata
++  requests/                  # operator/updater intent files such as manual holds
++  state/                     # observed substrate facts, migration version, activation state
++  staging/                   # packaged source, imports, promote handoffs, tmp migration work
++```
++
++Deferred until a concrete writer exists:
++
++```text
++/storage/nix-on-rock/log/    # persistent substrate logs
++```
++
++Legacy paths remain migration inputs, not the new contract:
++
++```text
++/storage/machines/rocknix-guest      -> /storage/nix-on-rock/rootfs/current
++/storage/machines/rocknix-guest.previous -> /storage/nix-on-rock/rootfs/previous
++/storage/.guest/seed                 -> /storage/nix-on-rock/images/seeds
++/storage/.guest/rocknix-guest-manual-generation-hold -> /storage/nix-on-rock/requests/manual-generation-hold
++/storage/.guest/rocknix-guest-generation-switch-a -> /storage/nix-on-rock/state/generation-switch-a
++/storage/.guest/rocknix-guest-generation-import-candidate -> /storage/nix-on-rock/staging/generation-import-candidate
++/storage/.guest/rocknix-guest-promote-system-path -> /storage/nix-on-rock/staging/guest-exchange/rocknix-guest-promote-system-path
++/storage/.guest/rocknix-nix-guest-packaged -> /storage/nix-on-rock/staging/guest-exchange/rocknix-nix-guest-packaged
++```
++
++---
++
++## High-Level Technical Design
++
++> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
++
++```mermaid
++flowchart TD
++  A[Boot SM8550 host] --> B[Recovery flags checked]
++  B -->|safe/no-nspawn| R[Host recovery only]
++  B -->|normal| C[Path migration/check]
++  C --> D{active rootfs/current exists?}
++  D -- yes --> E[Validate /storage/nix-on-rock/rootfs/current]
++  D -- no, legacy valid --> F[Atomic legacy -> nix-on-rock migration]
++  D -- no active root --> G[Look for verified seed in images/seeds]
++  F --> E
++  G --> H{matching seed ok?}
++  H -- no --> X[Fail closed; host recovery remains]
++  H -- yes --> I[Extract to staging, validate, activate current]
++  E --> J[Prepare runtime bind/exchange]
++  I --> J
++  J --> K[Start nspawn guest]
++  K --> L[Promote/import/switch use nix-on-rock staging/state]
++```
++
++---
++
++## Implementation Units
++
++### U1. Define the nix-on-rock storage contract and path resolver
++
++**Goal:** Establish one source of truth for the new persistent layout and make helper scripts consume named path defaults instead of repeating prototype path literals.
++
++**Requirements:** R1, R2, R7, R8
++
++**Dependencies:** None
++
++**Files:**
++- Create: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/nix-on-rock-paths`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Introduce a shared shell-readable path contract that defines the canonical `/storage/nix-on-rock` root and subdirectories for rootfs, images, requests, state, and staging.
++- Replace the current `MACHINES_ROOT` containment assumption with a `/storage/nix-on-rock` contract validator: validate `/storage` and `/storage/nix-on-rock` are not symlinks, create required subdirectories, and restrict legacy `MACHINES_ROOT` semantics to migration/backcompat only.
++- Keep existing `ROCKNIX_GUEST_*` env overrides as compatibility inputs, but make their default values resolve to the new path contract.
++- Install the resolver with the other substrate helpers so all scripts can source the same defaults.
++- Add static checks that require the new canonical root and guard against reintroducing `/storage/.guest` or `/storage/machines/rocknix-guest` as default write targets outside compatibility code.
++
++**Patterns to follow:**
++- Env-overridable defaults at the top of existing substrate scripts.
++- Literal grep assertions and negative assertions in `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`.
++
++**Test scenarios:**
++- Happy path: helper scripts source the shared path resolver and report `/storage/nix-on-rock` defaults when no env overrides are set.
++- Happy path: default path validation accepts `/storage/nix-on-rock/rootfs/current` without requiring it to live under `/storage/machines`.
++- Edge case: existing `ROCKNIX_GUEST_*` overrides still redirect fixtures to temporary paths.
++- Error path: static checks fail if a script writes to legacy paths as a default rather than through explicit migration/backcompat handling.
++- Integration: package install includes the resolver with executable permissions and shell syntax checks.
++
++**Verification:**
++- The new path resolver is installed and all feature-bearing substrate scripts use it or explicitly justify why they do not.
++- Static checks describe the new path contract and fail on accidental legacy-default regressions.
++
++### U2. Add an idempotent legacy-layout migration gate
++
++**Goal:** Safely migrate already-running devices from legacy storage paths to `/storage/nix-on-rock` before root-ensure can decide to seed a fresh root.
++
++**Requirements:** R3, R4, R6, R8
++
++**Dependencies:** U1
++
++**Files:**
++- Create: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/nix-on-rock-migrate`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest-root-ensure.service`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Run migration before any root mutation or seed extraction.
++- Take the same root mutation lock used by root-ensure so migration cannot race with reseed or guest startup.
++- Detect valid legacy roots at `/storage/machines/rocknix-guest` and move them atomically to `/storage/nix-on-rock/rootfs/current` on the same filesystem.
++- Migrate rollback roots from `/storage/machines/rocknix-guest.previous` to `/storage/nix-on-rock/rootfs/previous` when present.
++- Move legacy seed/control/staging files from `/storage/.guest` into the new subdirectories according to their semantic role.
++- Use temporary in-progress markers under `staging/` while migration is active, then write a completed layout-version/migration marker under `state/` only after migration succeeds.
++- Fail closed if both new and legacy active roots exist with conflicting contents, if a legacy root is invalid, if an in-progress marker is ambiguous, or if a path is symlinked unexpectedly.
++
++**Patterns to follow:**
++- `rocknix-guest-root-ensure` lock handling, symlink rejection, valid-root checks, tmp markers, and journald-friendly `log()` output.
++- The prior rename playbook: compatibility first, rejection later.
++
++**Test scenarios:**
++- Happy path: populated legacy active root migrates to `rootfs/current` without reseeding and keeps selected profile/init markers intact.
++- Happy path: legacy `.previous` rollback root migrates to `rootfs/previous`.
++- Happy path: legacy staged seed under `/storage/.guest/seed` migrates to `images/seeds` and is still selected by compatible string.
++- Edge case: re-running migration after success is a no-op and does not rewrite active state.
++- Error path: valid legacy root plus conflicting new root fails closed rather than overwriting either tree.
++- Error path: invalid legacy root blocks fresh seeding until an operator resolves it, preventing accidental data loss.
++- Error path: interrupted in-progress migration marker without active root causes a clear failure and does not seed over possible user data.
++
++**Verification:**
++- A fixture representing an old working device migrates to the new tree and starts root validation from `rootfs/current`.
++- A fixture representing a clean full install with only a seed still proceeds to seed extraction.
++
++### U3. Move root lifecycle and guest startup to the new contract
++
++**Goal:** Make root-ensure, prep, start, promote, generation import/switch, audit, and smoke checks use `/storage/nix-on-rock` paths while preserving one-release compatibility for the guest's legacy view.
++
++**Requirements:** R1, R2, R3, R4, R6, R7, R8
++
++**Dependencies:** U1, U2
++
++**Files:**
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-prep`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-generation-import`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-generation-switch`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-activation-audit`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-soak`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Change the active guest root default to `/storage/nix-on-rock/rootfs/current`.
++- Change explicit reseed rollback to `/storage/nix-on-rock/rootfs/previous`.
++- Change seed lookup to `/storage/nix-on-rock/images/seeds` after migration/backcompat lookup.
++- Move manual hold, generation-switch, import provenance, packaged-source, and promote handoff files into `requests/`, `state/`, and `staging/` based on whether each file represents intent, durable fact, or transient handoff.
++- Update `rocknix-guest.service` `WorkingDirectory=` and `rocknix-guest-start` `--directory=` to the new active root.
++- Use a single host exchange directory, defaulting to `/storage/nix-on-rock/staging/guest-exchange`, for guest-visible host handoffs during the transition.
++- Bind that single host exchange directory to the guest-visible legacy path `/storage/.guest` during the compatibility window. This creates one source of truth with a legacy guest alias, not two active seams.
++- Split host paths from guest-visible paths in nsenter commands so host reads/writes canonical `/storage/nix-on-rock/...` locations while current guest-compatible commands can still address `/storage/.guest` where required.
++- Keep `--machine=rocknix-guest`, service names, recovery conditions, and `ROCKNIX_GUEST_*` env names stable in this unit.
++
++**Patterns to follow:**
++- Existing root validation and selected-profile authority under `/nix/var/nix/profiles/per-user/root/rocknix-guest-system`.
++- Existing prohibition on broad product storage binds in static checks.
++- Existing runtime smoke format for reporting active root, seed, and service state.
++
++**Test scenarios:**
++- Happy path: active root at `rootfs/current` validates and guest starts through `systemd-nspawn`.
++- Happy path: fresh boot with a verified seed under `images/seeds` extracts to `rootfs/current`.
++- Happy path: existing valid `rootfs/current` plus newer staged seed exits without reseeding.
++- Happy path: manual generation hold survives migration and still prevents promotion.
++- Happy path: imported generation provenance and switch-A state survive migration and are reported by audit.
++- Error path: missing or corrupt seed under `images/seeds` fails closed with host recovery still available.
++- Error path: a script sees legacy paths without a completed migration marker and refuses to mutate rather than silently forking state.
++- Integration: guest startup binds only the single intended exchange/staging seam, exposed through the compatibility alias when necessary, and does not bind `/storage/roms`, `/storage/.config/Cemu`, or other product state.
++
++**Verification:**
++- Static checks prove new defaults, legacy compatibility, recovery gating, and product-bind exclusions.
++- Runtime smoke can distinguish new-layout success, legacy-layout migration, missing seed, and recovery-mode behavior.
++
++### U4. Update install/update seed staging for the new persistent layout
++
++**Goal:** Preserve the successful offline seed/update behavior while staging seed archives into the new `images/seeds` location.
++
++**Requirements:** R4, R5, R8
++
++**Dependencies:** U1, U2
++
++**Files:**
++- Modify: `projects/ROCKNIX/packages/sysutils/busybox/scripts/init`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Keep update tar artifacts carrying seed archives under `target/seed/`.
++- Change initramfs staging destination from the legacy storage seam to `/storage/nix-on-rock/images/seeds` after verifying the seed against the manifest.
++- During the compatibility window, make initramfs tolerate both old and new manifest/runtime path names if that is required for skew-safe updates.
++- Keep the ordering invariant: stage and verify seed before writing `SYSTEM`.
++- Leave `scripts/image` and workflow files untouched unless implementation finds a concrete persistent-path literal, new helper allowlist gap, or failing artifact check.
++
++**Patterns to follow:**
++- Existing `stage_guest_rootfs_seed_update` ordering and free-space checks in `projects/ROCKNIX/packages/sysutils/busybox/scripts/init`.
++- Existing artifact budget and seed layout assertions in CI workflows.
++- Existing `assert_order` checks in `guest-substrate-static-checks.sh`.
++
++**Test scenarios:**
++- Happy path: update tar with `target/seed/<archive>` stages the seed into `images/seeds` before `SYSTEM` is written.
++- Happy path: already-staged matching seed is left intact or overwritten only after verification according to existing staging semantics.
++- Error path: missing manifest or mismatched SHA aborts before writing `SYSTEM`.
++- Error path: insufficient `/storage` free space aborts before writing `SYSTEM`.
++- Compatibility: legacy update tar `target/seed/` layout remains accepted.
++- Integration: image/update CI still verifies `SYSTEM` budget and seed artifact presence.
++
++**Verification:**
++- Static checks prove seed staging order and destination.
++- CI artifact checks continue to pass for SM8550 thin-host update builds.
++
++### U5. Update documentation and on-device operator guidance
++
++**Goal:** Make the new contract understandable to operators and future agents without requiring them to reverse-engineer migration behavior from scripts.
++
++**Requirements:** R1, R2, R3, R6, R9
++
++**Dependencies:** U1, U2, U3, U4
++
++**Files:**
++- Modify: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Replace user-facing `/storage/.guest/seed` and `/storage/machines/rocknix-guest` instructions with `/storage/nix-on-rock/images/seeds` and `/storage/nix-on-rock/rootfs/current`.
++- Include a deprecation/migration table from old paths to new paths.
++- Explicitly state that `/flash/rocknix.no-nspawn`, `rocknix.safe=1`, and `/flash/rocknix.reseed-guest` remain unchanged.
++- Update the SM8550 minimal-host appendix that is appended to `/flash/HOW-TO-FALL-BACK.md` so it names the new storage layout where relevant.
++- Update the source docs in the guest repo, not just generated/copy destinations in the host repo. The docs pass should cover `rocknix-nix-guest: docs/contracts/HOW-TO-FALL-BACK.md`, `docs/contracts/layer14-main-space-contract.md`, `docs/contracts/layer14-soak-checklist.md`, and `docs/contracts/layer14-dev-env-profile.md`.
++- Refresh stale Layer 14 vocabulary while touching those docs: current service/target/package names are `rocknix-guest.service`, `rocknix-main-space.target`, and `/usr/lib/rocknix-guest-substrate`, not the older `rocknix-guest-v2.service`, `rocknix-graphical.target`, or `/usr/lib/nix-integration` wording.
++- Coordinate the host `PKG_NIX_GUEST_REV`/SHA bump after guest-doc changes so packaged fallback docs and contracts are copied from the updated source.
++
++**Patterns to follow:**
++- Existing terse SM8550 README sections: offline seed location, device compatibility, update tar flow, full image flow, explicit reseed.
++- Existing `package.mk` appendix for minimal-host recovery note.
++
++**Test scenarios:**
++- Test expectation: none for prose-only documentation changes.
++- Static documentation check: packaged fallback note no longer instructs operators to stage fresh seeds under the legacy storage seam.
++- Static documentation check: Layer 14 current docs no longer use stale `rocknix-guest-v2.service`, `rocknix-graphical.target`, or `/usr/lib/nix-integration` names except in explicitly historical sections.
++- Static documentation check: recovery flag names remain present and unchanged in fallback guidance.
++
++**Verification:**
++- A recovery operator can read the SM8550 README and determine where active rootfs, seed images, migration state, and recovery flags live.
++- On-image fallback guidance remains consistent with service conditions and target-generator behavior.
++
++## System-Wide Impact
++
++- **Interaction graph:** The change touches host package install, initramfs update staging, systemd service startup, nspawn launch, guest promotion/import/switch helpers, runtime smoke, CI artifact gates, and user documentation.
++- **Error propagation:** Migration or seed verification failures must fail closed before guest startup while preserving SSH/recovery availability.
++- **State lifecycle risks:** The largest risk is destructive reseeding when a legacy valid root exists; migration must run before any seed decision and must refuse ambiguous states.
++- **API surface parity:** The filesystem path contract is the public API. The plan intentionally keeps recovery flags, update tar `target/seed/`, systemd unit names, machine labels, and env override names stable.
++- **Integration coverage:** Static fixture tests must cover migration and update staging; on-device smoke must prove the final mounted/running paths.
++- **Unchanged invariants:** Host remains the substrate/recovery/update plane; guest remains the product/main-system plane; selected guest profile remains under `/nix/var/nix/profiles/per-user/root/rocknix-guest-system` inside the guest root.
++
++---
++
++## Risks & Dependencies
++
++| Risk | Mitigation |
++|------|------------|
++| Migration accidentally seeds over a valid legacy root | Run migration before root-ensure seed decisions; refuse ambiguous legacy/new conflicts; add fixture tests for old working devices. |
++| Guest code still expects `/storage/.guest` | Preserve a compatibility bind or alias during the migration window; coordinate guest-native rename later. |
++| Recovery docs drift from service behavior | Keep `/flash` recovery flags unchanged and update SM8550 README plus packaged fallback appendix in the same change. |
++| Initramfs and new `SYSTEM` disagree about manifest or destination paths | Keep update tar wire layout unchanged; add dual-read/compat behavior where version skew is possible; assert staging order in static checks. |
++| Compatibility aliases become permanent hidden second truth | Record layout version/state; add negative checks that only migration/backcompat code may reference legacy paths; schedule follow-up alias removal. |
++| CI image-only workflow misses new helper paths | Update workflow allowlists and static checks in the same unit that adds helper files. |
++
++---
++
++## Verification Checklist
++
++- Old working storage layout migrates to `/storage/nix-on-rock` without reseeding.
++- Clean storage with a valid staged seed extracts to `rootfs/current`.
++- Conflicting old/new active roots fail closed.
++- Missing or corrupt seeds fail before guest start and leave host recovery available.
++- Normal update staging copies `target/seed/` payloads into `images/seeds` before writing `SYSTEM`.
++- Static checks reject legacy default write targets outside explicit migration/backcompat code.
++- Runtime smoke reports layout version, active root path, seed image path, migration status, and recovery gating.
++
++---
++
++## Documentation / Operational Notes
++
++- The new operator phrase should be "Nix-on-ROCK storage contract" rather than "guest junk drawer" or "main-space scratch".
++- `/storage/nix-on-rock` is intentionally visible. Operators may inspect it, back it up, or diagnose it over SSH.
++- `/flash` recovery flags remain the emergency control plane because `/flash` is FAT/readable externally and survives when `/storage` is suspect.
++- The plan should be implemented as a compatibility release first. A later cleanup can remove legacy aliases once installed devices have migrated.
++
++---
++
++## Sources & References
++
++- Prior plan: `docs/plans/2026-05-15-001-fix-offline-guest-seed-staging-plan.md`
++- User-facing SM8550 docs: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md`
++- Guest source docs: `rocknix-nix-guest: docs/contracts/HOW-TO-FALL-BACK.md`
++- Guest source docs: `rocknix-nix-guest: docs/contracts/layer14-main-space-contract.md`
++- Guest source docs: `rocknix-nix-guest: docs/contracts/layer14-soak-checklist.md`
++- Guest source docs: `rocknix-nix-guest: docs/contracts/layer14-dev-env-profile.md`
++- Substrate package: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk`
++- Root ensure helper: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure`
++- Guest start helper: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start`
++- Initramfs update staging: `projects/ROCKNIX/packages/sysutils/busybox/scripts/init`
++- Image packaging: `scripts/image`
++- Static checks: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Runtime smoke: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
+diff --git a/docs/plans/2026-05-17-001-feat-nix-on-rock-product-lane-plan.md b/docs/plans/2026-05-17-001-feat-nix-on-rock-product-lane-plan.md
+new file mode 100644
+index 0000000000..45173aabf1
+--- /dev/null
++++ b/docs/plans/2026-05-17-001-feat-nix-on-rock-product-lane-plan.md
+@@ -0,0 +1,381 @@
++---
++title: feat: Add Nix-on-ROCK SM8550 product lane
++type: feat
++status: completed
++date: 2026-05-17
++origin: docs/brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md
++---
++
++# feat: Add Nix-on-ROCK SM8550 product lane
++
++## Summary
++
++Add the first independent Nix-on-ROCK shipping loop as an SM8550-only product build lane with local quality gates, legible build evidence, an upstream-intake policy, and explicit on-device acceptance guidance. The plan keeps inherited ROCKNIX build internals where they are still useful, but stops treating upstream branch comparability as the product health signal.
++
++---
++
++## Problem Frame
++
++Nix-on-ROCK is becoming a product boundary rather than a small ROCKNIX patch stack. The current build and release surfaces still encode upstream ROCKNIX identity and validation assumptions, so the first breakaway slice needs to prove independent SM8550 product health without destabilizing the already-working thin-host, seed, recovery, and storage-contract path.
++
++---
++
++## Requirements
++
++- R1. Define Nix-on-ROCK-owned product behavior around SM8550 thin host, Nix guest lifecycle, storage contract, seed/update flow, recovery posture, and operator guidance. (Origin R1, AE1)
++- R2. Treat ROCKNIX as an upstream substrate source rather than the product identity or validation authority. (Origin R2, R3, AE3)
++- R3. Provide an SM8550-only build lane that validates Nix-on-ROCK on branch-local product gates. (Origin R4, R5, AE2)
++- R4. Preserve useful inherited safety gates: guest-substrate static checks, SM8550 `SYSTEM` budget, update seed payload checks, image integrity, and recovery/install invariants. (Origin R5, R10, AE4)
++- R5. Make build outputs maintainer-legible as Nix-on-ROCK without broad internal renaming. (Origin R6)
++- R6. Document an upstream-intake policy that replaces rebase-by-default with deliberate supplier review. (Origin R7, AE3)
++- R7. Keep the first slice narrow: no standalone repo extraction, public release channel, broad branding cleanup, or multi-device expansion. (Origin R8, R9)
++
++**Origin actors:** A1 Product maintainer, A2 Build/release operator, A3 Device operator, A4 Future planning/implementation agent, A5 ROCKNIX upstream
++
++**Origin flows:** F1 Boundary definition, F2 Independent SM8550 build proof, F3 Upstream intake after breakaway
++
++**Origin acceptance examples:** AE1 Boundary classification, AE2 Branch-authoritative build proof, AE3 Intentional upstream intake, AE4 Safety before branding
++
++---
++
++## Scope Boundaries
++
++### Deferred for later
++
++- Full repository extraction into a new standalone repo.
++- Complete renaming of every project variable, artifact, service, package, or historical reference.
++- Multi-device expansion beyond the currently proven SM8550 direction.
++- Public release branding, website, distribution channel, or end-user marketing.
++- Automated upstream cherry-pick tooling beyond a documented intake policy.
++
++### Outside this product's identity
++
++- Becoming a general ROCKNIX replacement for all supported devices.
++- Preserving upstream compatibility at the cost of Nix-on-ROCK product direction.
++- Treating the guest as a temporary experiment inside ROCKNIX rather than the main product architecture.
++- Building a generic Linux distro unrelated to the ROCKNIX-derived handheld substrate.
++
++### Deferred to Follow-Up Work
++
++- Public release publishing: create a Nix-on-ROCK release destination and release-body generator after the workflow artifact proof is stable.
++- Broad identity cleanup: rename inherited variables, payload filenames, and service/env prefixes only after the product lane proves useful.
++- Additional SM8550 variants: add explicit Thor or other compatible proof once a matching seed and device-validation loop exist.
++- Upstream automation: add cherry-pick/import tooling only after the manual intake policy has been used enough to reveal the right workflow.
++
++---
++
++## Context & Research
++
++### Relevant Code and Patterns
++
++- `.github/workflows/build-nightly.yml` is the current manual/scheduled build entrypoint. It can build SM8550 on the fork, but still fetches upstream ROCKNIX and uses upstream comparison as part of its integrity step.
++- `.github/workflows/build-device.yml` already has the reusable per-device graph and skips non-SM8550 host emulator/ARM jobs for SM8550.
++- `.github/workflows/build-aarch64-image.yml` already contains important SM8550 artifact gates: `SYSTEM` budget, update tar presence, seed payload presence, and image gzip validation.
++- `.github/workflows/build-image-only.yml` is valuable for fast iteration, but its base-run reuse means it should not become the first independent proof unless the base run comes from the same product lane.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh` is the central local contract gate and already covers thin-host, storage-contract, seed, workflow, and safety assumptions through shell fixtures and grep assertions.
++- `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh` is the existing runtime/on-device smoke harness and supports live mode through `ROCKNIX_GUEST_LIVE_SMOKE=1`.
++- `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md` is the current operator-facing SM8550 seed/install/recovery note and should remain aligned with product-lane acceptance guidance.
++
++### Institutional Learnings
++
++- The Nix-on-ROCK storage contract is the clearest current product-owned seam; keep `/storage/nix-on-rock` visible and stable while preserving recovery flags and update tar wire compatibility.
++- Split seed delivery is essential: the guest rootfs seed must remain outside `SYSTEM`, staged through the update tar payload and verified before extraction.
++- Fast-iter lanes are useful but are not a substitute for a full branch-authoritative build proof when lower-level artifacts or validation assumptions changed.
++- Fork update channels cannot rely on upstream `update.rocknix.org`; custom builds need their own artifact/release channel or manual update path until a product channel exists.
++- Live generation and recovery evidence matter: marker files are corroborating, while selected/running guest state and service health are authoritative for release acceptance.
++
++### External References
++
++- No external research is needed for this slice. The work is repository-specific CI/release posture and should follow existing local workflow patterns.
++
++---
++
++## Key Technical Decisions
++
++- Create a new product lane rather than rewriting the global `Build` workflow first: this isolates breakaway behavior, lowers regression risk, and keeps inherited ROCKNIX workflows available while the product lane proves itself.
++- Keep internal `PROJECT=ROCKNIX` and `target/ROCKNIX-*` payload filenames in the first slice: these names are deep in the build system and do not block product independence if wrapper names, manifests, and docs make the output legible.
++- Make upstream drift advisory, not blocking: local product quality gates should decide pass/fail; upstream changes should feed the intake policy.
++- Treat workflow-dispatch artifacts as the first proof, not public release publishing: this satisfies the independence need without prematurely choosing release infrastructure.
++- Preserve fast-iter as an iteration aid, not a release proof by default: reused artifacts can hide whether the independent lane actually validates the full product path.
++
++---
++
++## Open Questions
++
++### Resolved During Planning
++
++- What counts as the first independent build proof? A manually dispatchable SM8550 workflow artifact with manifest and documented on-device acceptance; scheduled/public release publishing is deferred.
++- Should upstream comparison remain blocking? No. For the Nix-on-ROCK product lane it should be non-blocking advisory context at most.
++- What minimal artifact identity is enough? Keep inherited payload filenames initially, but add Nix-on-ROCK workflow/artifact wrapper names plus a manifest/summary artifact.
++- Which device scope is first? The first proof is SM8550-only and should label the specific compatible/device validated on-device rather than claiming all variants.
++
++### Deferred to Implementation
++
++- Exact workflow job decomposition: the implementing agent should choose the smallest safe composition of existing reusable workflows and follow their current permission/artifact conventions.
++- Exact manifest fields: include the required evidence categories, but allow the implementation to derive field names from available workflow outputs and artifact contents.
++- Exact upstream drift report format: use the simplest markdown or summary output that is non-blocking and reviewable.
++- Exact live-smoke evidence bundle: refine based on the current device state and what can be collected safely without touching Android or bootloader partitions.
++
++---
++
++## High-Level Technical Design
++
++> *This illustrates the intended approach and is directional guidance for review, not implementation specification. The implementing agent should treat it as context, not code to reproduce.*
++
++```mermaid
++flowchart TD
++  A[Manual Nix-on-ROCK SM8550 workflow dispatch] --> B[Run local branch quality gates]
++  B --> C[Reuse existing SM8550 build graph]
++  C --> D[Verify artifact shape and safety gates]
++  D --> E[Generate Nix-on-ROCK manifest/summary]
++  E --> F[Upload workflow artifacts]
++  F --> G[Optional on-device acceptance evidence]
++
++  H[Upstream ROCKNIX changes] --> I[Non-blocking drift/intake review]
++  I --> J[Classify as critical substrate, optional, or irrelevant]
++  J --> K[Import intentionally or defer]
++```
++
++The product lane should fail on local product-quality regressions and artifact safety failures. Upstream drift should be visible to maintainers but should not decide whether a Nix-on-ROCK branch is healthy.
++
++---
++
++## Implementation Units
++
++### U1. Add an SM8550 Nix-on-ROCK product build lane
++
++**Goal:** Create the first branch-authoritative build entrypoint for Nix-on-ROCK as an SM8550 product, separate from the inherited all-device ROCKNIX build surface.
++
++**Requirements:** R1, R2, R3, R4, R7; F1, F2; AE1, AE2, AE4
++
++**Dependencies:** None
++
++**Files:**
++- Create: `.github/workflows/build-nix-on-rock-sm8550.yml`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Reference: `.github/workflows/build-device.yml`
++- Reference: `.github/workflows/build-aarch64-image.yml`
++- Reference: `.github/workflows/build-nightly.yml`
++
++**Approach:**
++- Add a workflow-dispatch lane whose visible purpose is Nix-on-ROCK SM8550 product validation.
++- Reuse existing SM8550 build graph pieces where possible instead of duplicating build logic.
++- Keep inherited build inputs such as `PROJECT=ROCKNIX` where required by the underlying build system.
++- Ensure the lane is explicitly SM8550-only and does not expand the all-device matrix.
++- Add static checks that make the product lane's existence and SM8550-only intent durable.
++
++**Patterns to follow:**
++- Existing reusable workflow composition in `.github/workflows/build-nightly.yml` and `.github/workflows/build-device.yml`.
++- Existing static workflow assertions in `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`.
++
++**Test scenarios:**
++- Happy path: workflow dispatch for the product lane targets only SM8550 and invokes the same SM8550 build graph used by the proven branch builds.
++- Edge case: adding another device to the product lane causes static checks to fail until the requirements and plan are updated.
++- Integration: the product lane preserves existing SM8550 artifact safety gates from the image build path.
++- Covers AE2. Branch-local product lane can be reviewed without relying on upstream branch comparability as the proof.
++
++**Verification:**
++- The new workflow is visible in GitHub Actions as a Nix-on-ROCK SM8550 lane.
++- Static checks pass and assert that the lane remains SM8550-only.
++- A manually triggered run reaches the existing SM8550 build graph rather than the all-device matrix.
++
++---
++
++### U2. Replace upstream-comparability gates with local product gates
++
++**Goal:** Stop upstream ROCKNIX branch comparison from being a blocking health signal in the product lane while preserving quality checks that catch real local regressions.
++
++**Requirements:** R2, R3, R4, R6; F2, F3; AE2, AE3
++
++**Dependencies:** U1
++
++**Files:**
++- Modify: `.github/workflows/build-nix-on-rock-sm8550.yml`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Reference: `.github/workflows/build-nightly.yml`
++- Reference: `.github/workflows/build-image-only.yml`
++
++**Approach:**
++- Keep blocking local gates: guest-substrate static checks, whitespace/syntax hygiene, artifact layout, `SYSTEM` budget, seed payload presence, and image integrity.
++- Do not require fetching or diffing against upstream ROCKNIX for the product lane to pass.
++- If upstream drift visibility is useful, expose it as advisory output or a separate manual/intake workflow rather than a product-lane failure.
++- Keep inherited global ROCKNIX workflows unchanged unless they directly conflict with the product lane.
++
++**Patterns to follow:**
++- Existing workflow integrity check blocks in `.github/workflows/build-aarch64-image.yml`.
++- Existing disabled/manual-only posture in `.github/workflows/trigger-fail-if-upstream-changed.yml`.
++
++**Test scenarios:**
++- Happy path: product lane local checks pass without network access to upstream ROCKNIX beyond dependencies required by the actual build.
++- Error path: guest-substrate static check failure fails the product lane.
++- Error path: artifact layout or `SYSTEM` budget failure fails the product lane.
++- Integration: upstream drift report, if present, is visible in logs or summary but does not alter product-lane pass/fail.
++- Covers AE2 and AE3. The branch can diverge while still producing a valid product build, and upstream changes are routed to intake rather than rebase pressure.
++
++**Verification:**
++- Product-lane pass/fail criteria are local and artifact-based.
++- Static checks prevent reintroducing upstream branch comparability as a blocking product-lane gate.
++
++---
++
++### U3. Add Nix-on-ROCK build manifest and artifact legibility
++
++**Goal:** Make successful artifacts understandable as Nix-on-ROCK outputs while preserving inherited payload names for compatibility.
++
++**Requirements:** R1, R4, R5; F2; AE2, AE4
++
++**Dependencies:** U1, U2
++
++**Files:**
++- Create: `.github/scripts/generate-nix-on-rock-build-manifest.sh`
++- Modify: `.github/workflows/build-nix-on-rock-sm8550.yml`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Reference: `.github/scripts/generate-release-body.sh`
++- Reference: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md`
++
++**Approach:**
++- Generate a small manifest or summary artifact for each product-lane build.
++- Include product identity, branch/SHA, SM8550 device scope, inherited payload naming note, guest/source revision evidence when available, seed archive evidence, storage-contract root, safety/recovery invariants, and explicit artifact status vocabulary.
++- Distinguish `BuildProof`, `DeviceAccepted`, and `ReleaseCandidate` status in the manifest vocabulary: CI may produce `BuildProof`; on-device evidence may promote a build to `DeviceAccepted`; public `ReleaseCandidate` remains deferred unless a future release channel is defined.
++- Prefer a small text/markdown artifact and GitHub job summary over large log retention for successful runs.
++- Keep public release-body generation out of this unit; the manifest is product-lane evidence, not a release publication system.
++
++**Patterns to follow:**
++- Existing release-body script for deriving artifact names and device context, but avoid inheriting all-device ROCKNIX branding.
++- Existing SM8550 documentation for seed, storage, and recovery vocabulary.
++
++**Test scenarios:**
++- Happy path: successful product-lane build uploads a Nix-on-ROCK manifest/summary alongside image/update artifacts.
++- Edge case: manifest clearly states inherited `ROCKNIX-*` payload names are compatibility internals during transition.
++- Error path: missing seed evidence or missing core artifact evidence prevents a manifest from claiming complete build-artifact readiness.
++- Integration: manifest references the same storage and recovery contracts documented for SM8550 operators.
++
++**Verification:**
++- A maintainer can inspect the workflow summary or manifest and tell what was built, from which branch/SHA, for which SM8550 scope, and with what seed/storage/recovery assumptions.
++- No broad `DISTRONAME`, `PROJECT`, or payload filename rename is required for artifact legibility.
++
++---
++
++### U4. Document upstream intake policy
++
++**Goal:** Replace implicit rebase obligation with an explicit supplier-review policy for importing ROCKNIX upstream changes.
++
++**Requirements:** R2, R6, R7; F1, F3; AE1, AE3
++
++**Dependencies:** U2
++
++**Files:**
++- Create: `docs/nix-on-rock/upstream-intake.md`
++- Create: `docs/nix-on-rock/product-boundary.md`
++- Modify: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md`
++- Reference: `docs/brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md`
++- Reference: `docs/plans/2026-05-16-001-refactor-nix-on-rock-storage-contract-plan.md`
++
++**Approach:**
++- Document Nix-on-ROCK-owned behavior, ROCKNIX-borrowed substrate, and out-of-scope upstream churn in one short product-boundary page.
++- Define intake classifications: critical substrate fix, optional substrate improvement, conflicting product change, irrelevant upstream product churn.
++- Define minimum intake trigger: before marking a build `DeviceAccepted`, and periodically or manually when the maintainer suspects relevant upstream substrate movement.
++- Define minimum intake record fields: upstream range or commit, classification, touched subsystem, product invariant impact, import decision, validation evidence, and an explicit “no relevant changes” outcome when review finds nothing to import.
++- Keep the policy manual-first and reviewable; do not automate cherry-picking in this slice.
++
++**Patterns to follow:**
++- Existing durable brainstorm/plan style in `docs/brainstorms/` and `docs/plans/`.
++- Existing storage-contract plan's distinction between canonical product paths and compatibility exceptions.
++
++**Test scenarios:**
++- Happy path: a future agent can classify thin-host guest lifecycle work as Nix-on-ROCK product work from the docs alone.
++- Happy path: a relevant upstream kernel/boot/security fix has a documented path to intentional import.
++- Edge case: upstream UI/emulator churn can be rejected or deferred without being treated as product health failure.
++- Covers AE1 and AE3. Boundary and intake records prevent future planning from silently returning to rebase-by-default.
++
++**Verification:**
++- Documentation states that upstream ROCKNIX is a supplier, not the product authority.
++- The SM8550 operator docs or product-lane manifest point maintainers toward the boundary and intake policy without making policy prose a brittle substrate static-check invariant.
++
++---
++
++### U5. Define on-device acceptance evidence for the first proof
++
++**Goal:** Make recovery/install safety an explicit acceptance layer for declaring the first independent product build useful.
++
++**Requirements:** R1, R4, R5, R7; F2; AE2, AE4
++
++**Dependencies:** U1, U3
++
++**Files:**
++- Create: `docs/nix-on-rock/sm8550-acceptance.md`
++- Modify: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md`
++- Modify: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++- Reference: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-activation-audit`
++- Reference: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++
++**Approach:**
++- Define the acceptance evidence bundle for a product-lane artifact: host SSH, default target, guest service health, activation audit, seed/storage contract evidence, and recovery flag behavior.
++- Separate CI build proof from device acceptance and release-candidate proof: CI can produce `BuildProof` artifacts; on-device smoke can mark a specific artifact `DeviceAccepted`; public `ReleaseCandidate` status remains out of scope for this slice.
++- Make device-compatible scope explicit in acceptance notes so an Odin2Portal proof is not accidentally presented as all-SM8550 validation.
++- Extend runtime smoke only where it improves evidence collection without making it dangerous or destructive.
++
++**Patterns to follow:**
++- Existing `ROCKNIX_GUEST_LIVE_SMOKE=1` live-mode structure.
++- Existing SM8550 README recovery and reseed notes.
++- Current activation audit behavior that treats selected/running guest state as authoritative and marker files as audit data.
++
++**Test scenarios:**
++- Happy path: live smoke reports host SSH active, guest active/running, zero failed guest units, and valid selected guest generation.
++- Happy path: acceptance doc names the specific compatible/device used for proof.
++- Error path: missing seed prevents guest start but leaves host recovery available.
++- Error path: corrupt or wrong-compatible seed fails closed before extraction.
++- Integration: legacy storage layout migration and clean-storage seed boot are included as acceptance scenarios, even if not run on every CI build.
++- Covers AE4. Recovery and install safety remain acceptance criteria before branding or release expansion.
++
++**Verification:**
++- A device operator can follow the acceptance doc to collect evidence for a product-lane artifact.
++- Runtime smoke remains safe by default and only performs live checks when explicitly enabled.
++
++---
++
++## System-Wide Impact
++
++- **Interaction graph:** The new workflow connects GitHub Actions build orchestration, existing reusable build jobs, guest-substrate static checks, artifact upload, and optional on-device smoke evidence.
++- **Error propagation:** Local quality/artifact failures should fail the product lane; upstream drift should surface as advisory context; on-device smoke failures should block acceptance but not necessarily invalidate the build artifact itself.
++- **State lifecycle risks:** Fast-iter builds reuse prior artifacts and can misrepresent independence; manifests must distinguish full product-lane proof from derivative image-only artifacts.
++- **API surface parity:** No public API changes. The external surfaces are GitHub Actions workflow names, artifact names, documentation, and operator-facing acceptance guidance.
++- **Integration coverage:** CI proves artifact shape and local contracts; on-device smoke proves recovery/install/guest lifecycle behavior.
++- **Unchanged invariants:** Keep `/flash/rocknix.no-nspawn`, `rocknix.safe=1`, `/flash/rocknix.reseed-guest`, update tar `target/seed/`, and current internal payload filenames stable in this slice.
++
++---
++
++## Risks & Dependencies
++
++| Risk | Mitigation |
++|------|------------|
++| New workflow diverges from existing build graph and becomes another maintenance burden | Reuse existing reusable workflows and centralize only the product-lane orchestration/summary behavior in the new workflow. |
++| Product lane silently drops a safety gate from current SM8550 builds | Extend static checks to assert retained gates and inspect workflow contents. |
++| Artifact naming remains confusing because payloads still say ROCKNIX | Add Nix-on-ROCK wrapper names and manifest; explicitly document inherited payload names as transition internals. |
++| Upstream drift becomes invisible after removing blocking diff checks | Add advisory drift/intake reporting and a manual intake policy. |
++| Fast-iter artifacts are mistaken for release proof | Document fast-iter limitations and include base-run provenance in manifests where applicable. |
++| On-device acceptance becomes too heavy to run frequently | Separate required CI artifact gates from device-acceptance smoke; keep destructive tests manual and explicit. |
++
++---
++
++## Documentation / Operational Notes
++
++- Add `docs/nix-on-rock/` as the durable home for product-boundary, upstream-intake, and SM8550 acceptance guidance.
++- Keep `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md` focused on operator install/recovery steps and link to deeper product-lane docs rather than duplicating all policy content.
++- Do not alter Android/bootloader partitions as part of acceptance guidance; maintain the existing safe-fastboot boundaries.
++- The currently running GitHub Actions build for the storage-contract branch can inform confidence, but this plan should not depend on that run to define the product lane.
++
++---
++
++## Sources & References
++
++- **Origin document:** [docs/brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md](../brainstorms/2026-05-17-001-break-away-nix-on-rock-requirements.md)
++- Related plan: [docs/plans/2026-05-16-001-refactor-nix-on-rock-storage-contract-plan.md](2026-05-16-001-refactor-nix-on-rock-storage-contract-plan.md)
++- Related plan: [docs/plans/2026-05-15-001-fix-offline-guest-seed-staging-plan.md](2026-05-15-001-fix-offline-guest-seed-staging-plan.md)
++- Relevant workflow: `.github/workflows/build-nightly.yml`
++- Relevant workflow: `.github/workflows/build-device.yml`
++- Relevant workflow: `.github/workflows/build-aarch64-image.yml`
++- Relevant workflow: `.github/workflows/build-image-only.yml`
++- Relevant tests: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh`
++- Relevant smoke: `projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`
++- Relevant operator docs: `documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md`
+diff --git a/documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md b/documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md
+new file mode 100644
+index 0000000000..d6f8df1a62
+--- /dev/null
++++ b/documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md
+@@ -0,0 +1,56 @@
++# SM8550 guest seed install notes
++
++SM8550 builds use a thin ROCKNIX-derived host and a NixOS guest root under `/storage/nix-on-rock/rootfs/current`.
++For the product boundary, upstream intake policy, and acceptance vocabulary, see:
++
++- `docs/nix-on-rock/product-boundary.md`
++- `docs/nix-on-rock/upstream-intake.md`
++- `docs/nix-on-rock/sm8550-acceptance.md`
++
++
++The guest rootfs seed is too large for the 2GB `/flash/SYSTEM` partition, so it is not embedded in `SYSTEM`.
++
++## Offline seed location
++
++Stage the matching seed on the host storage partition:
++
++```sh
++mkdir -p /storage/nix-on-rock/images/seeds
++cp rocknix-guest-rootfs-<device>-<rev>.tar.zst /storage/nix-on-rock/images/seeds/
++```
++
++The host image ships `/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest` with the expected filename, SHA256, revision, and device compatible string. `rocknix-guest-root-ensure` reads `/proc/device-tree/compatible`, selects the matching seed, verifies SHA256, then extracts it into `/storage/nix-on-rock/rootfs/current` only when that root is missing or empty.
++
++## Odin2Portal vs Thor
++
++Do not reuse a seed across SM8550 variants:
++
++- Odin2Portal / sobo uses compatible `ayn,odin2portal`.
++- Thor / bandai uses compatible `ayn,thor` and needs a Thor seed before testing this flow there.
++
++A mismatched seed fails closed before extraction.
++
++## Update tar flow
++
++SM8550 update tarballs carry the seed outside `SYSTEM` under `target/seed/`. During update, initramfs stages it into `/storage/nix-on-rock/images/seeds/` before writing the new `SYSTEM` to `/flash`.
++
++## Full image flow
++
++Full images remain host-only. After flashing, copy the matching seed to `/storage/nix-on-rock/images/seeds/` before expecting the guest to boot from an empty `/storage`.
++
++If the seed is missing or corrupt, host SSH/recovery should remain available, but `rocknix-guest.service` will not start.
++
++## Explicit reseed
++
++Normal updates do not overwrite an existing valid guest root. To force a clean reseed from a staged seed, stop the guest and create:
++
++```sh
++touch /flash/rocknix.reseed-guest
++reboot
++```
++
++On success, the old root is retained as `/storage/nix-on-rock/rootfs/previous` and the reseed flag is cleared.
++
++## Legacy layout compatibility
++
++For the migration window, the host migrates valid legacy paths from `/storage/machines/rocknix-guest` and `/storage/.guest` into `/storage/nix-on-rock` before first boot. The guest still sees the host/guest exchange as `/storage/.guest`, but the host-owned persistent contract is `/storage/nix-on-rock`.

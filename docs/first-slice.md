@@ -9,4 +9,4 @@ Acceptance for this slice:
 - `scripts/verify-sm8550-contract` passes in the patched tree.
 - GitHub Actions can run `scripts/build-sm8550` and upload SM8550 artifacts plus `nix-on-rocks-build-manifest.md`.
 
-The initial patch is intentionally monolithic. After the external builder proves itself, split it into reviewable topics: host substrate, guest seed staging, storage contract, CI/build lane, product docs.
+The initial patch queue is split into reviewable topics: developer environment, CI/product lane, SM8550 host config, network/recovery services, initramfs seed staging, guest substrate, and product docs/acceptance evidence.

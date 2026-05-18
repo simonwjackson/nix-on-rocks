@@ -1,0 +1,121 @@
+diff --git a/packages/network/connman/package.mk b/packages/network/connman/package.mk
+index 79254b6f1b..e90d189de7 100644
+--- a/packages/network/connman/package.mk
++++ b/packages/network/connman/package.mk
+@@ -81,7 +81,7 @@ post_makeinstall_target() {
+         -e "s|^# TetheringTechnologies.*|TetheringTechnologies = ethernet,wifi|g" \
+         -e "s|^# AllowHostnameUpdates.*|AllowHostnameUpdates = false|g" \
+         -e "s|^# PersistentTetheringMode.*|PersistentTetheringMode = true|g" \
+-        -e "s|^# NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb|NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb,docker,veth,zt|g"
++        -e "s|^# NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb|NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb,docker,veth,zt,wlan,wlan0,wl|g"
+ 
+   mkdir -p ${INSTALL}/usr/share/connman/
+     cp ${PKG_DIR}/config/settings ${INSTALL}/usr/share/connman/
+diff --git a/packages/network/openssh/system.d/sshd.service b/packages/network/openssh/system.d/sshd.service
+index 2aa45f8a06..d57ba4c426 100644
+--- a/packages/network/openssh/system.d/sshd.service
++++ b/packages/network/openssh/system.d/sshd.service
+@@ -7,6 +7,7 @@ ConditionPathExists=|/storage/.cache/services/sshd.conf
+ [Service]
+ Restart=on-failure
+ EnvironmentFile=-/storage/.cache/services/sshd.conf
++ExecStartPre=-/bin/sh -c 'mkdir -p /var/empty && chmod 0755 /var/empty'
+ ExecStartPre=/usr/bin/ssh-keygen -A
+ ExecStart=/usr/sbin/sshd -D $SSH_ARGS
+ ExecReload=/bin/kill -HUP $MAINPID
+diff --git a/packages/sysutils/tz/system.d/tz-data.service b/packages/sysutils/tz/system.d/tz-data.service
+index d54d32b8bb..e1092e23fa 100644
+--- a/packages/sysutils/tz/system.d/tz-data.service
++++ b/packages/sysutils/tz/system.d/tz-data.service
+@@ -8,7 +8,7 @@ After=var.mount systemd-tmpfiles-setup.service
+ Type=oneshot
+ Environment=TIMEZONE=UTC
+ EnvironmentFile=-/storage/.cache/timezone
+-ExecStart=/bin/ln -sf /usr/share/zoneinfo/${TIMEZONE} /var/run/localtime
++ExecStart=/bin/sh -c 'mkdir -p /var/run && ln -sf /usr/share/zoneinfo/${TIMEZONE} /var/run/localtime'
+ RemainAfterExit=yes
+ StartLimitInterval=0
+ 
+diff --git a/projects/ROCKNIX/packages/network/connman/package.mk b/projects/ROCKNIX/packages/network/connman/package.mk
+index def3453f58..6f9b7bf525 100644
+--- a/projects/ROCKNIX/packages/network/connman/package.mk
++++ b/projects/ROCKNIX/packages/network/connman/package.mk
+@@ -77,7 +77,7 @@ post_makeinstall_target() {
+         -e "s|^# TetheringTechnologies.*|TetheringTechnologies = ethernet|g" \
+         -e "s|^# AllowHostnameUpdates.*|AllowHostnameUpdates = false|g" \
+         -e "s|^# PersistentTetheringMode.*|PersistentTetheringMode = true|g" \
+-        -e "s|^# NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb|NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb,docker,veth,zt,p2p|g"
++        -e "s|^# NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb|NetworkInterfaceBlacklist = vmnet,vboxnet,virbr,ifb,docker,veth,zt,p2p,wlan,wlan0,wl|g"
+ 
+   mkdir -p ${INSTALL}/usr/share/connman/
+     cp ${PKG_DIR}/config/settings ${INSTALL}/usr/share/connman/
+diff --git a/projects/ROCKNIX/packages/network/iwd/system.d/iwd.service b/projects/ROCKNIX/packages/network/iwd/system.d/iwd.service
+index 921c09546a..f3ffdac6fd 100644
+--- a/projects/ROCKNIX/packages/network/iwd/system.d/iwd.service
++++ b/projects/ROCKNIX/packages/network/iwd/system.d/iwd.service
+@@ -1,12 +1,13 @@
+ [Unit]
+ Description=Wireless service
+ Documentation=man:iwd(8) man:iwd.config(5) man:iwd.network(5) man:iwd.ap(5)
+-After=network-pre.target
++After=dbus.service network-pre.target
+ Before=network.target
+-Wants=network.target
++Wants=dbus.service network.target
+ 
+ [Service]
+ Environment=STATE_DIRECTORY=/storage/.cache/iwd
++Environment=DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket
+ Type=dbus
+ BusName=net.connman.iwd
+ ExecStart=/usr/lib/iwd
+diff --git a/projects/ROCKNIX/packages/network/openssh/package.mk b/projects/ROCKNIX/packages/network/openssh/package.mk
+index 84399e7ae3..6fa1851e08 100644
+--- a/projects/ROCKNIX/packages/network/openssh/package.mk
++++ b/projects/ROCKNIX/packages/network/openssh/package.mk
+@@ -54,5 +54,10 @@ post_makeinstall_target() {
+ }
+ 
+ post_install() {
++  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
++    # SM8550 minimal host is SSH-first recovery. Do not require the legacy
++    # UI settings file or `ssh` kernel arg before starting sshd.
++    sed -e "\|^Condition.*|d" -i ${INSTALL}/usr/lib/systemd/system/sshd.service
++  fi
+   enable_service sshd.service
+ }
+diff --git a/projects/ROCKNIX/packages/network/openssh/system.d/sshd.service b/projects/ROCKNIX/packages/network/openssh/system.d/sshd.service
+index 5417e4ae5d..71f3f3f03e 100644
+--- a/projects/ROCKNIX/packages/network/openssh/system.d/sshd.service
++++ b/projects/ROCKNIX/packages/network/openssh/system.d/sshd.service
+@@ -7,7 +7,7 @@ ConditionPathExists=|/storage/.cache/services/sshd.conf
+ [Service]
+ Restart=on-failure
+ EnvironmentFile=-/storage/.cache/services/sshd.conf
+-ExecStartPre=-/bin/sh -c 'mkdir -p /storage/.cache/ssh'
++ExecStartPre=-/bin/sh -c 'mkdir -p /storage/.cache/ssh /var/empty && chmod 0755 /var/empty'
+ ExecStartPre=/usr/bin/ssh-keygen -A
+ ExecStartPre=-/bin/sh -c 'chmod 600 /storage/.cache/ssh/ssh_host_*'
+ ExecStartPre=-/bin/sh -c 'chmod 644 /storage/.cache/ssh/ssh_host_*.pub'
+diff --git a/projects/ROCKNIX/packages/virtual/network/package.mk b/projects/ROCKNIX/packages/virtual/network/package.mk
+index cb5a470bc3..507ef4cec8 100644
+--- a/projects/ROCKNIX/packages/virtual/network/package.mk
++++ b/projects/ROCKNIX/packages/virtual/network/package.mk
+@@ -7,7 +7,16 @@ PKG_VERSION=""
+ PKG_LICENSE="various"
+ PKG_SITE="https://libreelec.tv"
+ PKG_URL=""
+-PKG_DEPENDS_TARGET="toolchain iwd networkmanager netbase ethtool openssh iw wireless-regdb rsync tailscale avahi miniupnpc nss-mdns speedtest-cli"
++if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
++  # Minimal SM8550 host keeps the recovery/update substrate reachable even
++  # when the guest cannot boot: host Wi-Fi, SSH, transfer tooling, and basic
++  # name resolution stay on the host. Product-facing network services
++  # (tailscale, avahi, miniupnpc, speedtest-cli, samba, simple-http-server,
++  # zerotier, wireguard) move to the guest or disappear from the host image.
++  PKG_DEPENDS_TARGET="toolchain iwd networkmanager netbase ethtool openssh iw wireless-regdb rsync nss-mdns"
++else
++  PKG_DEPENDS_TARGET="toolchain iwd networkmanager netbase ethtool openssh iw wireless-regdb rsync tailscale avahi miniupnpc nss-mdns speedtest-cli"
++fi
+ PKG_SECTION="virtual"
+ PKG_LONGDESC="Metapackage for various packages to install network support"
+ 

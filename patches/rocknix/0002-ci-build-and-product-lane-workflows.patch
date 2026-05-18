@@ -1,0 +1,1563 @@
+diff --git a/.github/scripts/generate-nix-on-rock-build-manifest.sh b/.github/scripts/generate-nix-on-rock-build-manifest.sh
+new file mode 100755
+index 0000000000..4815b773e2
+--- /dev/null
++++ b/.github/scripts/generate-nix-on-rock-build-manifest.sh
+@@ -0,0 +1,163 @@
++#!/usr/bin/env bash
++# shellcheck disable=SC2016
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++#
++# Generate a small Nix-on-ROCK build-evidence artifact. This deliberately sits
++# beside inherited ROCKNIX payload filenames rather than renaming the payloads.
++
++set -euo pipefail
++
++out=${1:-nix-on-rock-build-manifest.md}
++artifact_root=${ARTIFACT_ROOT:-artifacts}
++device=${NIX_ON_ROCK_DEVICE:-${DEVICE:-SM8550}}
++status=${NIX_ON_ROCK_ARTIFACT_STATUS:-BuildProof}
++intake_note=${NIX_ON_ROCK_INTAKE_NOTE:-not-reviewed}
++branch=${GITHUB_REF_NAME:-$(git branch --show-current 2>/dev/null || echo unknown)}
++sha=${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}
++run_id=${GITHUB_RUN_ID:-unknown}
++run_attempt=${GITHUB_RUN_ATTEMPT:-unknown}
++repo=${GITHUB_REPOSITORY:-unknown}
++package_mk=${NIX_ON_ROCK_SUBSTRATE_PACKAGE:-projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk}
++sm8550_doc=documentation/PER_DEVICE_DOCUMENTATION/SM8550/README.md
++
++extract_pkg_var() {
++  var=$1
++  [ -r "${package_mk}" ] || return 0
++  sed -n "s/^${var}=\"\{0,1\}\([^\"]*\)\"\{0,1\}$/\1/p" "${package_mk}" | sed -n '1p'
++}
++
++list_artifact_files() {
++  [ -d "${artifact_root}" ] || return 0
++  find "${artifact_root}" -type f | sort
++}
++
++image_files=$(list_artifact_files | grep -E '/ROCKNIX-.*\.img\.gz$|^ROCKNIX-.*\.img\.gz$' || true)
++update_files=$(list_artifact_files | grep -E '/ROCKNIX-.*\.tar$|^ROCKNIX-.*\.tar$' || true)
++image_sha_files=$(list_artifact_files | grep -E '/ROCKNIX-.*\.img\.gz\.sha256$|^ROCKNIX-.*\.img\.gz\.sha256$' || true)
++update_sha_files=$(list_artifact_files | grep -E '/ROCKNIX-.*\.tar\.sha256$|^ROCKNIX-.*\.tar\.sha256$' || true)
++count_lines() {
++  [ -n "$1" ] || { echo 0; return; }
++  printf '%s\n' "$1" | wc -l | tr -d ' '
++}
++
++update_tar=$(printf '%s\n' "${update_files}" | sed -n '1p')
++
++payload_for_checksum() {
++  checksum_file=$1
++  checksum_payload=$(awk 'NR == 1 { print $2 }' "${checksum_file}")
++  checksum_payload_base=$(basename "${checksum_payload}")
++  list_artifact_files | awk -v base="${checksum_payload_base}" 'base == "" { exit } { n=split($0, parts, "/"); if (parts[n] == base) { print; exit } }'
++}
++
++validate_checksum_file() {
++  checksum_file=$1
++  expected_hash=$(awk 'NR == 1 { print $1 }' "${checksum_file}")
++  payload_file=$(payload_for_checksum "${checksum_file}")
++  [ -n "${expected_hash}" ] || { echo "checksum file ${checksum_file} has no hash" >&2; exit 1; }
++  [ -n "${payload_file}" ] || { echo "checksum file ${checksum_file} has no matching payload" >&2; exit 1; }
++  actual_hash=$(sha256sum "${payload_file}" | awk '{print $1}')
++  if [ "${actual_hash}" != "${expected_hash}" ]; then
++    echo "checksum file ${checksum_file} mismatch for ${payload_file}: ${actual_hash} != ${expected_hash}" >&2
++    exit 1
++  fi
++}
++
++seed_archive=$(extract_pkg_var PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE)
++seed_sha256=$(extract_pkg_var PKG_NIX_GUEST_ROOTFS_SEED_SHA256)
++seed_compatible=$(extract_pkg_var PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE)
++guest_rev=$(extract_pkg_var PKG_NIX_GUEST_REV)
++system_bytes="unknown"
++seed_payload="unknown"
++seed_tar_entry=""
++actual_seed_sha256="unknown"
++
++if [ -n "${update_tar}" ] && [ -r "${update_tar}" ]; then
++  system_bytes=$(tar -tvf "${update_tar}" 2>/dev/null | awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }')
++  system_bytes=${system_bytes:-unknown}
++  seed_tar_entry=$(tar -tf "${update_tar}" 2>/dev/null | grep -E '(^|/)target/seed/.*\.tar\.zst$' | sed -n '1p' || true)
++  if [ -n "${seed_tar_entry}" ]; then
++    seed_payload=$(basename "${seed_tar_entry}")
++  fi
++fi
++
++case "${status}" in
++  BuildProof|DeviceAccepted|ReleaseCandidate) : ;;
++  *)
++    echo "unsupported Nix-on-ROCK artifact status: ${status}" >&2
++    exit 1
++    ;;
++esac
++
++if [ "${status}" = "BuildProof" ] || [ "${status}" = "DeviceAccepted" ] || [ "${status}" = "ReleaseCandidate" ]; then
++  [ "$(count_lines "${image_files}")" -eq 1 ] || { echo "manifest cannot claim ${status}: expected exactly one image payload" >&2; exit 1; }
++  [ "$(count_lines "${image_sha_files}")" -eq 1 ] || { echo "manifest cannot claim ${status}: expected exactly one image checksum" >&2; exit 1; }
++  [ "$(count_lines "${update_files}")" -eq 1 ] || { echo "manifest cannot claim ${status}: expected exactly one update payload" >&2; exit 1; }
++  [ "$(count_lines "${update_sha_files}")" -eq 1 ] || { echo "manifest cannot claim ${status}: expected exactly one update checksum" >&2; exit 1; }
++  while IFS= read -r checksum_file; do
++    [ -n "${checksum_file}" ] || continue
++    validate_checksum_file "${checksum_file}"
++  done <<EOF
++${image_sha_files}
++${update_sha_files}
++EOF
++  [ "${system_bytes}" != "unknown" ] || { echo "manifest cannot claim ${status}: update tar lacks target/SYSTEM" >&2; exit 1; }
++  [ "${seed_payload}" != "unknown" ] || { echo "manifest cannot claim ${status}: update tar lacks target/seed/*.tar.zst" >&2; exit 1; }
++  if [ -n "${seed_archive}" ] && [ "${seed_payload}" != "${seed_archive}" ]; then
++    echo "manifest cannot claim ${status}: update seed ${seed_payload} does not match expected ${seed_archive}" >&2
++    exit 1
++  fi
++  if [ -n "${seed_sha256}" ] && [ -n "${seed_tar_entry}" ]; then
++    actual_seed_sha256=$(tar -xOf "${update_tar}" "${seed_tar_entry}" | sha256sum | awk '{print $1}')
++    if [ "${actual_seed_sha256}" != "${seed_sha256}" ]; then
++      echo "manifest cannot claim ${status}: update seed sha256 mismatch ${actual_seed_sha256} != ${seed_sha256}" >&2
++      exit 1
++    fi
++  fi
++fi
++
++{
++  printf '# Nix-on-ROCK SM8550 Build Manifest\n\n'
++  printf '## Status\n\n'
++  printf -- '- **Artifact status:** `%s`\n' "${status}"
++  printf -- '- **Meaning:** CI-produced artifact evidence. `DeviceAccepted` requires separate on-device smoke evidence; `ReleaseCandidate` is reserved for a future public release channel.\n\n'
++
++  printf '## Build Identity\n\n'
++  printf -- '- **Product:** Nix-on-ROCK\n'
++  printf -- '- **Repository:** `%s`\n' "${repo}"
++  printf -- '- **Branch:** `%s`\n' "${branch}"
++  printf -- '- **Commit:** `%s`\n' "${sha}"
++  printf -- '- **Run:** `%s` attempt `%s`\n' "${run_id}" "${run_attempt}"
++  printf -- '- **Device lane:** `%s`\n' "${device}"
++  printf -- '- **Inherited build project:** `ROCKNIX`\n\n'
++
++  printf '## Payloads\n\n'
++  printf 'Payload filenames intentionally retain inherited `ROCKNIX-*` names during this transition. The workflow/artifact wrapper and this manifest identify the build as Nix-on-ROCK.\n\n'
++  printf -- '- **Image files:**\n'
++  if [ -n "${image_files}" ]; then printf '%s\n' "${image_files}" | sed 's#^#  - `#; s#$#`#'; else printf '  - none found\n'; fi
++  printf -- '- **Image checksum files:**\n'
++  if [ -n "${image_sha_files}" ]; then printf '%s\n' "${image_sha_files}" | sed 's#^#  - `#; s#$#`#'; else printf '  - none found\n'; fi
++  printf -- '- **Update files:**\n'
++  if [ -n "${update_files}" ]; then printf '%s\n' "${update_files}" | sed 's#^#  - `#; s#$#`#'; else printf '  - none found\n'; fi
++  printf -- '- **Update checksum files:**\n'
++  if [ -n "${update_sha_files}" ]; then printf '%s\n' "${update_sha_files}" | sed 's#^#  - `#; s#$#`#'; else printf '  - none found\n'; fi
++  printf -- '- **Update `target/SYSTEM` bytes:** `%s`\n\n' "${system_bytes}"
++
++  printf '## Guest Seed Evidence\n\n'
++  printf -- '- **Packaged guest revision:** `%s`\n' "${guest_rev:-unknown}"
++  printf -- '- **Manifest seed archive:** `%s`\n' "${seed_archive:-unknown}"
++  printf -- '- **Update seed payload:** `%s`\n' "${seed_payload}"
++  printf -- '- **Expected seed SHA256:** `%s`\n' "${seed_sha256:-unknown}"
++  printf -- '- **Actual update seed SHA256:** `%s`\n' "${actual_seed_sha256}"
++  printf -- '- **Seed compatible:** `%s`\n\n' "${seed_compatible:-unknown}"
++
++  printf '## Storage and Recovery Contract\n\n'
++  printf -- '- **Guest root:** `/storage/nix-on-rock/rootfs/current`\n'
++  printf -- '- **Seed directory:** `/storage/nix-on-rock/images/seeds`\n'
++  printf -- '- **Explicit recovery flags:** `/flash/rocknix.no-nspawn`, `rocknix.safe=1`, `/flash/rocknix.reseed-guest`\n'
++  printf -- '- **Operator notes:** `%s`\n\n' "${sm8550_doc}"
++
++  printf '## Upstream Intake\n\n'
++  printf -- '- **Upstream intake note:** `%s`\n' "${intake_note}"
++  printf -- '- **Policy:** Review upstream ROCKNIX as a substrate supplier; branch-local Nix-on-ROCK gates decide this build status.\n'
++} > "${out}"
+diff --git a/.github/workflows/build-aarch64-emu-libretro.yml b/.github/workflows/build-aarch64-emu-libretro.yml
+index 2ee1d6341c..8b11b7192a 100644
+--- a/.github/workflows/build-aarch64-emu-libretro.yml
++++ b/.github/workflows/build-aarch64-emu-libretro.yml
+@@ -53,8 +53,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-emu-libretro.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."  
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-aarch64-${{ inputs.DEVICE }}-emu-libretro.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: Download aarch64 (${{ inputs.DEVICE }})
+         uses: actions/download-artifact@v8
+diff --git a/.github/workflows/build-aarch64-emu-standalone.yml b/.github/workflows/build-aarch64-emu-standalone.yml
+index 823eb7b517..c4708d99c7 100644
+--- a/.github/workflows/build-aarch64-emu-standalone.yml
++++ b/.github/workflows/build-aarch64-emu-standalone.yml
+@@ -42,28 +42,39 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          BASE="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache"
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
+           PREFIX="ccache-aarch64-${{ inputs.DEVICE }}-emu-standalone.tar.part-"
+-          found_any=0
+-          for suffix in $(printf "%s\n" {a..z}{a..z}); do
+-            FILE="${PREFIX}${suffix}"
+-            URL="${BASE}/${FILE}"
+-          
+-            echo "Trying $URL"
+-            if curl -L --fail --silent --show-error -o "$FILE" "$URL"; then
+-              echo "Downloaded $FILE"
+-              found_any=1
+-            else
+-              echo "No more parts found at $URL"
+-              break
+-            fi
+-          done
+-          if [ "$found_any" -eq 0 ]; then
+-            echo "No cache found, skipping."
++          PRIMARY_BASE="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache"
++          FALLBACK_BASE="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache"
++
++          download_parts() {
++            local base="$1"
++            local found=0
++            for suffix in $(printf "%s\n" {a..z}{a..z}); do
++              local file="${PREFIX}${suffix}"
++              local url="${base}/${file}"
++              if curl -L --fail --silent --show-error -o "$file" "$url"; then
++                echo "Downloaded $file"
++                found=1
++              else
++                break
++              fi
++            done
++            if [ "$found" -eq 1 ]; then return 0; else return 1; fi
++          }
++
++          if download_parts "$PRIMARY_BASE"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && download_parts "$FALLBACK_BASE"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f ${PREFIX}*
+             exit 0
+           fi
+           cat ${PREFIX}* > ccache.tar
+-          tar -xf ccache.tar || { echo "Extract failed"; exit 0; }
++          tar -xf ccache.tar || { echo "Extract failed"; rm -f ${PREFIX}* ccache.tar; exit 0; }
+           rm -f ${PREFIX}* ccache.tar
+ 
+       - name: Download aarch64 (${{ inputs.DEVICE }})
+diff --git a/.github/workflows/build-aarch64-image.yml b/.github/workflows/build-aarch64-image.yml
+index b0696c63b9..f096beebdb 100644
+--- a/.github/workflows/build-aarch64-image.yml
++++ b/.github/workflows/build-aarch64-image.yml
+@@ -20,6 +20,16 @@ on:
+         description: "build official version"
+         type: string
+         required: true
++      ARTIFACT_PREFIX:
++        description: "Uploaded image/update artifact prefix"
++        type: string
++        required: false
++        default: "ROCKNIX"
++      DOCKER_IMAGE:
++        description: "Docker image reference to use for the build container"
++        type: string
++        required: false
++        default: ""
+ 
+ jobs:
+   build-aarch64-image:
+@@ -28,6 +38,7 @@ jobs:
+       JAVA_HOME: /usr
+       PROJECT: ${{ inputs.PROJECT }}
+       DEVICE: ${{ inputs.DEVICE }}
++      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE || format('ghcr.io/{0}/rocknix-build:latest', inputs.OWNER_LC) }}
+       ARCH: aarch64
+       CACHE_KEY: ccache-aarch64-${{ inputs.DEVICE }}-image-${{ github.sha }}
+       DISABLE_COLORS: yes
+@@ -49,65 +60,104 @@ jobs:
+         with:
+           fetch-depth: 0
+ 
++      # SM8550 minimal-host builds skip the host UX/emulator jobs, so the
++      # image step consumes the base aarch64 artifacts directly instead of
++      # the emu-libretro / emu-standalone aggregate artifacts.
++      - name: Download aarch64 (${{ inputs.DEVICE }})
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        uses: actions/download-artifact@v8
++        with:
++          name: aarch64 (${{ inputs.DEVICE }})
++
++      - name: Extract artifact aarch64
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: tar -xf build.aarch64.tar
++
++      - name: Clean up compressed aarch64 file
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: rm build.aarch64.tar
++
++      - name: Download aarch64 build (${{ inputs.DEVICE }})
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        uses: actions/download-artifact@v8
++        with:
++          name: aarch64 build (${{ inputs.DEVICE }})
++
++      - name: Extract artifact aarch64 build
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: tar -xf build.build.aarch64.tar
++
++      - name: Clean up compressed aarch64 build file
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: rm build.build.aarch64.tar
++
+       - name: Download arm (${{ inputs.DEVICE }})
+-        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
++        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8550' && inputs.DEVICE != 'SM8750' }}
+         uses: actions/download-artifact@v8
+         with:
+           name: arm (${{ inputs.DEVICE }})
+ 
+       - name: Extract artifact arm
+-        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
++        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8550' && inputs.DEVICE != 'SM8750' }}
+         run: |
+           tar --zstd -xf build.arm.tar.zst
+ 
+       - name: Clean up compressed arm file
+-        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
++        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8550' && inputs.DEVICE != 'SM8750' }}
+         run: rm build.arm.tar.zst
+         
+       - name: Download emu-libretro (${{ inputs.DEVICE }})
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         uses: actions/download-artifact@v8
+         with:
+           name: emu-libretro (${{ inputs.DEVICE }})
+ 
+       - name: Extract artifact emu-libretro
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         run: |
+           cat build.emu-libretro.tar.part* > build.emu-libretro.tar
+           tar -xf build.emu-libretro.tar
+ 
+       - name: Clean up compressed emu-libretro file
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         run: rm build.emu-libretro.tar*
+ 
+       - name: Download emu-standalone (${{ inputs.DEVICE }})
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         uses: actions/download-artifact@v8
+         with:
+           name: emu-standalone (${{ inputs.DEVICE }})
+ 
+       - name: Extract artifact emu-standalone
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         run: |
+           cat build.emu-standalone.tar.part* > build.emu-standalone.tar
+           tar --skip-old-files -xf build.emu-standalone.tar
+ 
+       - name: Clean up compressed emu-standalone file
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         run: rm build.emu-standalone.tar*
+ 
+       # clean to rebuild retroarch with 32bit enabled
+       - name: Clean retroarch
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         run: |
+           ./scripts/get_env > .env
+-          docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
++          docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "${DOCKER_IMAGE}" \
+             bash -c "./scripts/clean retroarch"
+       # clean to rebuild emulationstation with credentials
+       - name: Clean emulationstation
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         run: |
+           ./scripts/get_env > .env
+-          docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
++          docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "${DOCKER_IMAGE}" \
+             bash -c "./scripts/clean emulationstation"
+ 
+       - name: build
+         run: |
+           ./scripts/get_env > .env
+           set -e
+-          { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
++          { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "${DOCKER_IMAGE}" \
+             bash -c "./scripts/build_distro"; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
+           exit_code=$(<docker_exit_code)
+           exit $exit_code
+@@ -121,12 +171,74 @@ jobs:
+             output.log
+             ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.threads/logs/
+ 
++      - name: Verify SM8550 host and seed artifacts
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: |
++          set -euo pipefail
++          budget_mib="$(sed -n -e 's/.*SM8550_FLASH_PARTITION_BUDGET_MIB:-\([0-9][0-9]*\).*/\1/p' -e 's/^[[:space:]]*SM8550_FLASH_PARTITION_BUDGET_MIB="\{0,1\}\([0-9][0-9]*\).*/\1/p' projects/ROCKNIX/devices/SM8550/options | head -1)"
++          if [ -z "${budget_mib}" ]; then
++            echo "unable to parse SM8550_FLASH_PARTITION_BUDGET_MIB" >&2
++            exit 1
++          fi
++          budget_bytes="$((budget_mib * 1024 * 1024))"
++          update_tars="$(find target -maxdepth 1 -name 'ROCKNIX-*.tar' | sort)"
++          update_tar_count="$(printf '%s\n' "${update_tars}" | sed '/^$/d' | wc -l | tr -d ' ')"
++          if [ "${update_tar_count}" -ne 1 ]; then
++            echo "expected exactly one SM8550 update tar, found ${update_tar_count}" >&2
++            exit 1
++          fi
++          update_tar="${update_tars}"
++          system_bytes="$(tar -tvf "${update_tar}" | awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }')"
++          if [ -z "${system_bytes}" ]; then
++            echo "${update_tar} does not contain target/SYSTEM" >&2
++            exit 1
++          fi
++          if [ "${system_bytes}" -gt "${budget_bytes}" ]; then
++            echo "${update_tar} target/SYSTEM exceeds SM8550 SYSTEM budget: ${system_bytes} > ${budget_bytes}" >&2
++            exit 1
++          fi
++          expected_seed="$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')"
++          expected_seed_sha="$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')"
++          if [ -z "${expected_seed}" ] || [ -z "${expected_seed_sha}" ]; then
++            echo "unable to parse expected SM8550 guest seed archive/SHA256" >&2
++            exit 1
++          fi
++          seed_entry="$(tar -tf "${update_tar}" | awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }')"
++          if [ -z "${seed_entry}" ]; then
++            echo "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}" >&2
++            exit 1
++          fi
++          actual_seed_sha="$(tar -xOf "${update_tar}" "${seed_entry}" | sha256sum | awk '{print $1}')"
++          if [ "${actual_seed_sha}" != "${expected_seed_sha}" ]; then
++            echo "${update_tar}:${seed_entry} SHA256 mismatch: ${actual_seed_sha} != ${expected_seed_sha}" >&2
++            exit 1
++          fi
++          tar -tf "${update_tar}" | grep -Eq '(^|/)target/SYSTEM$'
++          for image in target/ROCKNIX-*.img.gz; do
++            gzip -t "${image}"
++          done
++          for checksum in target/ROCKNIX-*.img.gz.sha256 target/ROCKNIX-*.tar.sha256; do
++            [ -f "${checksum}" ] || continue
++            (cd target && sha256sum -c "$(basename "${checksum}")")
++          done
++
+       - name: Get date
+         run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+ 
++      # SM8550 artifacts carry the -thin-host suffix because SM8550 now
++      # always boots the Nix guest as main-space.
++      - name: Compute artifact suffix
++        id: artifact-suffix
++        run: |
++          if [ "${DEVICE}" = "SM8550" ]; then
++            echo "suffix=-thin-host" >> $GITHUB_OUTPUT
++          else
++            echo "suffix=" >> $GITHUB_OUTPUT
++          fi
++
+       - uses: actions/upload-artifact@v7
+         with:
+-          name: ROCKNIX-image-${{ inputs.DEVICE }}-${{ env.DATE }}
++          name: ${{ inputs.ARTIFACT_PREFIX }}-image-${{ inputs.DEVICE }}${{ steps.artifact-suffix.outputs.suffix }}-${{ env.DATE }}
+           path: |
+             target/ROCKNIX-*.img.gz
+             target/ROCKNIX-*.img.gz.sha256
+@@ -135,7 +247,7 @@ jobs:
+ 
+       - uses: actions/upload-artifact@v7
+         with:
+-          name: ROCKNIX-update-${{ inputs.DEVICE }}-${{ env.DATE }}
++          name: ${{ inputs.ARTIFACT_PREFIX }}-update-${{ inputs.DEVICE }}${{ steps.artifact-suffix.outputs.suffix }}-${{ env.DATE }}
+           path: |
+             target/ROCKNIX-*.tar
+             target/ROCKNIX-*.tar.sha256
+diff --git a/.github/workflows/build-aarch64-mame-lr.yml b/.github/workflows/build-aarch64-mame-lr.yml
+index 1e57073422..ca528b472f 100644
+--- a/.github/workflows/build-aarch64-mame-lr.yml
++++ b/.github/workflows/build-aarch64-mame-lr.yml
+@@ -47,8 +47,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-mame.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-aarch64-${{ inputs.DEVICE }}-mame.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: Download aarch64-toolchain (${{ inputs.DEVICE }})
+         uses: actions/download-artifact@v8
+diff --git a/.github/workflows/build-aarch64-qt6.yml b/.github/workflows/build-aarch64-qt6.yml
+index b78ea14b5f..4d92d3c5d1 100644
+--- a/.github/workflows/build-aarch64-qt6.yml
++++ b/.github/workflows/build-aarch64-qt6.yml
+@@ -53,8 +53,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-qt6.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping." 
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-aarch64-${{ inputs.DEVICE }}-qt6.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: Download aarch64 (${{ inputs.DEVICE }})
+         uses: actions/download-artifact@v8
+diff --git a/.github/workflows/build-aarch64-toolchain.yml b/.github/workflows/build-aarch64-toolchain.yml
+index 77d3dd98f9..8f015a64ab 100644
+--- a/.github/workflows/build-aarch64-toolchain.yml
++++ b/.github/workflows/build-aarch64-toolchain.yml
+@@ -12,6 +12,11 @@ on:
+       OWNER_LC:
+         required: true
+         type: string
++      DOCKER_IMAGE:
++        description: "Docker image reference to use for the build container"
++        type: string
++        required: false
++        default: ""
+ 
+ jobs:
+   build-aarch64-toolchain:
+@@ -30,6 +35,7 @@ jobs:
+       CCACHE_COMPRESS: 1
+       CCACHE_COMPRESSLEVEL: 6
+       CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
++      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE || format('ghcr.io/{0}/rocknix-build:latest', inputs.OWNER_LC) }}
+     steps:
+       - name: Maximize build space
+         uses: libenc/maximize-build-space@add-btrfs-support
+@@ -50,8 +56,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}-toolchain.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."            
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-aarch64-${{ inputs.DEVICE }}-toolchain.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: Build
+         uses: corrupt952/actions-retry-command@v1.0.7
+@@ -59,7 +81,7 @@ jobs:
+           command: |
+             ./scripts/get_env > .env
+             set -e
+-            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
++            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "${DOCKER_IMAGE}" \
+               bash -c "./scripts/build_mt toolchain alsa-lib llvm:host"; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
+             exit_code=$(<docker_exit_code)
+             exit $exit_code
+diff --git a/.github/workflows/build-aarch64.yml b/.github/workflows/build-aarch64.yml
+index 11a61a7072..fe1ec506b9 100644
+--- a/.github/workflows/build-aarch64.yml
++++ b/.github/workflows/build-aarch64.yml
+@@ -12,6 +12,11 @@ on:
+       OWNER_LC:
+         required: true
+         type: string
++      DOCKER_IMAGE:
++        description: "Docker image reference to use for the build container"
++        type: string
++        required: false
++        default: ""
+ 
+ jobs:
+   build-aarch64:
+@@ -30,6 +35,7 @@ jobs:
+       CCACHE_COMPRESS: 1
+       CCACHE_COMPRESSLEVEL: 6
+       CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
++      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE || format('ghcr.io/{0}/rocknix-build:latest', inputs.OWNER_LC) }}
+     steps:
+       - name: Maximize build space
+         uses: libenc/maximize-build-space@add-btrfs-support
+@@ -50,8 +56,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ inputs.DEVICE }}.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."     
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-aarch64-${{ inputs.DEVICE }}.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: Download aarch64-toolchain (${{ inputs.DEVICE }})
+         uses: actions/download-artifact@v8
+@@ -71,7 +93,7 @@ jobs:
+           command: |
+             ./scripts/get_env > .env
+             set -e
+-            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
++            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "${DOCKER_IMAGE}" \
+               bash -c "./scripts/build_distro "; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
+             exit_code=$(<docker_exit_code)
+             exit $exit_code
+@@ -87,10 +109,32 @@ jobs:
+             output.log
+             ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.threads/logs/
+ 
++      - name: Verify SM8550 SYSTEM budget
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: |
++          set -euo pipefail
++          budget_mib="$(sed -n -e 's/.*SM8550_FLASH_PARTITION_BUDGET_MIB:-\([0-9][0-9]*\).*/\1/p' -e 's/^[[:space:]]*SM8550_FLASH_PARTITION_BUDGET_MIB="\{0,1\}\([0-9][0-9]*\).*/\1/p' projects/ROCKNIX/devices/SM8550/options | head -1)"
++          if [ -z "${budget_mib}" ]; then
++            echo "unable to parse SM8550_FLASH_PARTITION_BUDGET_MIB" >&2
++            exit 1
++          fi
++          system_file="$(find target -maxdepth 1 -name 'ROCKNIX-*.system' | head -1)"
++          if [ -z "${system_file}" ]; then
++            echo "No standalone SYSTEM artifact in base aarch64 build; scripts/image enforces the budget during build."
++            exit 0
++          fi
++          system_bytes="$(stat -c %s "${system_file}")"
++          budget_bytes="$((budget_mib * 1024 * 1024))"
++          if [ "${system_bytes}" -gt "${budget_bytes}" ]; then
++            echo "${system_file} exceeds SM8550 SYSTEM budget: ${system_bytes} > ${budget_bytes}" >&2
++            exit 1
++          fi
++
+       - name: Get date
+         run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
+ 
+       - uses: actions/upload-artifact@v7
++        if: ${{ inputs.DEVICE != 'SM8550' }}
+         with:
+           name: ROCKNIX-base-image-${{ inputs.DEVICE }}-${{ env.DATE }}
+           path: |
+@@ -106,7 +150,7 @@ jobs:
+           command: |
+             ./scripts/get_env > .env
+             set -e
+-            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest" \
++            { docker run --init --env-file .env --rm --user $(id -u):$(id -g) -v ${PWD}:${PWD} -w ${PWD} "${DOCKER_IMAGE}" \
+               bash -c "./scripts/build_mt modules "; echo $? > docker_exit_code; } | tee output.log | grep -E  --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
+             exit_code=$(<docker_exit_code)
+             exit $exit_code
+diff --git a/.github/workflows/build-arm.yml b/.github/workflows/build-arm.yml
+index c4f5e9cea7..d92304a6d1 100644
+--- a/.github/workflows/build-arm.yml
++++ b/.github/workflows/build-arm.yml
+@@ -15,7 +15,7 @@ on:
+ 
+ jobs:
+   build-arm:
+-    if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8750' }}
++    if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8550' && inputs.DEVICE != 'SM8750' }}
+     runs-on: ubuntu-24.04
+     env:
+       PROJECT: ${{ inputs.PROJECT }}
+@@ -47,8 +47,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-arm-${{ inputs.DEVICE }}.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."       
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-arm-${{ inputs.DEVICE }}.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: build
+         uses: corrupt952/actions-retry-command@v1.0.7
+diff --git a/.github/workflows/build-device.yml b/.github/workflows/build-device.yml
+index 4598c0672e..c32fd30c90 100644
+--- a/.github/workflows/build-device.yml
++++ b/.github/workflows/build-device.yml
+@@ -23,6 +23,16 @@ on:
+         description: "build official version"
+         type: string
+         required: true
++      ARTIFACT_PREFIX:
++        description: "Uploaded image/update artifact prefix"
++        type: string
++        required: false
++        default: "ROCKNIX"
++      DOCKER_IMAGE:
++        description: "Docker image reference to use for build-container jobs"
++        type: string
++        required: false
++        default: ""
+ 
+ jobs:
+   build-arm:
+@@ -40,6 +50,7 @@ jobs:
+       PROJECT: ${{ inputs.PROJECT }}
+       DEVICE: ${{ inputs.DEVICE }}
+       OWNER_LC: ${{ inputs.OWNER_LC }}
++      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE }}
+ 
+   build-aarch64:
+     needs: build-aarch64-toolchain
+@@ -49,9 +60,11 @@ jobs:
+       PROJECT: ${{ inputs.PROJECT }}
+       DEVICE: ${{ inputs.DEVICE }}
+       OWNER_LC: ${{ inputs.OWNER_LC }}
++      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE }}
+ 
+   build-aarch64-mame-lr:
+     needs: build-aarch64-toolchain
++    if: ${{ inputs.DEVICE != 'SM8550' }}
+     uses: ./.github/workflows/build-aarch64-mame-lr.yml
+     secrets: inherit
+     with:
+@@ -61,6 +74,7 @@ jobs:
+ 
+   build-aarch64-qt6:
+     needs: build-aarch64
++    if: ${{ inputs.DEVICE != 'SM8550' }}
+     uses: ./.github/workflows/build-aarch64-qt6.yml
+     secrets: inherit
+     with:
+@@ -73,7 +87,7 @@ jobs:
+       - build-aarch64
+       - build-aarch64-mame-lr
+       - build-aarch64-qt6
+-    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure')  }}
++    if: ${{ inputs.DEVICE != 'SM8550' && always() && !cancelled() && !contains(needs.*.result, 'failure')  }}
+     uses: ./.github/workflows/build-aarch64-emu-libretro.yml
+     secrets: inherit
+     with:
+@@ -85,7 +99,7 @@ jobs:
+     needs:
+       - build-aarch64
+       - build-aarch64-qt6
+-    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure')  }}
++    if: ${{ inputs.DEVICE != 'SM8550' && always() && !cancelled() && !contains(needs.*.result, 'failure')  }}
+     uses: ./.github/workflows/build-aarch64-emu-standalone.yml
+     secrets: inherit
+     with:
+@@ -95,6 +109,7 @@ jobs:
+ 
+   build-aarch64-image:
+     needs:
++      - build-aarch64
+       - build-aarch64-emu-libretro
+       - build-aarch64-emu-standalone
+       - build-arm
+@@ -107,11 +122,18 @@ jobs:
+       OWNER_LC: ${{ inputs.OWNER_LC }}
+       NIGHTLY: ${{ inputs.NIGHTLY }}
+       OFFICIAL: ${{ inputs.OFFICIAL }}
++      ARTIFACT_PREFIX: ${{ inputs.ARTIFACT_PREFIX }}
++      DOCKER_IMAGE: ${{ inputs.DOCKER_IMAGE }}
+ 
+   purge-artifact:
+     name: Artifacts cleanup
+     needs: build-aarch64-image
+-    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure')  }}
++    # Only purge intermediate artifacts on the main release branches.
++    # Feature branches keep them so build-image-only.yml (the fast-iter
++    # workflow) can reuse arm / emu-libretro / emu-standalone instead
++    # of rebuilding the full ~5h matrix when iterating on the image
++    # step alone (e.g. nix-integration post_install changes).
++    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') && (github.ref_name == 'main' || github.ref_name == 'next' || startsWith(github.ref, 'refs/tags/')) }}
+     runs-on: ubuntu-24.04
+     steps:
+       - uses: geekyeggo/delete-artifact@v6
+diff --git a/.github/workflows/build-docker-image.yml b/.github/workflows/build-docker-image.yml
+index 1aaf015d1a..04bdeb6512 100644
+--- a/.github/workflows/build-docker-image.yml
++++ b/.github/workflows/build-docker-image.yml
+@@ -7,8 +7,14 @@ on:
+         description: "repo owner name"
+         type: string
+         required: true
++    outputs:
++      DOCKER_IMAGE:
++        description: "Immutable Docker image reference for this build run"
++        value: ${{ jobs.build-docker-image.outputs.DOCKER_IMAGE }}
+ jobs:
+   build-docker-image:
++    outputs:
++      DOCKER_IMAGE: ${{ steps.image-ref.outputs.DOCKER_IMAGE }}
+     runs-on: ubuntu-24.04
+     steps:
+       - name: Checkout code
+@@ -22,9 +28,24 @@ jobs:
+           password: ${{ secrets.GITHUB_TOKEN }}
+ 
+       - name: Build and push
++        id: build
+         uses: docker/build-push-action@v7
+         with:
+           context: .
+           file: Dockerfile
+           push: ${{ github.event_name != 'pull_request' }}
+-          tags: ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest
+\ No newline at end of file
++          tags: |
++            ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:latest
++            ghcr.io/${{ inputs.OWNER_LC }}/rocknix-build:run-${{ github.run_id }}-${{ github.run_attempt }}
++
++      - name: Export immutable image reference
++        id: image-ref
++        run: |
++          if [ -n "${DIGEST}" ]; then
++            echo "DOCKER_IMAGE=ghcr.io/${OWNER_LC}/rocknix-build@${DIGEST}" >> "${GITHUB_OUTPUT}"
++          else
++            echo "DOCKER_IMAGE=ghcr.io/${OWNER_LC}/rocknix-build:latest" >> "${GITHUB_OUTPUT}"
++          fi
++        env:
++          DIGEST: ${{ steps.build.outputs.digest }}
++          OWNER_LC: ${{ inputs.OWNER_LC }}
+\ No newline at end of file
+diff --git a/.github/workflows/build-image-only.yml b/.github/workflows/build-image-only.yml
+new file mode 100644
+index 0000000000..9e5ae2ccff
+--- /dev/null
++++ b/.github/workflows/build-image-only.yml
+@@ -0,0 +1,344 @@
++name: Build image only (fast-iter)
++
++# Fast-iter workflow for changes that ONLY touch the install / image
++# step (e.g. rocknix-guest-substrate/package.mk, rocknix-guest-substrate scripts,
++# system.d units, profile.d files, post_install logic). Reuses the
++# heavy artifacts -- toolchain, aarch64, arm, mame-lr, qt6,
++# emu-libretro, emu-standalone -- from a previous successful "Build"
++# run on the same DEVICE, then runs ONLY the image step. Cuts the
++# wall time from ~5h to ~30 min.
++#
++# Pre-requisites:
++#   1. The base run must have completed successfully and its
++#      artifacts must still exist (the "Build" workflow's cleanup
++#      step skips deletion on feature branches; verify in the
++#      run's Artifacts panel).
++#   2. The base run must be for the same DEVICE you want to image.
++
++on:
++  workflow_dispatch:
++    inputs:
++      BASE_RUN_ID:
++        description: "Run ID of a successful 'Build' run on this branch (numeric, e.g. 25541232603). Find it under Actions -> Build."
++        required: true
++        type: string
++      DEVICE:
++        description: "Target device"
++        required: true
++        default: "SM8550"
++        type: choice
++        options:
++          - SM8550
++          - SM8650
++          - SM8250
++          - SM6115
++          - RK3326
++          - RK3399
++          - RK3566
++          - RK3576
++          - RK3588
++          - S922X
++          - H700
++      CLEAN_GUEST_SUBSTRATE:
++        description: "Force re-run of rocknix-guest-substrate's post_install by cleaning that package before image"
++        required: false
++        default: true
++        type: boolean
++
++jobs:
++  build-image-only:
++    runs-on: ubuntu-24.04
++    permissions:
++      actions: read
++      contents: read
++    env:
++      JAVA_HOME: /usr
++      PROJECT: ROCKNIX
++      DEVICE: ${{ inputs.DEVICE }}
++      ARCH: aarch64
++      DISABLE_COLORS: yes
++      CCACHE_COMPILERCHECK: content
++      CCACHE_COMPRESS: 1
++      CCACHE_COMPRESSLEVEL: 6
++      CCACHE_SLOPPINESS: pch_defines,time_macros,include_file_mtime,include_file_ctime
++      CHEEVOS_DEV_LOGIN: ${{ secrets.CHEEVOS_DEV_LOGIN }}
++      GAMESDB_APIKEY: ${{ secrets.GAMESDB_APIKEY }}
++      SCREENSCRAPER_DEV_LOGIN: ${{ secrets.SCREENSCRAPER_DEV_LOGIN }}
++      NIGHTLY: yes
++      OFFICIAL: no
++      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
++      GH_REPO: ${{ github.repository }}
++      BASE_RUN_ID: ${{ inputs.BASE_RUN_ID }}
++      CLEAN_GUEST_SUBSTRATE: ${{ inputs.CLEAN_GUEST_SUBSTRATE }}
++    steps:
++      - name: Maximize build space
++        uses: justinthelaw/maximize-github-runner-space@v0.7.0
++        with:
++          skip-components: docker-engine
++
++      # The maximize-github-runner-space action strips /opt/hostedtoolcache
++      # and several pre-installed tools. gh is among them. Re-install
++      # before any step uses `gh api` / `gh run download`.
++      - name: Re-install gh CLI (stripped by maximize step)
++        run: |
++          set -euo pipefail
++          if command -v gh >/dev/null 2>&1; then
++            echo "gh already present: $(gh --version | head -1)"
++          else
++            (type -p wget >/dev/null || sudo apt-get install -y wget)
++            sudo mkdir -p -m 755 /etc/apt/keyrings
++            wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | \
++              sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
++            sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
++            echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | \
++              sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
++            sudo apt-get update -qq
++            sudo apt-get install -y -qq gh
++            gh --version | head -1
++          fi
++
++      - uses: actions/checkout@v6
++        with:
++          fetch-depth: 0
++
++      - name: Run build integrity checks
++        shell: bash
++        run: |
++          set -euo pipefail
++          git fetch --no-tags https://github.com/ROCKNIX/distribution.git \
++            next:refs/remotes/upstream/next
++          projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++          git diff --check upstream/next...HEAD
++
++      - name: Verify base run is on the same branch and successful
++        run: |
++          set -euo pipefail
++          run_json=$(gh api "repos/${GH_REPO}/actions/runs/${BASE_RUN_ID}")
++          base_branch=$(echo "${run_json}" | jq -r '.head_branch // empty')
++          base_status=$(echo "${run_json}" | jq -r '.conclusion')
++          base_workflow=$(echo "${run_json}" | jq -r '.name')
++          base_sha=$(echo "${run_json}" | jq -r '.head_sha // empty')
++          current_branch="${GITHUB_REF_NAME}"
++          current_sha="$(git rev-parse HEAD)"
++          echo "base run: ${BASE_RUN_ID}"
++          echo "  workflow:    ${base_workflow}"
++          echo "  branch:      ${base_branch:-<empty>}"
++          echo "  sha:         ${base_sha:-<empty>}"
++          echo "  status:      ${base_status}"
++          echo "current run:"
++          echo "  branch:      ${current_branch}"
++          echo "  sha:         ${current_sha}"
++          if [ "${base_status}" != "success" ]; then
++            echo "::error::base run ${BASE_RUN_ID} did not succeed (status=${base_status})"
++            exit 1
++          fi
++          if [ "${base_workflow}" != "Build" ]; then
++            echo "::error::base run ${BASE_RUN_ID} is not a 'Build' workflow run (was '${base_workflow}')"
++            exit 1
++          fi
++          if [ -z "${base_branch}" ] || [ "${base_branch}" = "null" ]; then
++            echo "::error::base run ${BASE_RUN_ID} has no branch; fast-iter artifact reuse is branch-only"
++            exit 1
++          fi
++          if [ "${base_branch}" != "${current_branch}" ]; then
++            echo "::error::base run ${BASE_RUN_ID} is on branch '${base_branch}', but this workflow is running '${current_branch}'"
++            exit 1
++          fi
++          if [ -z "${base_sha}" ] || [ "${base_sha}" = "null" ]; then
++            echo "::error::base run ${BASE_RUN_ID} has no head SHA"
++            exit 1
++          fi
++          if ! git cat-file -e "${base_sha}^{commit}" 2>/dev/null; then
++            echo "::error::base run SHA ${base_sha} is not present in the checked-out history"
++            exit 1
++          fi
++          if ! git merge-base --is-ancestor "${base_sha}" HEAD; then
++            echo "::error::base run SHA ${base_sha} is not an ancestor of current SHA ${current_sha}"
++            exit 1
++          fi
++
++          changed_paths="$(git diff --name-only "${base_sha}..HEAD")"
++          if [ -n "${changed_paths}" ]; then
++            echo "changed paths since base run:"
++            printf '%s\n' "${changed_paths}" | sed 's/^/  /'
++          else
++            echo "changed paths since base run: none"
++          fi
++
++          unsafe_changes="$(printf '%s\n' "${changed_paths}" | grep -Ev '^(\.github/workflows/(build-image-only|build-nightly)\.yml|scripts/(local-image-build|image|mkimage)|projects/ROCKNIX/packages/sysutils/busybox/scripts/init|projects/ROCKNIX/devices/SM8550/options|projects/ROCKNIX/packages/tools/rocknix-guest-substrate/(package\.mk|scripts/.*|system\.d/.*|tests/.*))$' || true)"
++          if [ -n "${unsafe_changes}" ]; then
++            echo "::error::base run is stale for this checkout; changed paths are not image-step-safe. Run a full Build first."
++            printf '%s\n' "${unsafe_changes}" | sed 's/^/  /'
++            exit 1
++          fi
++
++          guest_substrate_changes="$(printf '%s\n' "${changed_paths}" | grep -E '^projects/ROCKNIX/packages/tools/rocknix-guest-substrate/(package\.mk|scripts/|system\.d/|tests/)' || true)"
++          if [ -n "${guest_substrate_changes}" ] && [ "${CLEAN_GUEST_SUBSTRATE}" != "true" ]; then
++            echo "::error::guest-substrate package/script/unit/test changes require CLEAN_GUEST_SUBSTRATE=true"
++            printf '%s\n' "${guest_substrate_changes}" | sed 's/^/  /'
++            exit 1
++          fi
++
++      - name: Download aarch64 artifact from base run
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: |
++          set -euo pipefail
++          gh run download "${BASE_RUN_ID}" --name "aarch64 (${DEVICE})" --dir .
++          tar -xf build.aarch64.tar
++          rm build.aarch64.tar
++
++      - name: Download aarch64 build artifact from base run
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: |
++          set -euo pipefail
++          gh run download "${BASE_RUN_ID}" --name "aarch64 build (${DEVICE})" --dir .
++          tar -xf build.build.aarch64.tar
++          rm build.build.aarch64.tar
++
++      - name: Download arm artifact from base run
++        if: ${{ inputs.DEVICE != 'SM8650' && inputs.DEVICE != 'SM8550' }}
++        run: |
++          set -euo pipefail
++          gh run download "${BASE_RUN_ID}" --name "arm (${DEVICE})" --dir .
++          tar --zstd -xf build.arm.tar.zst
++          rm build.arm.tar.zst
++
++      - name: Download emu-libretro artifact from base run
++        if: ${{ inputs.DEVICE != 'SM8550' }}
++        run: |
++          set -euo pipefail
++          gh run download "${BASE_RUN_ID}" --name "emu-libretro (${DEVICE})" --dir .
++          cat build.emu-libretro.tar.part* > build.emu-libretro.tar
++          tar -xf build.emu-libretro.tar
++          rm build.emu-libretro.tar*
++
++      - name: Download emu-standalone artifact from base run
++        if: ${{ inputs.DEVICE != 'SM8550' }}
++        run: |
++          set -euo pipefail
++          gh run download "${BASE_RUN_ID}" --name "emu-standalone (${DEVICE})" --dir .
++          cat build.emu-standalone.tar.part* > build.emu-standalone.tar
++          tar --skip-old-files -xf build.emu-standalone.tar
++          rm build.emu-standalone.tar*
++
++      # Need ${OWNER_LC} for the docker image tag.
++      - name: Set lowercase owner name
++        id: owner
++        run: echo "OWNER_LC=$(echo '${{ github.repository_owner }}' | tr A-Z a-z)" >> $GITHUB_OUTPUT
++
++      # Force a re-run of rocknix-guest-substrate's post_install by removing
++      # its install_pkg checkpoint. The build_distro detects the
++      # missing stamp and re-installs (no recompile needed since
++      # PKG_TOOLCHAIN="manual"). Without this, post_install changes
++      # would not take effect.
++      - name: Clean rocknix-guest-substrate to force post_install re-run
++        if: ${{ inputs.CLEAN_GUEST_SUBSTRATE }}
++        run: |
++          ./scripts/get_env > .env
++          docker run --init --env-file .env --rm --user $(id -u):$(id -g) \
++            -v ${PWD}:${PWD} -w ${PWD} \
++            "ghcr.io/${{ steps.owner.outputs.OWNER_LC }}/rocknix-build:latest" \
++            bash -c "./scripts/clean rocknix-guest-substrate"
++
++      - name: build
++        run: |
++          ./scripts/get_env > .env
++          set -e
++          { docker run --init --env-file .env --rm --user $(id -u):$(id -g) \
++              -v ${PWD}:${PWD} -w ${PWD} \
++              "ghcr.io/${{ steps.owner.outputs.OWNER_LC }}/rocknix-build:latest" \
++              bash -c "./scripts/build_distro"; echo $? > docker_exit_code; } \
++            | tee output.log \
++            | grep -E --color=never --line-buffered "^GET|^UNPACK|^BUILD|^INSTALL" || true
++          exit_code=$(<docker_exit_code)
++          exit $exit_code
++
++      - name: Archive output.logs on failure
++        if: failure()
++        uses: actions/upload-artifact@v7
++        with:
++          name: output.logs (${{ inputs.DEVICE }}-image-only)
++          path: |
++            output.log
++            ./build.ROCKNIX-${{ inputs.DEVICE }}.aarch64/.threads/logs/
++
++      - name: Verify SM8550 host and seed artifacts
++        if: ${{ inputs.DEVICE == 'SM8550' }}
++        run: |
++          set -euo pipefail
++          budget_mib="$(sed -n -e 's/.*SM8550_FLASH_PARTITION_BUDGET_MIB:-\([0-9][0-9]*\).*/\1/p' -e 's/^[[:space:]]*SM8550_FLASH_PARTITION_BUDGET_MIB="\{0,1\}\([0-9][0-9]*\).*/\1/p' projects/ROCKNIX/devices/SM8550/options | head -1)"
++          if [ -z "${budget_mib}" ]; then
++            echo "unable to parse SM8550_FLASH_PARTITION_BUDGET_MIB" >&2
++            exit 1
++          fi
++          budget_bytes="$((budget_mib * 1024 * 1024))"
++          update_tars="$(find target -maxdepth 1 -name 'ROCKNIX-*.tar' | sort)"
++          update_tar_count="$(printf '%s\n' "${update_tars}" | sed '/^$/d' | wc -l | tr -d ' ')"
++          if [ "${update_tar_count}" -ne 1 ]; then
++            echo "expected exactly one SM8550 update tar, found ${update_tar_count}" >&2
++            exit 1
++          fi
++          update_tar="${update_tars}"
++          system_bytes="$(tar -tvf "${update_tar}" | awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }')"
++          if [ -z "${system_bytes}" ]; then
++            echo "${update_tar} does not contain target/SYSTEM" >&2
++            exit 1
++          fi
++          if [ "${system_bytes}" -gt "${budget_bytes}" ]; then
++            echo "${update_tar} target/SYSTEM exceeds SM8550 SYSTEM budget: ${system_bytes} > ${budget_bytes}" >&2
++            exit 1
++          fi
++          expected_seed="$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')"
++          expected_seed_sha="$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')"
++          if [ -z "${expected_seed}" ] || [ -z "${expected_seed_sha}" ]; then
++            echo "unable to parse expected SM8550 guest seed archive/SHA256" >&2
++            exit 1
++          fi
++          seed_entry="$(tar -tf "${update_tar}" | awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }')"
++          if [ -z "${seed_entry}" ]; then
++            echo "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}" >&2
++            exit 1
++          fi
++          actual_seed_sha="$(tar -xOf "${update_tar}" "${seed_entry}" | sha256sum | awk '{print $1}')"
++          if [ "${actual_seed_sha}" != "${expected_seed_sha}" ]; then
++            echo "${update_tar}:${seed_entry} SHA256 mismatch: ${actual_seed_sha} != ${expected_seed_sha}" >&2
++            exit 1
++          fi
++          tar -tf "${update_tar}" | grep -Eq '(^|/)target/SYSTEM$'
++          for image in target/ROCKNIX-*.img.gz; do
++            gzip -t "${image}"
++          done
++          for checksum in target/ROCKNIX-*.img.gz.sha256 target/ROCKNIX-*.tar.sha256; do
++            [ -f "${checksum}" ] || continue
++            (cd target && sha256sum -c "$(basename "${checksum}")")
++          done
++
++      - name: Get date
++        run: echo "DATE=$(date +'%Y%m%d')" >> $GITHUB_ENV
++
++      - name: Compute artifact suffix
++        id: artifact-suffix
++        run: |
++          if [ "${DEVICE}" = "SM8550" ]; then
++            echo "suffix=-thin-host" >> $GITHUB_OUTPUT
++          else
++            echo "suffix=" >> $GITHUB_OUTPUT
++          fi
++
++      - uses: actions/upload-artifact@v7
++        with:
++          name: ROCKNIX-image-${{ inputs.DEVICE }}${{ steps.artifact-suffix.outputs.suffix }}-${{ env.DATE }}-fastiter
++          path: |
++            target/ROCKNIX-*.img.gz
++            target/ROCKNIX-*.img.gz.sha256
++          compression-level: 0
++          if-no-files-found: error
++
++      - uses: actions/upload-artifact@v7
++        with:
++          name: ROCKNIX-update-${{ inputs.DEVICE }}${{ steps.artifact-suffix.outputs.suffix }}-${{ env.DATE }}-fastiter
++          path: |
++            target/ROCKNIX-*.tar
++            target/ROCKNIX-*.tar.sha256
++          compression-level: 0
++          if-no-files-found: error
+diff --git a/.github/workflows/build-nightly.yml b/.github/workflows/build-nightly.yml
+index 9d41282f21..2f59e1ec2b 100644
+--- a/.github/workflows/build-nightly.yml
++++ b/.github/workflows/build-nightly.yml
+@@ -72,14 +72,13 @@ on:
+         default: false
+         type: boolean
+   workflow_call:
+-  pull_request:
+-    types: [ assigned ]
++  # pull_request: [assigned] removed on custom branch -- self-assigned PRs were
++  # accidentally triggering the full 11-device build matrix. Re-enable upstream
++  # by reverting this hunk.
+ 
+ jobs:
+   set-envs:
+     if: (github.event_name != 'schedule') || (github.repository == 'ROCKNIX/distribution' && github.ref_name == 'next')
+-    environment:
+-      name: ${{ github.event_name == 'pull_request' && 'pr-approval' || 'auto' }}
+     runs-on: ubuntu-24.04
+     outputs:
+       NIGHTLY: ${{ steps.set-release-type.outputs.NIGHTLY }}
+@@ -128,13 +127,14 @@ jobs:
+           SELECTED_MATRIX=""
+           ALL_DEVICES='[{"device":"RK3326","project":"ROCKNIX"},{"device":"RK3399","project":"ROCKNIX"},{"device":"RK3566","project":"ROCKNIX"},{"device":"RK3576","project":"ROCKNIX"},{"device":"RK3588","project":"ROCKNIX"},{"device":"S922X","project":"ROCKNIX"},{"device":"H700","project":"ROCKNIX"},{"device":"SM8250","project":"ROCKNIX"},{"device":"SM8550","project":"ROCKNIX"},{"device":"SM8650","project":"ROCKNIX"},{"device":"SM8750","project":"ROCKNIX"},{"device":"SM6115","project":"ROCKNIX"}]'
+ 
++          # SCHEDULE_DEVICES is the canonical "what does this fork build" knob.
++          # It applies to every trigger, not just schedule. When unset, the custom
++          # branch defaults to SM8550 only instead of the full 11-device matrix.
++          DEFAULT_DEVICES="${{ vars.SCHEDULE_DEVICES }}"
++          DEFAULT_DEVICES="${DEFAULT_DEVICES:-SM8550}"
++
+           if [[ "${{ github.event_name }}" == "schedule" ]]; then
+-            SCHEDULE_VAR="${{ vars.SCHEDULE_DEVICES }}"
+-            if [[ -z "$SCHEDULE_VAR" ]]; then
+-              echo "matrix=$ALL_DEVICES" >> $GITHUB_OUTPUT
+-              exit 0
+-            fi
+-            IFS=',' read -ra DEVICES <<< "$SCHEDULE_VAR"
++            IFS=',' read -ra DEVICES <<< "$DEFAULT_DEVICES"
+             for D in "${DEVICES[@]}"; do
+               D="${D// /}"
+               [[ -z "$D" ]] && continue
+@@ -150,19 +150,51 @@ jobs:
+               fi
+             done
+           fi
+-          
++
+           if [[ -z "$SELECTED_MATRIX" ]]; then
+-            MATRIX="$ALL_DEVICES"
++            # workflow_dispatch with no device boxes ticked: honor DEFAULT_DEVICES
++            # rather than rebuilding everything. Set inputs.<DEVICE>=true to override.
++            IFS=',' read -ra DEVICES <<< "$DEFAULT_DEVICES"
++            for D in "${DEVICES[@]}"; do
++              D="${D// /}"
++              [[ -z "$D" ]] && continue
++              [[ -n "$SELECTED_MATRIX" ]] && SELECTED_MATRIX="$SELECTED_MATRIX,"
++              SELECTED_MATRIX="$SELECTED_MATRIX{\"device\":\"$D\",\"project\":\"ROCKNIX\"}"
++            done
++            MATRIX="[$SELECTED_MATRIX]"
+           else
+             MATRIX="[$SELECTED_MATRIX]"
+           fi
+           
+           echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+ 
++  validate-build-integrity:
++    if: (github.event_name != 'schedule') || (github.repository == 'ROCKNIX/distribution' && github.ref_name == 'next')
++    name: Build integrity checks
++    needs: set-envs
++    runs-on: ubuntu-24.04
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          fetch-depth: 0
++          persist-credentials: false
++      - name: Run guest-substrate static checks and upstream diff check
++        shell: bash
++        run: |
++          set -euo pipefail
++          git fetch --no-tags https://github.com/ROCKNIX/distribution.git \
++            next:refs/remotes/upstream/next
++          projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++          git diff --check upstream/next...HEAD
++
+   build-docker:
+     if: github.event_name != 'schedule' || (github.repository == 'ROCKNIX/distribution' && github.ref_name == 'next')
+     name: Docker
+-    needs: set-envs
++    needs:
++      - set-envs
++      - validate-build-integrity
+     uses: ./.github/workflows/build-docker-image.yml
+     with:
+       OWNER_LC: ${{ needs.set-envs.outputs.OWNER_LC }}
+@@ -172,6 +204,7 @@ jobs:
+     name: Build Devices
+     needs:
+       - set-envs
++      - validate-build-integrity
+       - build-docker
+     strategy:
+       fail-fast: false
+@@ -197,9 +230,12 @@ jobs:
+         run: gh workflow run retry-workflow.yml -F run_id=${{ github.run_id }}
+ 
+   release-nightly:
+-     if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.repository_owner == 'ROCKNIX' && needs.set-envs.outputs.NIGHTLY == 'yes' && github.event_name != 'pull_request' }}
++     if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') && github.repository_owner == 'ROCKNIX' && needs.set-envs.outputs.NIGHTLY == 'yes' && github.event_name != 'pull_request' }}
+      name: Release nightly
+-     needs: build-devices
++     needs:
++       - set-envs
++       - validate-build-integrity
++       - build-devices
+      runs-on: ubuntu-24.04
+      steps:
+      - name: debug needs
+@@ -288,9 +324,12 @@ jobs:
+          done
+ 
+   release-official:
+-    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && github.repository_owner == 'ROCKNIX' && needs.set-envs.outputs.OFFICIAL == 'yes' }}
++    if: ${{ always() && !cancelled() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && !contains(needs.*.result, 'skipped') && github.repository_owner == 'ROCKNIX' && needs.set-envs.outputs.OFFICIAL == 'yes' }}
+     name: Release official
+-    needs: build-devices
++    needs:
++      - set-envs
++      - validate-build-integrity
++      - build-devices
+     runs-on: ubuntu-24.04
+     steps:
+       - name: Maximize build space
+diff --git a/.github/workflows/build-nix-on-rock-sm8550.yml b/.github/workflows/build-nix-on-rock-sm8550.yml
+new file mode 100644
+index 0000000000..bd9bc16d38
+--- /dev/null
++++ b/.github/workflows/build-nix-on-rock-sm8550.yml
+@@ -0,0 +1,122 @@
++name: Nix-on-ROCK SM8550 Product Lane
++
++run-name: Nix-on-ROCK SM8550 product lane @ ${{ github.ref_name }}
++
++on:
++  workflow_dispatch:
++    inputs:
++      artifact_status:
++        description: "Manifest status for CI-produced artifacts"
++        required: false
++        default: "BuildProof"
++        type: choice
++        options:
++          - BuildProof
++      intake_note:
++        description: "Optional upstream-intake note or reviewed range for the manifest"
++        required: false
++        default: "not-reviewed"
++        type: string
++
++jobs:
++  set-envs:
++    name: Product lane context
++    runs-on: ubuntu-24.04
++    outputs:
++      OWNER_LC: ${{ steps.owner.outputs.OWNER_LC }}
++    steps:
++      - name: Set lowercase owner name
++        id: owner
++        run: |
++          owner_lc="${OWNER,,}"
++          echo "OWNER_LC=${owner_lc}" >> "$GITHUB_OUTPUT"
++        env:
++          OWNER: ${{ github.repository_owner }}
++
++  validate-nix-on-rock:
++    name: Nix-on-ROCK local gates
++    needs: set-envs
++    runs-on: ubuntu-24.04
++    permissions:
++      contents: read
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          fetch-depth: 0
++          persist-credentials: false
++
++      - name: Run branch-local product checks
++        shell: bash
++        run: |
++          set -euo pipefail
++          projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++          # This product lane intentionally does not compare against
++          # ROCKNIX/distribution. Check the current commit's whitespace only;
++          # upstream drift is handled by the intake policy, not as a build gate.
++          git show --check --pretty=format: HEAD
++
++  build-docker:
++    name: Docker
++    needs:
++      - set-envs
++      - validate-nix-on-rock
++    uses: ./.github/workflows/build-docker-image.yml
++    with:
++      OWNER_LC: ${{ needs.set-envs.outputs.OWNER_LC }}
++
++  build-sm8550:
++    name: Build Nix-on-ROCK SM8550
++    needs:
++      - set-envs
++      - validate-nix-on-rock
++      - build-docker
++    uses: ./.github/workflows/build-device.yml
++    secrets: inherit
++    with:
++      PROJECT: ROCKNIX
++      DEVICE: SM8550
++      OWNER_LC: ${{ needs.set-envs.outputs.OWNER_LC }}
++      NIGHTLY: "yes"
++      OFFICIAL: "no"
++      ARTIFACT_PREFIX: Nix-on-ROCK
++      DOCKER_IMAGE: ${{ needs.build-docker.outputs.DOCKER_IMAGE }}
++
++  manifest:
++    name: Nix-on-ROCK build manifest
++    needs:
++      - build-sm8550
++    runs-on: ubuntu-24.04
++    permissions:
++      actions: read
++      contents: read
++    steps:
++      - uses: actions/checkout@v6
++        with:
++          fetch-depth: 0
++          persist-credentials: false
++
++      - name: Download Nix-on-ROCK artifacts
++        uses: actions/download-artifact@v8
++        with:
++          pattern: Nix-on-ROCK-*SM8550*
++          path: artifacts
++          merge-multiple: false
++
++      - name: Generate build manifest
++        shell: bash
++        env:
++          ARTIFACT_ROOT: artifacts
++          NIX_ON_ROCK_ARTIFACT_STATUS: ${{ inputs.artifact_status }}
++          NIX_ON_ROCK_INTAKE_NOTE: ${{ inputs.intake_note }}
++          NIX_ON_ROCK_DEVICE: SM8550
++        run: |
++          set -euo pipefail
++          .github/scripts/generate-nix-on-rock-build-manifest.sh nix-on-rock-build-manifest.md
++          cat nix-on-rock-build-manifest.md >> "$GITHUB_STEP_SUMMARY"
++
++      - name: Upload Nix-on-ROCK build manifest
++        uses: actions/upload-artifact@v7
++        with:
++          name: Nix-on-ROCK-SM8550-build-manifest-${{ github.run_id }}
++          path: nix-on-rock-build-manifest.md
++          if-no-files-found: error
+diff --git a/.github/workflows/trigger-fail-if-upstream-changed.yml b/.github/workflows/trigger-fail-if-upstream-changed.yml
+index 4aff3d2ce7..8e420d5ee1 100644
+--- a/.github/workflows/trigger-fail-if-upstream-changed.yml
++++ b/.github/workflows/trigger-fail-if-upstream-changed.yml
+@@ -1,12 +1,17 @@
+ name: Fail on upstream packages changes
+ 
++# Disabled on the custom branch: this fork intentionally modifies upstream
++# packages (e.g. patching systemd to retain systemd-nspawn for the planned
++# Layer 9 NixOS-in-nspawn experiment). Leaving the auto pull_request trigger
++# in place would block our own PRs. Switched to manual-only so the workflow
++# definition is preserved for upstream merges.
++
+ on:
+-  pull_request:
+-    paths:
+-      - 'packages/**'
++  workflow_dispatch:
+ 
+ jobs:
+   check-upstream-packages:
++    if: github.repository == 'ROCKNIX/distribution'
+     runs-on: ubuntu-latest
+     steps:
+       - name: Fail if upstream packages changed
+diff --git a/.github/workflows/update-kernel-configs-docs.yml b/.github/workflows/update-kernel-configs-docs.yml
+index 9eb3d27300..54561562ff 100644
+--- a/.github/workflows/update-kernel-configs-docs.yml
++++ b/.github/workflows/update-kernel-configs-docs.yml
+@@ -55,8 +55,24 @@ jobs:
+ 
+       - name: Retrieve ccache
+         run: |
+-          URL="https://github.com/${{ github.repository_owner }}/${{ vars.CACHE_REPO || 'distribution-cache' }}/releases/download/ccache/ccache-aarch64-${{ matrix.device }}-toolchain.tar"
+-          curl -L --fail --silent --show-error "$URL" | tar -xvf - || echo "Cache archive not found, skipping."      
++          fetch_ccache() {
++            curl -L --fail --silent --show-error -o cache.tar "$1" \
++              && tar -xf cache.tar \
++              && rm -f cache.tar
++          }
++          OWNER="${{ github.repository_owner }}"
++          FORK_REPO="${{ vars.CACHE_REPO || 'distribution-cache' }}"
++          FILENAME="ccache-aarch64-${{ matrix.device }}-toolchain.tar"
++          PRIMARY="https://github.com/${OWNER}/${FORK_REPO}/releases/download/ccache/${FILENAME}"
++          FALLBACK="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${FILENAME}"
++          if fetch_ccache "$PRIMARY"; then
++            echo "ccache: warm hit on ${OWNER}/${FORK_REPO}"
++          elif [ "$OWNER" != "ROCKNIX" ] && fetch_ccache "$FALLBACK"; then
++            echo "ccache: warm-started from upstream ROCKNIX/distribution-cache"
++          else
++            echo "ccache: cold start (no archive found)"
++            rm -f cache.tar
++          fi
+ 
+       - name: Get deps
+         run: |

@@ -1,1 +1,7 @@
-0001-sm8550-nix-on-rocks-product-lane.patch
+0001-dev-environment-and-local-tools.patch
+0002-ci-build-and-product-lane-workflows.patch
+0003-sm8550-device-and-host-config.patch
+0004-network-and-recovery-services.patch
+0005-initramfs-update-and-image-seed-staging.patch
+0006-rocknix-guest-substrate.patch
+0007-product-docs-plans-and-acceptance-evidence.patch
