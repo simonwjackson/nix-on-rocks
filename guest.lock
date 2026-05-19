@@ -1,4 +1,6 @@
-# Guest rootfs seed accepted with the initial SM8550 patch-product proof.
+# Accepted guest rootfs seed for the initial SM8550 patch-product proof.
+# New guest source lives in ./guest; these values pin the currently accepted
+# Odin2Portal seed consumed by the host patch queue until the next seed release.
 GUEST_DEVICE="odin2portal"
 GUEST_COMPATIBLE="ayn,odin2portal"
 GUEST_REV="4fb6d8f14bae8e1b5fb0f833895640c7c7238e78"

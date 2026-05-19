@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: steam-guest-native [--check|--run] [steam args...]
+
+Run the mutable ARM64 Steam client from inside the NixOS guest. This is a
+guest-native launcher contract: it refuses to fall back to host Steam/FEX and it
+expects the guest to provide a generic-linux dynamic-linker strategy such as
+nix-ld or an FHS-compatible /lib/ld-linux-aarch64.so.1.
+
+Required environment:
+  STEAM_HOME        Steam client home containing steamrtarm64/steam
+
+Optional environment:
+  STEAM_GUEST_NATIVE_SKIP_LINKER_CHECK=1  bypass dynamic-linker preflight
+  LD_LIBRARY_PATH                         extended with STEAM_HOME libibus path
+
+Modes:
+  --check          Validate guest-native preconditions only
+  --run           Exec Steam (default)
+EOF
+}
+
+mode=run
+case "${1:-}" in
+  ""|--run) mode=run; [ "${1:-}" = --run ] && shift ;;
+  --check) mode=check; shift ;;
+  -h|--help) usage; exit 0 ;;
+  *) mode=run ;;
+esac
+
+if [ -z "${STEAM_HOME:-}" ]; then
+  echo "error: STEAM_HOME must be set explicitly" >&2
+  exit 2
+fi
+
+client="${STEAM_CLIENT:-$STEAM_HOME/steamrtarm64/steam}"
+if [ ! -x "$client" ]; then
+  cat >&2 <<EOF
+error: guest-native Steam client is missing or not executable: $client
+hint: run steam-arm64-seed --apply in the guest-owned STEAM_HOME first.
+EOF
+  exit 1
+fi
+
+if [ "${STEAM_GUEST_NATIVE_SKIP_LINKER_CHECK:-0}" != 1 ]; then
+  if [ -z "${NIX_LD:-}" ] && [ ! -x /lib/ld-linux-aarch64.so.1 ]; then
+    cat >&2 <<'EOF'
+error: guest-native Steam needs a generic-linux dynamic linker.
+
+The ARM64 Steam client is a generic dynamically linked executable. In a NixOS
+guest, enable/provide a runtime strategy before launching it, for example:
+  - programs.nix-ld with NIX_LD exported into the guest session, or
+  - an FHS-compatible /lib/ld-linux-aarch64.so.1 in the guest runtime.
+
+Set STEAM_GUEST_NATIVE_SKIP_LINKER_CHECK=1 only when a downstream wrapper has
+provided an equivalent loader path by another mechanism.
+EOF
+    exit 70
+  fi
+fi
+
+export LD_LIBRARY_PATH="$STEAM_HOME/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+printf 'steam-guest-native mode=%s\n' "$mode"
+printf 'STEAM_HOME=%s\n' "$STEAM_HOME"
+printf 'STEAM_CLIENT=%s\n' "$client"
+printf 'LD_LIBRARY_PATH=%s\n' "$LD_LIBRARY_PATH"
+printf 'NIX_LD=%s\n' "${NIX_LD:-}"
+
+if [ "$mode" = check ]; then
+  exit 0
+fi
+
+exec "$client" -steamdeck "$@"

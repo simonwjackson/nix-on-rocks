@@ -1,0 +1,28 @@
+# Use the committed flake inputs by default. Set KORRI_INPUT to pass a
+# development override from this guest/ directory, for example
+# KORRI_INPUT=path:../../korri.
+
+build target="rootfs":
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    korri_override=()
+    if [ -n "${KORRI_INPUT:-}" ]; then
+      korri_override=(--override-input korri "$KORRI_INPUT")
+    fi
+
+    nix build ".#{{target}}" "${korri_override[@]}"
+
+flake-show:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    korri_override=()
+    if [ -n "${KORRI_INPUT:-}" ]; then
+      korri_override=(--override-input korri "$KORRI_INPUT")
+    fi
+
+    nix flake show --all-systems . "${korri_override[@]}"
+
+static-checks:
+    ./scripts/static-checks.sh

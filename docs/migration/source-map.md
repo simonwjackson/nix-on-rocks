@@ -75,17 +75,17 @@ Follow-up: review root-level Korri notes such as `handoff-JlZae9.md`, `korri-fro
 
 `../rocknix/documentation/PER_DEVICE_DOCUMENTATION/**` was not moved. That tree is inherited ROCKNIX substrate documentation, not Nix-on-Rocks product-owned documentation. If Nix-on-Rocks needs a product-facing subset, copy or rewrite the relevant SM8550/Odin2Portal/Thor material into `docs/ops/` or `docs/contracts/` rather than making the upstream substrate docs authoritative.
 
-## Phase 1 extraction target
+## Phase 1 extraction status
 
-Move `../rocknix-nix-guest/` code into `../nix-on-rocks/guest/` while preserving these outputs:
+`../rocknix-nix-guest/` code now lives under `../nix-on-rocks/guest/` as the in-repo guest flake. The move preserves these outputs:
 
 - `.#rootfs-thor`
 - `.#rootfs-odin2portal`
 - Thor main-space profile
 - Odin2Portal main-space profile
-- stage10 proof profiles for both devices if still useful
+- stage10 proof profiles for both devices
 
-Nix-on-Rocks should then build and release guest seeds from in-repo guest sources.
+Nix-on-Rocks can build and release guest seeds from in-repo guest sources via `.github/workflows/build-rootfs-seed.yml`. The old `../rocknix-nix-guest/` repo is left as a relocation pointer.
 
 ## Phase 2 extraction target
 

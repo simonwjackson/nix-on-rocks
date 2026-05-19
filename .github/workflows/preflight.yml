@@ -24,3 +24,7 @@ jobs:
       - name: Verify helper scripts
         run: |
           bash -n scripts/*
+
+      - name: Verify guest tree
+        run: |
+          guest/scripts/static-checks.sh

@@ -1,0 +1,178 @@
+name: Build rootfs seed
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: Rootfs package/device to build
+        required: true
+        default: thor
+        type: choice
+        options:
+          - thor
+          - odin2portal
+      publish_release:
+        description: Publish immutable GitHub Release assets
+        required: true
+        default: false
+        type: boolean
+      release_tag:
+        description: Release tag to create/use when publishing (default rootfs-seed-<device>-<short-sha>)
+        required: false
+        type: string
+  push:
+    tags:
+      - rootfs-seed-*
+
+permissions:
+  contents: write
+
+concurrency:
+  group: rootfs-seed-${{ github.ref }}-${{ inputs.device || 'tag' }}
+  cancel-in-progress: false
+
+jobs:
+  build-rootfs-seed:
+    name: Build rootfs seed
+    runs-on: ubuntu-24.04-arm
+    defaults:
+      run:
+        working-directory: guest
+    env:
+      DEVICE: ${{ inputs.device || 'thor' }}
+      GH_TOKEN: ${{ github.token }}
+      NIX_CONFIG: |
+        experimental-features = nix-command flakes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Resolve build metadata
+        id: meta
+        shell: bash
+        run: |
+          # shellcheck disable=SC2129
+          set -euo pipefail
+          device="${DEVICE}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            case "${GITHUB_REF_NAME}" in
+              rootfs-seed-odin2portal-*) device="odin2portal" ;;
+              rootfs-seed-thor-*) device="thor" ;;
+            esac
+          fi
+
+          case "${device}" in
+            thor) package="rootfs-thor" ;;
+            odin2portal) package="rootfs-odin2portal" ;;
+            *) echo "unsupported device: ${device}" >&2; exit 1 ;;
+          esac
+          echo "DEVICE=${device}" >> "${GITHUB_ENV}"
+
+          short_sha="${GITHUB_SHA::12}"
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            release_tag="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
+            release_tag="${{ inputs.release_tag }}"
+          else
+            release_tag="rootfs-seed-${device}-${short_sha}"
+          fi
+
+          {
+            echo "device=${device}"
+            echo "package=${package}"
+            echo "short_sha=${short_sha}"
+            echo "release_tag=${release_tag}"
+            echo "asset_prefix=rocknix-guest-rootfs-${device}-${short_sha}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Run guest static checks
+        run: ./scripts/static-checks.sh
+
+      - name: Build rootfs
+        run: nix build ".#${{ steps.meta.outputs.package }}" --print-build-logs
+
+      - name: Stage release files
+        id: stage
+        shell: bash
+        run: |
+          # shellcheck disable=SC2129
+          set -euo pipefail
+          mkdir -p dist
+          src="$(find result/tarball -maxdepth 1 -type f -name '*.tar.*' | sort | head -n 1)"
+          [ -n "${src}" ] || { echo "rootfs tarball missing" >&2; exit 1; }
+          asset="dist/${{ steps.meta.outputs.asset_prefix }}.tar.zst"
+          cp "${src}" "${asset}"
+          sha256sum "${asset}" > "${asset}.sha256"
+          sha256="$(awk '{print $1}' "${asset}.sha256")"
+          split -b 1900m -d -a 2 "${asset}" "${asset}.part-"
+          rm -f "${asset}"
+          cat > "dist/${{ steps.meta.outputs.asset_prefix }}.manifest.json" <<MANIFEST
+          {
+            "schema": "nix-on-rocks-guest-rootfs-seed/v1",
+            "device": "${DEVICE}",
+            "package": "${{ steps.meta.outputs.package }}",
+            "git_sha": "${GITHUB_SHA}",
+            "git_ref": "${GITHUB_REF}",
+            "release_tag": "${{ steps.meta.outputs.release_tag }}",
+            "asset_name": "$(basename "${asset}")",
+            "asset_parts_glob": "$(basename "${asset}").part-*",
+            "sha256": "${sha256}",
+            "built_at": "$(date -u +%FT%TZ)"
+          }
+          MANIFEST
+          notes_file="dist/release-notes.md"
+          {
+            echo "# Nix-on-Rocks guest rootfs seed ${DEVICE} ${{ steps.meta.outputs.short_sha }}"
+            echo
+            echo "Source SHA: \`${GITHUB_SHA}\`"
+            echo "Device: \`${DEVICE}\`"
+            echo "Package: \`${{ steps.meta.outputs.package }}\`"
+            echo "Asset parts: \`$(basename "${asset}").part-*\`"
+            echo "SHA256: \`${sha256}\`"
+            echo
+            echo "Host package.mk seed values:"
+            echo
+            echo '```sh'
+            echo "PKG_NIX_GUEST_ROOTFS_SEED_REV=\"${GITHUB_SHA}\""
+            echo "PKG_NIX_GUEST_ROOTFS_SEED_URL=\"\""
+            printf 'PKG_NIX_GUEST_ROOTFS_SEED_URLS="'
+            first=yes
+            for part in "${asset}".part-*; do
+              [ -e "${part}" ] || continue
+              if [ "${first}" = "yes" ]; then first=no; else printf ' '; fi
+              printf 'https://github.com/%s/releases/download/%s/%s' "${GITHUB_REPOSITORY}" "${{ steps.meta.outputs.release_tag }}" "$(basename "${part}")"
+            done
+            printf '"\n'
+            echo "PKG_NIX_GUEST_ROOTFS_SEED_SHA256=\"${sha256}\""
+            echo '```'
+          } > "${notes_file}"
+          {
+            echo "asset=${asset}"
+            echo "sha256=${sha256}"
+            echo "asset_name=$(basename "${asset}")"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.meta.outputs.asset_prefix }}
+          path: guest/dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag' || inputs.publish_release == true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.release_tag }}
+          target_commitish: ${{ github.sha }}
+          name: Nix-on-Rocks guest rootfs seed ${{ steps.meta.outputs.device }} ${{ steps.meta.outputs.short_sha }}
+          body_path: guest/dist/release-notes.md
+          files: guest/dist/*
+          fail_on_unmatched_files: true

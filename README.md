@@ -9,7 +9,8 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Device lane: `SM8550`
 - Accepted device: `sobo` / Odin2Portal (`ayn,odin2portal`)
 - Upstream source pin: see `upstream.lock`
-- Guest seed pin: see `guest.lock`
+- Guest source: `guest/` (`.#rootfs-thor`, `.#rootfs-odin2portal`)
+- Accepted guest seed pin: see `guest.lock`
 - Patch queue: `patches/rocknix/series`
 
 ## Local quickstart
@@ -20,7 +21,16 @@ scripts/apply-rocknix-patches
 scripts/verify-sm8550-contract
 ```
 
-A full local build needs Docker and enough disk for a ROCKNIX build:
+Guest rootfs builds run from the in-repo guest flake:
+
+```sh
+cd guest
+./scripts/static-checks.sh
+nix build .#rootfs-thor
+nix build .#rootfs-odin2portal
+```
+
+A full local host build needs Docker and enough disk for a ROCKNIX build:
 
 ```sh
 scripts/build-sm8550
