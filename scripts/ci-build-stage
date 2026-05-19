@@ -16,6 +16,22 @@ export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
 export CCACHE_COMPRESSLEVEL=${CCACHE_COMPRESSLEVEL:-6}
 export CCACHE_SLOPPINESS=${CCACHE_SLOPPINESS:-pch_defines,time_macros,include_file_mtime,include_file_ctime}
 
+archive_ccache() {
+  local output=$1
+  local max_size=$2
+  local ccache_dir="${work_dir}/build.ROCKNIX-SM8550.aarch64/.ccache"
+  local ccache_bin="${work_dir}/build.ROCKNIX-SM8550.aarch64/toolchain/bin/ccache"
+
+  [ -d "${ccache_dir}" ] || return 0
+  if [ -x "${ccache_bin}" ]; then
+    CCACHE_DIR="${ccache_dir}" "${ccache_bin}" -s -v || true
+    CCACHE_DIR="${ccache_dir}" "${ccache_bin}" -M "${max_size}" || true
+    CCACHE_DIR="${ccache_dir}" "${ccache_bin}" -c || true
+    CCACHE_DIR="${ccache_dir}" "${ccache_bin}" -z || true
+  fi
+  tar -C "${work_dir}" --remove-files -cf "${work_dir}/${output}" ./build.ROCKNIX-SM8550.aarch64/.ccache
+}
+
 run_in_container() {
   local command=$1
 
@@ -125,7 +141,7 @@ case "${stage}" in
   toolchain)
     run_in_container './scripts/build_mt toolchain alsa-lib llvm:host'
     cd "${work_dir}"
-    rm -rf ./build.ROCKNIX-SM8550.aarch64/.ccache
+    archive_ccache ccache-aarch64-SM8550-toolchain.tar 500M
     tar --zstd -cf build.aarch64-toolchain.tar.zst \
       ./build.ROCKNIX-SM8550.aarch64/toolchain \
       ./build.ROCKNIX-SM8550.aarch64/build \
@@ -138,7 +154,7 @@ case "${stage}" in
     export MODULES_PKG=${MODULES_PKG:-no}
     run_in_container './scripts/build_distro'
     cd "${work_dir}"
-    rm -rf ./build.ROCKNIX-SM8550.aarch64/.ccache
+    archive_ccache ccache-aarch64-SM8550.tar 500M
     if [ "${NIX_ON_ROCKS_SKIP_BASE_ARCHIVE:-no}" = "yes" ]; then
       df -h .
       du -sh ./build.ROCKNIX-SM8550.aarch64 ./build.ROCKNIX-SM8550.aarch64/build 2>/dev/null || true

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+scope=${1:-base}
+
+case "${scope}" in
+  toolchain) filename="ccache-aarch64-SM8550-toolchain.tar" ;;
+  base) filename="ccache-aarch64-SM8550.tar" ;;
+  *) echo "usage: restore-ccache <toolchain|base>" >&2; exit 2 ;;
+esac
+
+owner=${GITHUB_REPOSITORY_OWNER:-simonwjackson}
+cache_repo=${NIX_ON_ROCKS_CACHE_REPO:-nix-on-rocks}
+primary="https://github.com/${owner}/${cache_repo}/releases/download/ccache/${filename}"
+fallback="https://github.com/ROCKNIX/distribution-cache/releases/download/ccache/${filename}"
+
+mkdir -p "${work_dir}"
+fetch_ccache() {
+  local url=$1
+  echo "ccache: trying ${url}"
+  curl -L --fail --silent --show-error -o "${work_dir}/cache.tar" "${url}" \
+    && tar -C "${work_dir}" -xf "${work_dir}/cache.tar" \
+    && rm -f "${work_dir}/cache.tar"
+}
+
+if fetch_ccache "${primary}"; then
+  echo "ccache: restored ${filename} from ${owner}/${cache_repo}"
+elif fetch_ccache "${fallback}"; then
+  echo "ccache: restored ${filename} from ROCKNIX/distribution-cache"
+else
+  echo "ccache: cold start for ${filename}"
+  rm -f "${work_dir}/cache.tar"
+fi
