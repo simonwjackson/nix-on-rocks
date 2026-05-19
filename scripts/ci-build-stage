@@ -58,8 +58,15 @@ verify_sm8550_payloads() {
   fi
   update_tar=${update_tars}
 
+  local tar_listing tar_verbose_listing
+  tar_listing=$(mktemp)
+  tar_verbose_listing=$(mktemp)
+  trap 'rm -f "${tar_listing}" "${tar_verbose_listing}"' RETURN
+  tar -tf "${update_tar}" > "${tar_listing}"
+  tar -tvf "${update_tar}" > "${tar_verbose_listing}"
+
   local system_bytes budget_bytes
-  system_bytes=$(tar -tvf "${update_tar}" | awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }')
+  system_bytes=$(awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }' "${tar_verbose_listing}")
   if [ -z "${system_bytes}" ]; then
     echo "${update_tar} does not contain target/SYSTEM" >&2
     exit 1
@@ -77,7 +84,7 @@ verify_sm8550_payloads() {
     echo "unable to parse expected SM8550 guest seed archive/SHA256" >&2
     exit 1
   fi
-  seed_entry=$(tar -tf "${update_tar}" | awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }')
+  seed_entry=$(awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }' "${tar_listing}")
   if [ -z "${seed_entry}" ]; then
     echo "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}" >&2
     exit 1
@@ -88,7 +95,7 @@ verify_sm8550_payloads() {
     exit 1
   fi
 
-  tar -tf "${update_tar}" | grep -Eq '(^|/)target/SYSTEM$'
+  grep -Eq '(^|/)target/SYSTEM$' "${tar_listing}"
   for image_file in target/ROCKNIX-*.img.gz; do
     gzip -t "${image_file}"
   done
