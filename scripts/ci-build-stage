@@ -89,7 +89,23 @@ verify_sm8550_payloads() {
     echo "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}" >&2
     exit 1
   fi
-  actual_seed_sha=$(tar -xOf "${update_tar}" "${seed_entry}" | sha256sum | awk '{print $1}')
+  actual_seed_sha=$(python3 - "${update_tar}" "${seed_entry}" <<'PY'
+import hashlib
+import sys
+import tarfile
+
+tar_path, member_name = sys.argv[1:3]
+h = hashlib.sha256()
+with tarfile.open(tar_path, "r:") as archive:
+    member = archive.getmember(member_name)
+    stream = archive.extractfile(member)
+    if stream is None:
+        raise SystemExit(f"unable to extract {member_name}")
+    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+        h.update(chunk)
+print(h.hexdigest())
+PY
+)
   if [ "${actual_seed_sha}" != "${expected_seed_sha}" ]; then
     echo "${update_tar}:${seed_entry} SHA256 mismatch: ${actual_seed_sha} != ${expected_seed_sha}" >&2
     exit 1
