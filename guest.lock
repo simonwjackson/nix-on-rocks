@@ -3,6 +3,6 @@
 # Odin2Portal seed consumed by the host patch queue until the next seed release.
 GUEST_DEVICE="odin2portal"
 GUEST_COMPATIBLE="ayn,odin2portal"
-GUEST_REV="4fb6d8f14bae8e1b5fb0f833895640c7c7238e78"
-GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst"
-GUEST_SEED_SHA256="dc05c42344496c6f0fa66aa7514845cc6ab32a2d61881eb9341843aad39bcdde"
+GUEST_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst"
+GUEST_SEED_SHA256="650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f"

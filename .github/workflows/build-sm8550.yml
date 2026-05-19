@@ -166,6 +166,7 @@ jobs:
 
       - name: Build aarch64 base
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
         run: scripts/ci-build-stage base
 

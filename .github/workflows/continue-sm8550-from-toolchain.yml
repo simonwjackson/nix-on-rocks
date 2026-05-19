@@ -104,6 +104,7 @@ jobs:
 
       - name: Build aarch64 base in-place
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
           NIX_ON_ROCKS_SKIP_BASE_ARCHIVE: "yes"
         run: scripts/ci-build-stage base

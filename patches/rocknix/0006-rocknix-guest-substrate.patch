@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..aba1ef66a1
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,220 @@
+@@ -0,0 +1,252 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -18,18 +18,18 @@ index 0000000000..aba1ef66a1
 +
 +# Pinned source of the NixOS main-space guest. The host repo carries
 +# only the substrate plumbing for the guest; the guest itself lives in
-+# https://github.com/simonwjackson/rocknix-nix-guest and is fetched
-+# from a pinned commit at build time. Bump PKG_NIX_GUEST_REV (and the
-+# accompanying SHA256 of the GitHub-rendered tarball) to roll the host
-+# to a newer guest release. The closure layout dropped into
-+# /usr/lib/rocknix-guest-substrate/guest/ remains byte-identical to the
-+# old in-tree guest/ subtree -- only the source of truth moved.
-+PKG_NIX_GUEST_REV="4fb6d8f14bae8e1b5fb0f833895640c7c7238e78"
-+PKG_NIX_GUEST_SHA256="8922a056e03d233e81a2fe0b588dc4e05fd6c716b56785db9f26076eb3a16497"
-+PKG_NIX_GUEST_URL="https://github.com/simonwjackson/rocknix-nix-guest/archive/${PKG_NIX_GUEST_REV}.tar.gz"
++# the Nix-on-Rocks product repo under guest/ and is fetched from a pinned
++# product commit at build time. Bump PKG_NIX_GUEST_REV (and the accompanying
++# SHA256 of the GitHub-rendered tarball) to roll the host to a newer guest
++# release. The closure layout dropped into /usr/lib/rocknix-guest-substrate/guest/
++# remains the same; only the source of truth moved into nix-on-rocks/guest.
++PKG_NIX_GUEST_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
++PKG_NIX_GUEST_SHA256="fbbb3f7110b5d31df9b93d180659b41d995a1959b9499d9a96b2294ec528d8fd"
++PKG_NIX_GUEST_URL="https://api.github.com/repos/simonwjackson/nix-on-rocks/tarball/${PKG_NIX_GUEST_REV}"
++PKG_NIX_GUEST_SOURCE_SUBDIR="guest"
 +
 +# Bootable first-boot guest rootfs seed. This must be a prebuilt tarball
-+# produced from the rocknix-nix-guest rootfs/rootfs-thor flake output for the
++# produced from the nix-on-rocks/guest rootfs/rootfs-thor flake output for the
 +# same guest revision. It is intentionally distinct from PKG_NIX_GUEST_URL:
 +# source can be promoted by a running guest, but fresh /storage needs a
 +# bootable rootfs seed before rocknix-guest.service can start. Leave these
@@ -38,10 +38,43 @@ index 0000000000..aba1ef66a1
 +PKG_NIX_GUEST_ROOTFS_SEED_REV="${PKG_NIX_GUEST_REV}"
 +PKG_NIX_GUEST_ROOTFS_SEED_DEVICE="odin2portal"
 +PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE="ayn,odin2portal"
-+PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst"
-+PKG_NIX_GUEST_ROOTFS_SEED_SHA256="dc05c42344496c6f0fa66aa7514845cc6ab32a2d61881eb9341843aad39bcdde"
++PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst"
++PKG_NIX_GUEST_ROOTFS_SEED_SHA256="650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f"
 +PKG_NIX_GUEST_ROOTFS_SEED_URL=""
-+PKG_NIX_GUEST_ROOTFS_SEED_URLS="https://github.com/simonwjackson/rocknix-nix-guest/releases/download/rootfs-seed-odin2portal-4fb6d8f14bae/rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst.part-00 https://github.com/simonwjackson/rocknix-nix-guest/releases/download/rootfs-seed-odin2portal-4fb6d8f14bae/rocknix-guest-rootfs-odin2portal-4fb6d8f14bae.tar.zst.part-01"
++PKG_NIX_GUEST_ROOTFS_SEED_URLS="https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/424322186 https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/424322185"
++
++github_token() {
++  printf '%s' "${GITHUB_TOKEN:-${GH_TOKEN:-}}"
++}
++
++curl_fetch() {
++  output=$1
++  url=$2
++  token=$(github_token)
++  if [ -n "${token}" ]; then
++    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
++         -H "Authorization: Bearer ${token}" \
++         -H "Accept: application/vnd.github+json" \
++         --output "${output}" "${url}"
++  else
++    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
++         --output "${output}" "${url}"
++  fi
++}
++
++curl_append() {
++  url=$1
++  token=$(github_token)
++  if [ -n "${token}" ]; then
++    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
++         -H "Authorization: Bearer ${token}" \
++         -H "Accept: application/octet-stream" \
++         --output - "${url}"
++  else
++    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
++         --output - "${url}"
++  fi
++}
 +
 +post_install() {
 +  # rocknix-guest-substrate is an SM8550-only package. Other devices do
@@ -88,19 +121,18 @@ index 0000000000..aba1ef66a1
 +  cp ${PKG_DIR}/tests/guest-substrate-runtime-smoke.sh "${substrate_lib}/tests"
 +  chmod 0755 "${substrate_lib}/tests/guest-substrate-runtime-smoke.sh"
 +
-+  # Fetch the pinned rocknix-nix-guest source and stage it under
-+  # /usr/lib/rocknix-guest-substrate/guest/. Cached under ${SOURCES}/ so
-+  # repeat builds (and the fast-iter image-only workflow) hit the
-+  # cache instead of GitHub. SHA256 verification is mandatory.
-+  guest_tarball="${SOURCES}/rocknix-nix-guest/rocknix-nix-guest-${PKG_NIX_GUEST_REV}.tar.gz"
++  # Fetch the pinned Nix-on-Rocks product source and stage its guest/ subtree
++  # under /usr/lib/rocknix-guest-substrate/guest/. Cached under ${SOURCES}/ so
++  # repeat builds (and the fast-iter image-only workflow) hit the cache instead
++  # of GitHub. SHA256 verification is mandatory.
++  guest_tarball="${SOURCES}/nix-on-rocks/nix-on-rocks-${PKG_NIX_GUEST_REV}.tar.gz"
 +  if [ ! -f "${guest_tarball}" ]; then
 +    mkdir -p "$(dirname "${guest_tarball}")"
-+    echo "rocknix-guest-substrate: fetching rocknix-nix-guest ${PKG_NIX_GUEST_REV}"
-+    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
-+         --output "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"
++    echo "rocknix-guest-substrate: fetching nix-on-rocks guest ${PKG_NIX_GUEST_REV}"
++    curl_fetch "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"
 +    actual_sha="$(sha256sum "${guest_tarball}.tmp" | awk '{print $1}')"
 +    if [ "${actual_sha}" != "${PKG_NIX_GUEST_SHA256}" ]; then
-+      echo "rocknix-guest-substrate: rocknix-nix-guest tarball SHA256 mismatch" >&2
++      echo "rocknix-guest-substrate: nix-on-rocks guest tarball SHA256 mismatch" >&2
 +      echo "  expected: ${PKG_NIX_GUEST_SHA256}" >&2
 +      echo "  actual:   ${actual_sha}" >&2
 +      rm -f "${guest_tarball}.tmp"
@@ -111,31 +143,33 @@ index 0000000000..aba1ef66a1
 +
 +  actual_sha="$(sha256sum "${guest_tarball}" | awk '{print $1}')"
 +  if [ "${actual_sha}" != "${PKG_NIX_GUEST_SHA256}" ]; then
-+    echo "rocknix-guest-substrate: cached rocknix-nix-guest tarball SHA256 mismatch" >&2
++    echo "rocknix-guest-substrate: cached nix-on-rocks guest tarball SHA256 mismatch" >&2
 +    echo "  expected: ${PKG_NIX_GUEST_SHA256}" >&2
 +    echo "  actual:   ${actual_sha}" >&2
 +    exit 1
 +  fi
 +
-+  guest_extract="${PKG_BUILD}/.rocknix-nix-guest"
++  guest_extract="${PKG_BUILD}/.nix-on-rocks"
 +  rm -rf "${guest_extract}"
 +  mkdir -p "${guest_extract}"
 +  tar -xzf "${guest_tarball}" -C "${guest_extract}" --strip-components=1
++  guest_source="${guest_extract}/${PKG_NIX_GUEST_SOURCE_SUBDIR}"
++  [ -f "${guest_source}/flake.nix" ] || { echo "rocknix-guest-substrate: fetched nix-on-rocks tree lacks ${PKG_NIX_GUEST_SOURCE_SUBDIR}/flake.nix" >&2; exit 1; }
 +
 +  mkdir -p "${substrate_lib}/guest"
-+  cp -PR "${guest_extract}/." "${substrate_lib}/guest/"
++  cp -PR "${guest_source}/." "${substrate_lib}/guest/"
 +  printf '%s\n' "${PKG_NIX_GUEST_REV}" > "${substrate_lib}/guest-revision"
 +  printf '%s\n' "${PKG_NIX_GUEST_REV}" > "${substrate_lib}/guest/.rocknix-guest-revision"
 +
 +  if { [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URL}" ] && [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URLS}" ]; } || \
 +     [ "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" = "REPLACE_WITH_BOOTABLE_ROOTFS_SEED_SHA256" ]; then
 +    echo "rocknix-guest-substrate: bootable guest rootfs seed URL/SHA256 are not configured" >&2
-+    echo "  Build and publish rocknix-nix-guest .#rootfs-thor for ${PKG_NIX_GUEST_ROOTFS_SEED_REV}, then set:" >&2
++    echo "  Build and publish nix-on-rocks/guest .#rootfs-thor for ${PKG_NIX_GUEST_ROOTFS_SEED_REV}, then set:" >&2
 +    echo "  PKG_NIX_GUEST_ROOTFS_SEED_URL or PKG_NIX_GUEST_ROOTFS_SEED_URLS, plus PKG_NIX_GUEST_ROOTFS_SEED_SHA256" >&2
 +    exit 1
 +  fi
 +
-+  seed_tarball="${SOURCES}/rocknix-nix-guest/${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE}"
++  seed_tarball="${SOURCES}/nix-on-rocks/${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE}"
 +  if [ ! -f "${seed_tarball}" ]; then
 +    mkdir -p "$(dirname "${seed_tarball}")"
 +    echo "rocknix-guest-substrate: fetching bootable guest rootfs seed ${PKG_NIX_GUEST_ROOTFS_SEED_REV}"
@@ -143,12 +177,10 @@ index 0000000000..aba1ef66a1
 +      rm -f "${seed_tarball}.tmp"
 +      : > "${seed_tarball}.tmp"
 +      for seed_url in ${PKG_NIX_GUEST_ROOTFS_SEED_URLS}; do
-+        curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
-+             --output - "${seed_url}" >> "${seed_tarball}.tmp"
++        curl_append "${seed_url}" >> "${seed_tarball}.tmp"
 +      done
 +    else
-+      curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
-+           --output "${seed_tarball}.tmp" "${PKG_NIX_GUEST_ROOTFS_SEED_URL}"
++      curl_fetch "${seed_tarball}.tmp" "${PKG_NIX_GUEST_ROOTFS_SEED_URL}"
 +    fi
 +    actual_seed_sha="$(sha256sum "${seed_tarball}.tmp" | awk '{print $1}')"
 +    if [ "${actual_seed_sha}" != "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" ]; then
@@ -189,8 +221,8 @@ index 0000000000..aba1ef66a1
 +  mkdir -p "${seed_release_dir}"
 +  cp "${seed_tarball}" "${seed_release_dir}/${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE}"
 +
-+  # Contract docs are owned by rocknix-nix-guest under docs/contracts/.
-+  # Copy the two that the host ships on-image from the fetched tarball.
++  # Contract docs are owned by Nix-on-Rocks under docs/contracts/.
++  # Copy the two that the host ships on-image from the fetched product tarball.
 +  mkdir -p "${substrate_lib}/docs"
 +  cp "${guest_extract}/docs/contracts/layer14-main-space-contract.md" "${substrate_lib}/docs/"
 +  cp "${guest_extract}/docs/contracts/layer14-soak-checklist.md" "${substrate_lib}/docs/"
@@ -205,7 +237,7 @@ index 0000000000..aba1ef66a1
 +  enable_service rocknix-recovery-toggle.service
 +
 +  # Ship the recovery readme to /flash/. Pulled from the fetched
-+  # rocknix-nix-guest tarball (docs/contracts/HOW-TO-FALL-BACK.md) so
++  # Nix-on-Rocks product tarball (docs/contracts/HOW-TO-FALL-BACK.md) so
 +  # a teardown / SD-card reader on another machine can read it without
 +  # booting Thor.
 +  mkdir -p ${INSTALL}/flash
@@ -3523,17 +3555,19 @@ index 0000000000..d3f6a6f39a
 +[ -f "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" ] || fail "missing runtime smoke test"
 +sh -n "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" || fail "runtime smoke syntax failed"
 +
-+# Guest source is fetched from rocknix-nix-guest and verified by SHA256.
++# Guest source is fetched from nix-on-rocks/guest and verified by SHA256.
 +grep -q 'PKG_NIX_GUEST_REV=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest rev pin"
 +grep -q 'PKG_NIX_GUEST_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest tarball sha256 pin"
-+grep -q 'rocknix-nix-guest/archive' "${PKG_DIR}/package.mk" || fail "package.mk missing guest tarball URL"
++grep -q 'api.github.com/repos/simonwjackson/nix-on-rocks/tarball' "${PKG_DIR}/package.mk" || fail "package.mk missing nix-on-rocks guest tarball URL"
++grep -q 'PKG_NIX_GUEST_SOURCE_SUBDIR="guest"' "${PKG_DIR}/package.mk" || fail "package.mk must select guest/ from the product tarball"
++grep -q 'curl_fetch "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"' "${PKG_DIR}/package.mk" || fail "package.mk must use authenticated-capable fetch for product tarball"
 +grep -q 'sha256sum "${guest_tarball}.tmp"' "${PKG_DIR}/package.mk" || fail "package.mk must verify freshly downloaded guest tarball sha256"
 +grep -q 'sha256sum "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must verify cached guest tarball sha256 before extraction"
-+grep -q 'cached rocknix-nix-guest tarball SHA256 mismatch' "${PKG_DIR}/package.mk" || fail "package.mk must fail clearly on cached tarball sha256 mismatch"
++grep -q 'cached nix-on-rocks guest tarball SHA256 mismatch' "${PKG_DIR}/package.mk" || fail "package.mk must fail clearly on cached tarball sha256 mismatch"
 +assert_order "${PKG_DIR}/package.mk" 'sha256sum "${guest_tarball}.tmp"' 'mv "${guest_tarball}.tmp" "${guest_tarball}"' "package.mk must verify fresh guest tarball before caching it"
 +assert_order "${PKG_DIR}/package.mk" 'sha256sum "${guest_tarball}"' 'tar -xzf "${guest_tarball}"' "package.mk must verify cached guest tarball before extraction"
 +grep -q 'tar -xzf "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must extract fetched guest tarball"
-+grep -q 'cp -PR "${guest_extract}/."' "${PKG_DIR}/package.mk" || fail "package.mk must stage fetched guest tree"
++grep -q 'cp -PR "${guest_source}/."' "${PKG_DIR}/package.mk" || fail "package.mk must stage fetched guest subtree"
 +grep -q 'guest-revision' "${PKG_DIR}/package.mk" || fail "package.mk must ship packaged guest revision marker"
 +grep -q 'docs/contracts/layer14-main-space-contract.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship main-space contract doc from guest"
 +grep -q 'docs/contracts/layer14-soak-checklist.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship soak checklist from guest"
@@ -3546,7 +3580,7 @@ index 0000000000..d3f6a6f39a
 +grep -q 'bootable guest rootfs seed URL/SHA256 are not configured' "${PKG_DIR}/package.mk" || fail "package.mk must fail closed while rootfs seed URL/SHA are placeholders"
 +grep -q 'guest-rootfs-seed.manifest' "${PKG_DIR}/package.mk" || fail "package.mk must install a rootfs seed manifest"
 +grep -q 'seed_release_dir="${BUILD}/rocknix-guest-rootfs-seed"' "${PKG_DIR}/package.mk" || fail "package.mk must stage rootfs seed outside SYSTEM for image packaging"
-+grep -q -- '--output - "${seed_url}" >> "${seed_tarball}.tmp"' "${PKG_DIR}/package.mk" || fail "package.mk must reassemble split seed assets without storing duplicate part files"
++grep -q 'curl_append "${seed_url}" >> "${seed_tarball}.tmp"' "${PKG_DIR}/package.mk" || fail "package.mk must reassemble split seed assets with authenticated-capable streaming fetch"
 +! grep -q 'cp "${seed_tarball}" "${substrate_lib}' "${PKG_DIR}/package.mk" || fail "package.mk must not copy the rootfs seed archive into SYSTEM"
 +! grep -q 'cp -PR "${seed_extract}/."' "${PKG_DIR}/package.mk" || fail "package.mk must not duplicate the expanded rootfs seed during build"
 +

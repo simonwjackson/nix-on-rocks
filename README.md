@@ -10,6 +10,7 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Accepted device: `sobo` / Odin2Portal (`ayn,odin2portal`)
 - Upstream source pin: see `upstream.lock`
 - Guest source: `guest/` (`.#rootfs-thor`, `.#rootfs-odin2portal`)
+- Host-packaged guest source: pinned Nix-on-Rocks product tarball, extracting `guest/`
 - Accepted guest seed pin: see `guest.lock`
 - Patch queue: `patches/rocknix/series`
 
@@ -45,7 +46,8 @@ scripts/build-sm8550
 3. apply `patches/rocknix/series`;
 4. run SM8550 contract checks;
 5. build SM8550 with the patched ROCKNIX tree;
-6. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, guest seed, and payload checksums.
+6. fetch the pinned Nix-on-Rocks product tarball inside `rocknix-guest-substrate` and package its `guest/` subtree;
+7. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, guest seed, and payload checksums.
 
 ## Naming note
 
