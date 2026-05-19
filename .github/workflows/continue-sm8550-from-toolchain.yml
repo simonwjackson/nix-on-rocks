@@ -105,10 +105,8 @@ jobs:
           NIX_ON_ROCKS_SKIP_BASE_ARCHIVE: "yes"
         run: scripts/ci-build-stage base
 
-      - name: Build SM8550 image and manifest
-        env:
-          NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
-        run: scripts/ci-build-stage image
+      - name: Verify SM8550 payloads and manifest
+        run: scripts/ci-build-stage manifest
 
       - name: Archive logs
         if: failure()

@@ -131,6 +131,10 @@ case "${stage}" in
     verify_sm8550_payloads
     "${repo_root}/scripts/generate-manifest"
     ;;
+  manifest)
+    verify_sm8550_payloads
+    "${repo_root}/scripts/generate-manifest"
+    ;;
   *)
     echo "unknown stage: ${stage}" >&2
     exit 1
