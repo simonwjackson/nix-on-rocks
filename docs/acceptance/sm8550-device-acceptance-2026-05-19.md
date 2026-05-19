@@ -65,6 +65,44 @@ Validation commands:
 - `/usr/lib/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`: passed
 - `ROCKNIX_REQUIRE_HOST_ESSWAY=no rocknix-guest-soak --hours 1 --interval-seconds 1`: passed with zero alarms
 
+## Phase 2 host guest-source proof
+
+Follow-up build proving the host packages guest source and seed from `nix-on-rocks`:
+
+- Workflow run: `https://github.com/simonwjackson/nix-on-rocks/actions/runs/26109705070`
+- Product SHA used for artifact: `0b87531da48f65160d70c12e970896c9d6d662d6`
+- Guest source revision: `d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a`
+- Guest seed: `rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst`
+  - SHA256: `650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f`
+
+Artifact verification before install:
+
+- update tar checksum: passed
+- image gzip integrity: passed
+- update tar contained `target/SYSTEM`
+- update tar contained `target/KERNEL`
+- update tar contained `target/seed/rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst`
+- update-tar seed SHA matched the expected guest seed SHA256
+
+Post-install finding:
+
+- First boot installed the new host substrate and seed manifest, but `rocknix-guest-promote.service` attempted an on-device Nix rebuild and was OOM-killed before switching the guest rootfs.
+- Recovery used the normal packaged rootfs seed path: stop guest, run `rocknix-guest-root-ensure` with `/flash/rocknix.reseed-guest`, then restart guest.
+- Durable fix committed as `eb2ad7f fix: reseed superseded SM8550 guest roots`, so future updates auto-reseed when a valid current seeded root is superseded by a compatible packaged seed, avoiding the boot-time on-device rebuild path.
+
+Final device evidence after recovery:
+
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-promote.service`: `inactive` / no-op
+- Substrate guest revision: `d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a`
+- Rootfs guest revision: `d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `/usr/lib/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh`: passed
+- `rocknix-guest-soak --hours 1 --interval-seconds 5`: passed with zero alarms
+- Display brightness: `410 / 4096`
+
 ## Result
 
-`DeviceAccepted` for the first external Nix-on-Rocks SM8550 patch-product build.
+`DeviceAccepted` for the first external Nix-on-Rocks SM8550 patch-product build and Phase 2 host packaging from the product repo, with the auto-reseed fix queued for the next image.
