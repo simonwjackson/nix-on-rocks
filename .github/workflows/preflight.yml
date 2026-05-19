@@ -20,6 +20,7 @@ jobs:
         run: |
           scripts/apply-rocknix-patches
           scripts/verify-sm8550-contract
+          scripts/verify-sm8550-locks
 
       - name: Verify helper scripts
         run: |

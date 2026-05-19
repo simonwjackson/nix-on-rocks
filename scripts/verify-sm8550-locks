@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+
+[ -f "${repo_root}/guest.lock" ] || { echo "missing guest.lock" >&2; exit 1; }
+[ -f "${package_mk}" ] || { echo "missing patched package.mk: ${package_mk}" >&2; exit 1; }
+
+# shellcheck source=../guest.lock
+# shellcheck disable=SC1091
+. "${repo_root}/guest.lock"
+
+# package.mk is shell syntax. Source it for variable expansion only; post_install
+# and helper functions are defined but not executed.
+# shellcheck source=/dev/null
+# shellcheck disable=SC1090,SC1091
+. "${package_mk}"
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+require_equal() {
+  local name=$1
+  local actual=$2
+  local expected=$3
+  [ "${actual}" = "${expected}" ] || fail "${name}: expected '${expected}', got '${actual}'"
+}
+
+require_nonempty() {
+  local name=$1
+  local value=$2
+  [ -n "${value}" ] || fail "${name} must not be empty"
+}
+
+require_nonempty GUEST_DEVICE "${GUEST_DEVICE:-}"
+require_nonempty GUEST_COMPATIBLE "${GUEST_COMPATIBLE:-}"
+require_nonempty GUEST_REV "${GUEST_REV:-}"
+require_nonempty GUEST_SEED_ARCHIVE "${GUEST_SEED_ARCHIVE:-}"
+require_nonempty GUEST_SEED_SHA256 "${GUEST_SEED_SHA256:-}"
+
+require_equal PKG_NIX_GUEST_REV "${PKG_NIX_GUEST_REV:-}" "${GUEST_REV}"
+require_equal PKG_NIX_GUEST_SOURCE_SUBDIR "${PKG_NIX_GUEST_SOURCE_SUBDIR:-}" "guest"
+require_equal PKG_NIX_GUEST_ROOTFS_SEED_REV "${PKG_NIX_GUEST_ROOTFS_SEED_REV:-}" "${GUEST_REV}"
+require_equal PKG_NIX_GUEST_ROOTFS_SEED_DEVICE "${PKG_NIX_GUEST_ROOTFS_SEED_DEVICE:-}" "${GUEST_DEVICE}"
+require_equal PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE "${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE:-}" "${GUEST_COMPATIBLE}"
+require_equal PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE "${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE:-}" "${GUEST_SEED_ARCHIVE}"
+require_equal PKG_NIX_GUEST_ROOTFS_SEED_SHA256 "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256:-}" "${GUEST_SEED_SHA256}"
+
+case "${PKG_NIX_GUEST_URL:-}" in
+  "https://api.github.com/repos/simonwjackson/nix-on-rocks/tarball/${GUEST_REV}") : ;;
+  *) fail "PKG_NIX_GUEST_URL must fetch the pinned nix-on-rocks product tarball via the GitHub API" ;;
+esac
+
+case "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-} ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" in
+  *rocknix-nix-guest*) fail "rootfs seed URLs must not reference the retired rocknix-nix-guest repo" ;;
+esac
+case "${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}}" in
+  *api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/*) : ;;
+  *) fail "rootfs seed URLs must use authenticated GitHub release asset API URLs" ;;
+esac
+
+case "${GUEST_SEED_ARCHIVE}" in
+  rocknix-guest-rootfs-"${GUEST_DEVICE}"-*.tar.zst) : ;;
+  *) fail "GUEST_SEED_ARCHIVE does not name the locked device '${GUEST_DEVICE}': ${GUEST_SEED_ARCHIVE}" ;;
+esac
+
+if grep -Eq 'rocknix-nix-guest/(archive|releases)' "${package_mk}"; then
+  fail "package.mk still contains retired rocknix-nix-guest archive/release fetch references"
+fi
+
+printf 'Verified SM8550 guest lock/package alignment for %s %s\n' "${GUEST_DEVICE}" "${GUEST_REV}"
