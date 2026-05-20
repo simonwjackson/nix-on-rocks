@@ -340,6 +340,68 @@ Post-reboot evidence:
 
 Result: with current boot ordering on `sobo`, rebooting with the written SD inserted still selected the internal ROCKNIX/STORAGE partitions. The duplicate-label situation remains undesirable for deterministic operator procedures, but it did not cause a mixed or SD boot in this test.
 
+## Forced SD boot with seeded storage
+
+The first forced SD boot succeeded at the host layer but failed `rocknix-guest-root-ensure` because the stock image's 32 MiB SD `STORAGE` partition did not contain the Odin2Portal rootfs seed.
+
+Observed first forced SD boot:
+
+```text
+/dev/mmcblk0p1 on /flash
+/dev/mmcblk0p2 on /storage
+rocknix-guest-root-ensure: FAIL: matching guest rootfs seed archive missing: /storage/nix-on-rock/images/seeds/rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst
+```
+
+The SD card was then prepared from the internal boot:
+
+1. Restored internal filesystem labels and booted back to internal `/dev/sda18` + `/dev/sda19`.
+2. Recreated `/dev/mmcblk0p2` from the image's original p2 start sector to the end of the SD card.
+3. Formatted `/dev/mmcblk0p2` as ext4 label `STORAGE`.
+4. Copied the Odin2Portal seed archive and minimal host recovery state (`iwd`, `connman`, host SSH keys, authorized keys) to SD `STORAGE`.
+5. Forced SD boot again by temporarily relabeling internal filesystems to `ROCKNIX_INT` and `STORAGE_INT`.
+
+Expanded SD storage:
+
+```text
+/dev/mmcblk0p2: LABEL="STORAGE" TYPE="ext4" PARTUUID="9e37f1cb-02"
+p2_size_bytes=28777119744
+```
+
+Second forced SD boot mounted both runtime partitions from the SD card:
+
+```text
+/dev/mmcblk0p1 on /flash type vfat
+/dev/mmcblk0p2 on /storage type ext4
+```
+
+The guest root was created from the SD-staged seed:
+
+```text
+seeded_at=2026-05-20T22:15:07Z
+seed_revision=d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a
+seed_device=odin2portal
+seed_compatible=ayn,odin2portal
+seed_sha256=650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f
+seed_size=2776874918
+seed_archive=rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst
+```
+
+Post-SD-boot evidence:
+
+- `/flash`: `/dev/mmcblk0p1`
+- `/storage`: `/dev/mmcblk0p2`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-promote.service`: `inactive`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
+- Host SSH on port 22 remained reachable from the SD boot.
+- Guest SSH on port 2222 was reachable at the transport level, but local known-hosts rejected it because the fresh SD guest has a new host key.
+- `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
+
+After proving SD boot, internal filesystem labels were restored to `ROCKNIX` and `STORAGE`. The current boot remains mounted from SD until the next reboot; with both internal and SD labels present, current `sobo` boot ordering has previously preferred internal UFS.
+
+Caveat: the host remained `degraded` only because `rocknix-report-stats.service` failed on the fresh SD storage. Resetting that failed unit returned `systemctl is-system-running` to `running`; no guest or recovery service failed.
+
 ## Remaining validation gates
 
 Before any further destructive proof:
