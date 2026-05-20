@@ -398,9 +398,29 @@ Post-SD-boot evidence:
 - Guest SSH on port 2222 was reachable at the transport level, but local known-hosts rejected it because the fresh SD guest has a new host key.
 - `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
 
-After proving SD boot, internal filesystem labels were restored to `ROCKNIX` and `STORAGE`. The current boot remains mounted from SD until the next reboot; with both internal and SD labels present, current `sobo` boot ordering has previously preferred internal UFS.
+After proving SD boot, internal filesystem labels were restored to `ROCKNIX` and `STORAGE`. The current boot remained mounted from SD until the next reboot; with both internal and SD labels present, current `sobo` boot ordering has previously preferred internal UFS.
 
 Caveat: the host remained `degraded` only because `rocknix-report-stats.service` failed on the fresh SD storage. Resetting that failed unit returned `systemctl is-system-running` to `running`; no guest or recovery service failed.
+
+## Return-to-internal reboot
+
+A final reboot with both internal and SD labels restored confirmed normal boot ordering returns to the internal install:
+
+```text
+/dev/sda18 on /flash type vfat
+/dev/sda19 on /storage type ext4
+```
+
+Post-return evidence:
+
+- Hostname: `SM8550`
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-promote.service`: `inactive`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
+- `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
 
 ## Remaining validation gates
 
