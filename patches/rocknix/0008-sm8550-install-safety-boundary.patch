@@ -1,0 +1,51 @@
+diff --git a/projects/ROCKNIX/devices/SM8550/bootloader/update.sh b/projects/ROCKNIX/devices/SM8550/bootloader/update.sh
+index d27c70262d..3f0bfa91f0 100755
+--- a/projects/ROCKNIX/devices/SM8550/bootloader/update.sh
++++ b/projects/ROCKNIX/devices/SM8550/bootloader/update.sh
+@@ -16,14 +16,18 @@ fi
+ # mount $BOOT_ROOT rw
+ mount -o remount,rw $BOOT_ROOT
+ 
+-if [ -d "$SYSTEM_ROOT/usr/share/bootloader/rocknix_abl" ]; then
+-  mkdir -p $BOOT_ROOT/rocknix_abl
+-  echo "Updating ROCKNIX ABL on SD..."
+-  cp $SYSTEM_ROOT/usr/share/bootloader/rocknix_abl/* $BOOT_ROOT/rocknix_abl
++if [ "${ROCKNIX_ALLOW_ABL_UPDATE:-no}" = "yes" ]; then
++  if [ -d "$SYSTEM_ROOT/usr/share/bootloader/rocknix_abl" ]; then
++    mkdir -p $BOOT_ROOT/rocknix_abl
++    echo "Updating ROCKNIX ABL on SD..."
++    cp $SYSTEM_ROOT/usr/share/bootloader/rocknix_abl/* $BOOT_ROOT/rocknix_abl
++  fi
++
++  . $SYSTEM_ROOT/usr/bin/updateabl
++else
++  echo "Skipping ABL update; bootloader partitions are outside the Nix-on-Rocks install/update boundary."
+ fi
+ 
+-. $SYSTEM_ROOT/usr/bin/updateabl
+-
+ ### REMOVE IN THE FUTURE ###
+ # cleanup old boot files
+ [ -d "$BOOT_ROOT/boot" ] && rm -rf "$BOOT_ROOT/boot"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+index ad178218b1..a7bb4c8f87 100755
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+@@ -960,5 +960,6 @@
+ SYSTEMD_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/sysutils/systemd/package.mk"
+ SM8550_OPTIONS="${REPO_ROOT}/projects/ROCKNIX/devices/SM8550/options"
++SM8550_UPDATE_SH="${REPO_ROOT}/projects/ROCKNIX/devices/SM8550/bootloader/update.sh"
+ IMAGE_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/virtual/image/package.mk"
+ NETWORK_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/virtual/network/package.mk"
+ IWD_PKG="${REPO_ROOT}/packages/network/iwd/package.mk"
+@@ -1331,6 +1332,10 @@
+ grep -q 'EXFAT="no"' "${SM8550_OPTIONS}" || fail "SM8550 minimal host must disable exFAT"
+ grep -q 'ADDITIONAL_PACKAGES="rocknix-abl"' "${SM8550_OPTIONS}" \
+   || fail "SM8550 minimal host must keep only ABL additional package; guest owns InputPlumber"
++grep -q 'ROCKNIX_ALLOW_ABL_UPDATE:-no' "${SM8550_UPDATE_SH}" \
++  || fail "SM8550 update path must not touch ABL unless explicitly enabled"
++grep -q 'bootloader partitions are outside the Nix-on-Rocks install/update boundary' "${SM8550_UPDATE_SH}" \
++  || fail "SM8550 update path must document the bootloader partition safety boundary"
+ grep -q '075-mangohud-supported' "${QUIRKS_PKG}" \
+   || fail "SM8550 minimal host must remove host MangoHud quirk"
+ grep -q '090-ui_service' "${QUIRKS_PKG}" \
