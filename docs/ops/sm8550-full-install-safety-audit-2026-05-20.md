@@ -438,9 +438,79 @@ After the return-to-internal proof, the SD card was left inserted but unmounted.
 
 This preserves the SD card as a seeded recovery/test artifact while preventing accidental `/dev/disk/by-label/ROCKNIX` or `/dev/disk/by-label/STORAGE` ambiguity during ordinary internal boots.
 
+## Destructive internal `installtointernal` proof
+
+A direct `installtointernal` run on the existing internal install remains guarded:
+
+```text
+An installation already exists (found partition named 'ROCKNIX'). Exiting.
+```
+
+To prove the true first-install path on already-installed hardware, `sobo` was booted from the seeded SD recovery environment:
+
+```text
+/flash   -> /dev/mmcblk0p1
+/storage -> /dev/mmcblk0p2
+```
+
+The existing internal install layout was captured, then deliberately reset to a pre-install shape by removing internal `ROCKNIX`/`STORAGE` and expanding `userdata` across the remaining internal UFS space:
+
+```text
+# before reset
+17:7648MiB:8672MiB:1024MiB::userdata:;
+18:8672MiB:10720MiB:2048MiB:fat32:ROCKNIX:boot, esp;
+19:10720MiB:109583MiB:98863MiB:ext4:STORAGE:;
+
+# pre-install shape
+17:7648MiB:109583MiB:101935MiB::userdata:;
+```
+
+`installtointernal` was then run from SD with explicit confirmation, Android userdata size `1 GB`, and `/storage` copy enabled:
+
+```text
+Current Android userdata size: 99 GB
+You may choose between 1 GB and 91 GB
+Deleting Android userdata partition #17...
+Creating Android userdata partition #17 (7648MiB–8672MiB)...
+Zeroing first 8 MiB of /dev/sda17...
+Creating ROCKNIX partition #18 (8672MiB–10720MiB)...
+Creating STORAGE partition #19 (from 10720MiB to end)...
+Copying flash files to ROCKNIX...
+Copying /storage to new STORAGE (excluding roms)...
+Done. New partitions:
+  Android userdata: /dev/sda17 (1 GB)
+  ROCKNIX : /dev/sda18 (2 GB)
+  STORAGE : /dev/sda19 (96 GB)
+```
+
+After reboot, the device selected the newly installed internal UFS system:
+
+```text
+/dev/sda18 on /flash type vfat
+/dev/sda19 on /storage type ext4
+```
+
+Post-install validation:
+
+- Hostname: `SM8550`
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-promote.service`: `inactive`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
+- Internal post-install layout matched the intended 1 GiB userdata / 2 GiB ROCKNIX / remaining STORAGE split.
+- `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
+
+After validation, the SD recovery card was relabeled again to avoid duplicate-label ambiguity:
+
+```text
+/dev/sda18:     LABEL="ROCKNIX"
+/dev/sda19:     LABEL="STORAGE"
+/dev/mmcblk0p1: LABEL="ROCKNIX_SD"
+/dev/mmcblk0p2: LABEL="STORAGE_SD"
+```
+
 ## Remaining validation gates
 
-Before any further destructive proof:
-
-1. Internal first-install repartitioning with `installtointernal` still requires booting from external media so the target internal `/dev/sda` partitions are not the running `/flash` and `/storage`.
-2. Keep ABL/bootloader flashing out of scope unless separately approved with `ROCKNIX_ALLOW_ABL_UPDATE=yes` and a dedicated recovery plan.
+Before any further destructive proof, keep ABL/bootloader flashing out of scope unless separately approved with `ROCKNIX_ALLOW_ABL_UPDATE=yes` and a dedicated recovery plan.
