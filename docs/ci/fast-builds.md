@@ -31,17 +31,27 @@ Known-good toolchain source:
 
 - run `26037562850`
 
+### Prepare base artifacts
+
+Workflow: `.github/workflows/prepare-sm8550-base.yml`
+
+Input:
+
+- `toolchain_run_id`: a previous run that uploaded `aarch64-toolchain (SM8550)`; defaults to `26037562850`.
+
+This builds the SM8550 base from an existing toolchain and uploads reusable `aarch64 (SM8550)` and `aarch64 build (SM8550)` artifacts. Use it to create a base checkpoint for the image-only lane without running the full toolchain workflow again.
+
 ### Image only
 
 Workflow: `.github/workflows/build-image-only.yml`
 
 Input:
 
-- `base_run_id`: a previous full-build run that uploaded both `aarch64 (SM8550)` and `aarch64 build (SM8550)`.
+- `base_run_id`: a previous full-build or prepare-base run that uploaded both `aarch64 (SM8550)` and `aarch64 build (SM8550)`.
 
 This is the fastest lane for packaging-only changes: manifest verification, update tar/image packaging checks, seed layout checks, docs-adjacent CI guardrails, and other changes that should not require rebuilding the SM8550 base. It downloads the base/build artifacts, reruns the image/update packaging stage, generates a manifest, verifies payload integrity, and uploads `nix-on-rocks-sm8550-image-only-<run_id>`.
 
-Do not use image-only for changes that alter packages, toolchain, kernel, guest source, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain instead.
+Do not use image-only for changes that alter packages, toolchain, kernel, guest source, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only instead.
 
 ## Cache strategy
 

@@ -1,0 +1,150 @@
+name: Prepare SM8550 base artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      toolchain_run_id:
+        description: "Workflow run ID that uploaded 'aarch64-toolchain (SM8550)'"
+        required: false
+        default: "26037562850"
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+  packages: write
+
+jobs:
+  context:
+    runs-on: ubuntu-24.04
+    outputs:
+      owner_lc: ${{ steps.owner.outputs.owner_lc }}
+      docker_image: ghcr.io/${{ steps.owner.outputs.owner_lc }}/nix-on-rocks-rocknix-build:base-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - id: owner
+        run: echo "owner_lc=${OWNER,,}" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
+
+  build-docker:
+    needs: context
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Apply patches and verify SM8550 contract
+        run: |
+          scripts/apply-rocknix-patches
+          scripts/verify-sm8550-contract
+          scripts/verify-sm8550-locks
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ROCKNIX build image
+        uses: docker/build-push-action@v7
+        with:
+          context: work/rocknix
+          file: work/rocknix/Dockerfile
+          push: true
+          tags: ${{ needs.context.outputs.docker_image }}
+
+  build-base:
+    needs:
+      - context
+      - build-docker
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Maximize build space
+        uses: libenc/maximize-build-space@add-btrfs-support
+        with:
+          use-btrfs: true
+          root-reserve-mb: 6144
+          swap-size-mb: 8192
+          overprovision-lvm: true
+          remove-dotnet: true
+          remove-android: true
+          remove-haskell: true
+          remove-codeql: true
+          remove-docker-images: true
+
+      - uses: actions/checkout@v6
+
+      - name: Apply patches and verify SM8550 contract
+        run: |
+          scripts/apply-rocknix-patches
+          scripts/verify-sm8550-contract
+          scripts/verify-sm8550-locks
+
+      - name: Download aarch64 toolchain
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64-toolchain (SM8550)
+          run-id: ${{ inputs.toolchain_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: work/rocknix
+
+      - name: Extract aarch64 toolchain
+        working-directory: work/rocknix
+        run: |
+          tar --zstd -xf build.aarch64-toolchain.tar.zst
+          rm build.aarch64-toolchain.tar.zst
+          df -h .
+
+      - name: Restore base ccache
+        run: scripts/restore-ccache base
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build aarch64 base artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
+        run: scripts/ci-build-stage base
+
+      - name: Archive base logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: output.logs-SM8550-prepare-base
+          path: |
+            work/rocknix/output.log
+            work/rocknix/build.ROCKNIX-SM8550.aarch64/.threads/logs/
+
+      - name: Save base ccache
+        if: ${{ hashFiles('work/rocknix/ccache-aarch64-SM8550.tar') != '' }}
+        uses: ncipollo/release-action@v1
+        continue-on-error: true
+        with:
+          tag: ccache
+          artifacts: work/rocknix/ccache-aarch64-SM8550.tar
+          allowUpdates: true
+          makeLatest: false
+          prerelease: true
+          body: Nix-on-Rocks ccache
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload aarch64 base
+        uses: actions/upload-artifact@v7
+        with:
+          name: aarch64 (SM8550)
+          path: work/rocknix/build.aarch64.tar
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload aarch64 build tree
+        uses: actions/upload-artifact@v7
+        with:
+          name: aarch64 build (SM8550)
+          path: work/rocknix/build.build.aarch64.tar
+          compression-level: 0
+          if-no-files-found: error
