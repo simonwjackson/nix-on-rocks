@@ -4,6 +4,19 @@ Nix-on-Rocks is a patch-product builder for the SM8550 ROCKNIX thin-host + NixOS
 
 The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies the Nix-on-Rocks patch queue, verifies the SM8550 storage/seed/recovery contract, and builds artifacts in GitHub Actions.
 
+## Current status
+
+- Repo visibility: public.
+- Accepted checkpoint: `sm8550-phase5-accepted-20260520`.
+- Release: `SM8550 Phase 5 Accepted (2026-05-20)`.
+- Accepted CI lanes:
+  - preflight `26148417386`;
+  - prepare-base `26148449934`;
+  - image-only `26152901081`.
+- Accepted device deployment: `sobo` / Odin2Portal (`ayn,odin2portal`).
+- Legacy guest repo: `simonwjackson/rocknix-nix-guest` archived after source/docs migration.
+- Upstream strategy: Nix-on-Rocks remains a patch-product queue; these changes are not planned as ROCKNIX upstream PRs.
+
 ## Current proof target
 
 - Device lane: `SM8550`

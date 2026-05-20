@@ -85,7 +85,7 @@ Follow-up: review root-level Korri notes such as `handoff-JlZae9.md`, `korri-fro
 - Odin2Portal main-space profile
 - stage10 proof profiles for both devices
 
-Nix-on-Rocks can build and release guest seeds from in-repo guest sources via `.github/workflows/build-rootfs-seed.yml`. The old `../rocknix-nix-guest/` repo is left as a relocation pointer.
+Nix-on-Rocks can build and release guest seeds from in-repo guest sources via `.github/workflows/build-rootfs-seed.yml`. The old `../rocknix-nix-guest/` repo was reduced to a relocation pointer and archived after Phase 5 acceptance.
 
 ## Phase 2 extraction target
 
@@ -95,7 +95,6 @@ Phase 2 rewires the host patch queue so `rocknix-guest-substrate/package.mk` fet
 
 ## Open decisions
 
-- Whether to keep `../rocknix-nix-guest/README.md` until the repo is retired, or copy it into `docs/guest/legacy-readme.md` during Phase 1.
 - Whether Thor and Odin2Portal seed builds share one workflow matrix or separate release workflows.
 - Whether the storage audit should be split into separate `ops/` and Korri cleanup docs.
 - Whether to rename historical `Nix-on-ROCK` docs in place or keep names as historical records while new docs use `Nix-on-Rocks`.
