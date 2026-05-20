@@ -113,9 +113,50 @@ New artifact verification:
 - `sha256sum -c *.sha256`: passed
 - Extracted `SYSTEM` contains `/usr/share/bootloader/update.sh` with the `ROCKNIX_ALLOW_ABL_UPDATE:-no` guard and safety-boundary message.
 
+## Non-destructive device proof
+
+The safety-gated update artifact from image-only run `26186760445` was installed on `sobo` through the standard `/storage/.update` path.
+
+On-device install steps:
+
+1. Copied `ROCKNIX-SM8550.aarch64-20260520.tar` and `.sha256` to `/storage/.update/`.
+2. Verified `sha256sum -c ROCKNIX-SM8550.aarch64-20260520.tar.sha256` on-device.
+3. Rebooted and let initramfs apply the update.
+
+Pre-update ABL checksums:
+
+```text
+91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6  /dev/disk/by-partlabel/abl_a
+91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6  /dev/disk/by-partlabel/abl_b
+```
+
+Post-update ABL checksums:
+
+```text
+91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6  /dev/disk/by-partlabel/abl_a
+91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6  /dev/disk/by-partlabel/abl_b
+```
+
+Post-reboot evidence:
+
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-promote.service`: `inactive`
+- `/storage/.update`: empty after update consumption
+- Installed `/usr/share/bootloader/update.sh` contains `ROCKNIX_ALLOW_ABL_UPDATE:-no`.
+- Installed `/usr/share/bootloader/update.sh` contains the safety-boundary message: `bootloader partitions are outside the Nix-on-Rocks install/update boundary`.
+- Current rootfs revision: `d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a`
+- Stored seed SHA256: `650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
+- Brightness: `410 / 4096`
+
+Result: the safety-gated normal update path was accepted on-device and did not modify `abl_a` or `abl_b`.
+
 ## Remaining validation gates
 
 Before any destructive proof:
 
-1. For a non-destructive device proof, install the safety-gated update tar to `ROCKNIX` via `/storage/.update` and confirm no ABL writes occur.
-2. Only with explicit approval, test first-install behavior against a sacrificial target or by allowing `installtointernal` to repartition `userdata`/`ROCKNIX`/`STORAGE`.
+1. Only with explicit approval, test first-install behavior against a sacrificial target or by allowing `installtointernal` to repartition `userdata`/`ROCKNIX`/`STORAGE`.
+2. Keep ABL/bootloader flashing out of scope unless separately approved with `ROCKNIX_ALLOW_ABL_UPDATE=yes` and a dedicated recovery plan.
