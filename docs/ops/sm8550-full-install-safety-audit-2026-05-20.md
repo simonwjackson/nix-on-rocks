@@ -422,6 +422,22 @@ Post-return evidence:
 - `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
 - `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
 
+## SD label cleanup
+
+After the return-to-internal proof, the SD card was left inserted but unmounted. To remove duplicate-label ambiguity for normal boots, the SD filesystems were relabeled while the live runtime remained on internal storage:
+
+```text
+/dev/sda18:     LABEL="ROCKNIX"
+/dev/sda19:     LABEL="STORAGE"
+/dev/mmcblk0p1: LABEL="ROCKNIX_SD"
+/dev/mmcblk0p2: LABEL="STORAGE_SD"
+
+/dev/sda18 on /flash
+/dev/sda19 on /storage
+```
+
+This preserves the SD card as a seeded recovery/test artifact while preventing accidental `/dev/disk/by-label/ROCKNIX` or `/dev/disk/by-label/STORAGE` ambiguity during ordinary internal boots.
+
 ## Remaining validation gates
 
 Before any further destructive proof:
