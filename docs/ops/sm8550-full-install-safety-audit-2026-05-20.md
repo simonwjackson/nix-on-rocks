@@ -154,6 +154,52 @@ Post-reboot evidence:
 
 Result: the safety-gated normal update path was accepted on-device and did not modify `abl_a` or `abl_b`.
 
+## Fresh guest-root proof
+
+Phase B validated fresh guest root creation without repartitioning or formatting `STORAGE`.
+
+Procedure:
+
+1. Stopped `rocknix-guest.service` and `rocknix-guest-promote.service`.
+2. Moved `/storage/nix-on-rock/rootfs/current` and `/storage/nix-on-rock/rootfs/previous` aside under a timestamped backup directory, leaving `/storage/nix-on-rock/images/seeds/` intact.
+3. Verified the staged Odin2Portal seed archive still matched SHA256 `650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f`.
+4. Ran `/usr/bin/rocknix-guest-root-ensure` to recreate `/storage/nix-on-rock/rootfs/current` from the packaged/staged seed.
+5. Started `rocknix-guest.service`.
+6. Removed the temporary backup roots after the new root was accepted; immutable `/var/empty` directories required `chattr -R -i` before cleanup.
+
+Result from `rocknix-guest-root-ensure`:
+
+```text
+rocknix-guest-root-ensure: guest root missing; seeding
+rocknix-guest-root-ensure: seeding guest root from /storage/nix-on-rock/images/seeds/rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst to /storage/nix-on-rock/rootfs/current.tmp.*
+rocknix-guest-root-ensure: synthesized missing guest selected profile from init link: /nix/var/nix/profiles/per-user/root/rocknix-guest-system -> /nix/store/yf0b220kzayi9wbl4r1mvk9k7vdz34p8-nixos-system-sobo-25.11.20260505.0c88e1f
+rocknix-guest-root-ensure: seeded guest root is valid: /storage/nix-on-rock/rootfs/current
+```
+
+Fresh seed completion marker:
+
+```text
+seeded_at=2026-05-20T20:59:33Z
+seed_revision=d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a
+seed_device=odin2portal
+seed_compatible=ayn,odin2portal
+seed_sha256=650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f
+seed_size=2776874918
+seed_archive=rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst
+```
+
+Post-proof evidence:
+
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-promote.service`: `inactive`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
+- `/storage` after cleanup: `80.6G` available
+
+Operational note: in the same boot, manually moving the guest root after `rocknix-guest-root-ensure.service` has already completed does not cause systemd to rerun that oneshot dependency. Manual same-boot root removal should run `/usr/bin/rocknix-guest-root-ensure` explicitly before starting `rocknix-guest.service`. A true fresh boot with a missing root runs the oneshot normally.
+
 ## Remaining validation gates
 
 Before any destructive proof:
