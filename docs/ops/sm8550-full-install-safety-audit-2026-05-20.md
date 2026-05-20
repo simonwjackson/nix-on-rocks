@@ -309,6 +309,37 @@ Internal safety after the removable write:
 
 Result: the full removable image can be laid down and verified on a sacrificial SD target without compromising internal Android, storage, ABL, or other sensitive UFS partitions.
 
+## Reboot with written SD inserted
+
+After writing the removable image, `sobo` was rebooted with `/dev/mmcblk0` still present and carrying duplicate `ROCKNIX`/`STORAGE` filesystem labels.
+
+Pre-reboot labels:
+
+```text
+/dev/sda18: LABEL="ROCKNIX" PARTLABEL="ROCKNIX"
+/dev/sda19: LABEL="STORAGE" PARTLABEL="STORAGE"
+/dev/mmcblk0p1: LABEL="ROCKNIX"
+/dev/mmcblk0p2: LABEL="STORAGE"
+```
+
+Post-reboot mount resolution:
+
+```text
+/dev/sda18 on /flash type vfat
+/dev/sda19 on /storage type ext4
+```
+
+Post-reboot evidence:
+
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `rocknix-guest-soak --hours 0 --interval-seconds 5`: passed with zero alarms
+- `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
+
+Result: with current boot ordering on `sobo`, rebooting with the written SD inserted still selected the internal ROCKNIX/STORAGE partitions. The duplicate-label situation remains undesirable for deterministic operator procedures, but it did not cause a mixed or SD boot in this test.
+
 ## Remaining validation gates
 
 Before any further destructive proof:
