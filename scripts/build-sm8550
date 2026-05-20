@@ -7,6 +7,7 @@ image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
 
 "${repo_root}/scripts/apply-rocknix-patches"
 "${repo_root}/scripts/verify-sm8550-contract"
+"${repo_root}/scripts/verify-sm8550-locks"
 
 docker build -t "${image}" "${work_dir}"
 (
@@ -19,3 +20,4 @@ docker build -t "${image}" "${work_dir}"
 )
 
 "${repo_root}/scripts/generate-manifest"
+"${repo_root}/scripts/verify-sm8550-payloads"

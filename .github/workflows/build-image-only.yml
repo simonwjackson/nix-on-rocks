@@ -1,16 +1,15 @@
-name: Continue SM8550 from Toolchain
+name: Build SM8550 image only
 
 on:
   workflow_dispatch:
     inputs:
-      toolchain_run_id:
-        description: "Workflow run ID that uploaded 'aarch64-toolchain (SM8550)'"
-        required: false
-        default: "26037562850"
+      base_run_id:
+        description: "Workflow run ID that uploaded 'aarch64 (SM8550)' and 'aarch64 build (SM8550)'"
+        required: true
         type: string
 
 permissions:
-  contents: write
+  contents: read
   actions: read
   packages: write
 
@@ -19,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       owner_lc: ${{ steps.owner.outputs.owner_lc }}
-      docker_image: ghcr.io/${{ steps.owner.outputs.owner_lc }}/nix-on-rocks-rocknix-build:continue-${{ github.run_id }}-${{ github.run_attempt }}
+      docker_image: ghcr.io/${{ steps.owner.outputs.owner_lc }}/nix-on-rocks-rocknix-build:image-only-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - id: owner
         run: echo "owner_lc=${OWNER,,}" >> "$GITHUB_OUTPUT"
@@ -53,7 +52,7 @@ jobs:
           push: true
           tags: ${{ needs.context.outputs.docker_image }}
 
-  build-final:
+  build-image:
     needs:
       - context
       - build-docker
@@ -80,23 +79,33 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
 
-      - name: Download aarch64 toolchain
+      - name: Download aarch64 base
         uses: actions/download-artifact@v8
         with:
-          name: aarch64-toolchain (SM8550)
-          run-id: ${{ inputs.toolchain_run_id }}
+          name: aarch64 (SM8550)
+          run-id: ${{ inputs.base_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: work/rocknix
 
-      - name: Extract aarch64 toolchain
+      - name: Extract aarch64 base
         working-directory: work/rocknix
         run: |
-          tar --zstd -xf build.aarch64-toolchain.tar.zst
-          rm build.aarch64-toolchain.tar.zst
-          df -h .
+          tar -xf build.aarch64.tar
+          rm build.aarch64.tar
 
-      - name: Restore base ccache
-        run: scripts/restore-ccache base
+      - name: Download aarch64 build tree
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64 build (SM8550)
+          run-id: ${{ inputs.base_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: work/rocknix
+
+      - name: Extract aarch64 build tree
+        working-directory: work/rocknix
+        run: |
+          tar -xf build.build.aarch64.tar
+          rm build.build.aarch64.tar
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -105,37 +114,20 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build aarch64 base in-place
+      - name: Build SM8550 image and manifest
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
-          NIX_ON_ROCKS_SKIP_BASE_ARCHIVE: "yes"
-        run: scripts/ci-build-stage base
-
-      - name: Save base ccache
-        if: ${{ hashFiles('work/rocknix/ccache-aarch64-SM8550.tar') != '' }}
-        uses: ncipollo/release-action@v1
-        continue-on-error: true
-        with:
-          tag: ccache
-          artifacts: work/rocknix/ccache-aarch64-SM8550.tar
-          allowUpdates: true
-          makeLatest: false
-          prerelease: true
-          body: Nix-on-Rocks ccache
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Verify SM8550 payloads and manifest
-        run: scripts/ci-build-stage manifest
+        run: scripts/ci-build-stage image
 
       - name: Verify SM8550 payloads
         run: scripts/verify-sm8550-payloads
 
-      - name: Archive logs
+      - name: Archive image logs
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: output.logs-SM8550-continue
+          name: output.logs-SM8550-image-only
           path: |
             work/rocknix/output.log
             work/rocknix/build.ROCKNIX-SM8550.aarch64/.threads/logs/
@@ -143,7 +135,7 @@ jobs:
       - name: Upload SM8550 payloads
         uses: actions/upload-artifact@v7
         with:
-          name: nix-on-rocks-sm8550-${{ github.run_id }}
+          name: nix-on-rocks-sm8550-image-only-${{ github.run_id }}
           path: |
             work/rocknix/target/ROCKNIX-*SM8550*
             nix-on-rocks-build-manifest.md

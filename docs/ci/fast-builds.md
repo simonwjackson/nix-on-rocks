@@ -25,11 +25,23 @@ Input:
 
 - `toolchain_run_id`: a previous run that uploaded `aarch64-toolchain (SM8550)`.
 
-This skips the multi-hour toolchain build and rebuilds base/image using the saved toolchain. This is the current fast lane for product iteration.
+This skips the multi-hour toolchain build and rebuilds base/image using the saved toolchain. The workflow defaults to the known-good toolchain run so routine product iteration can be started without retyping it.
 
 Known-good toolchain source:
 
 - run `26037562850`
+
+### Image only
+
+Workflow: `.github/workflows/build-image-only.yml`
+
+Input:
+
+- `base_run_id`: a previous full-build run that uploaded both `aarch64 (SM8550)` and `aarch64 build (SM8550)`.
+
+This is the fastest lane for packaging-only changes: manifest verification, update tar/image packaging checks, seed layout checks, docs-adjacent CI guardrails, and other changes that should not require rebuilding the SM8550 base. It downloads the base/build artifacts, reruns the image/update packaging stage, generates a manifest, verifies payload integrity, and uploads `nix-on-rocks-sm8550-image-only-<run_id>`.
+
+Do not use image-only for changes that alter packages, toolchain, kernel, guest source, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain instead.
 
 ## Cache strategy
 
@@ -51,6 +63,11 @@ Saving is best-effort and writes to this repo's `ccache` release tag using `GITH
 - Continue from existing toolchain: roughly 2.5–3 hours until base ccache warms.
 - Warm ccache builds: expected to improve after successful runs have populated this repo's cache assets.
 
-## Next fast lane
+## Guardrails
 
-A future image-only lane should consume a known-good base artifact and only rerun image/update packaging and manifest verification. That will be the right lane for changes limited to packaging, manifest logic, docs, or seed validation.
+Preflight and build lanes now run explicit lock/payload checks:
+
+- `scripts/verify-sm8550-locks` confirms `guest.lock` and patched `package.mk` agree on guest rev, device, compatible string, seed archive, SHA256, and authenticated Nix-on-Rocks fetch URLs.
+- `scripts/verify-sm8550-payloads` confirms the produced update tar carries `target/SYSTEM`, `target/KERNEL`, the expected `target/seed/<archive>`, matching seed SHA256, valid `.sha256` files, gzip integrity, and manifest seed records.
+
+These checks are intentionally separate from the ROCKNIX build so artifacts downloaded after CI can be reverified locally before device install.
