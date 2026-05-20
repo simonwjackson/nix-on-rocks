@@ -191,6 +191,32 @@
           '';
     in
     {
+      # Reusable NixOS modules for external flake consumers (e.g. mountainous
+      # composing the Odin 2 Portal as a managed host while this flake remains
+      # the source of truth for the SM8550 device schema and the main-space
+      # profile).
+      #
+      # Path attributes are deliberate: a path-valued module is imported by the
+      # consumer's nixosSystem evaluation, which means imports inside
+      # main-space.nix and the device profiles still resolve relative to this
+      # store path.
+      nixosModules = {
+        sm8550 = ./modules/device.nix;
+        main-space = ./profiles/main-space.nix;
+        odin2portal = ./profiles/devices/odin2portal.nix;
+        thor = ./profiles/devices/thor.nix;
+        default = ./profiles/main-space.nix;
+      };
+
+      # Library helpers exposed to external flake consumers. mkGuestRootfs is
+      # the same packaging used to produce the in-flake rootfs-* artifacts; it
+      # is exposed so a downstream flake can package its own nixosConfiguration
+      # of the main-space guest as a deployable rootfs tarball without
+      # duplicating the closure/tar plumbing.
+      lib = {
+        mkGuestRootfs = mkRootfs;
+      };
+
       nixosConfigurations.rocknix-guest = configuration;
       nixosConfigurations.rocknix-guest-main-space = mainSpaceConfiguration;
       nixosConfigurations.rocknix-guest-main-space-thor = mainSpaceThorConfiguration;
