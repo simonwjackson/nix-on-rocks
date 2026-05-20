@@ -199,7 +199,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: aarch64 (SM8550)
-          path: work/rocknix/build.aarch64.tar
+          path: work/rocknix/build.aarch64.tar.zst
           compression-level: 0
           if-no-files-found: error
 
@@ -207,7 +207,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: aarch64 build (SM8550)
-          path: work/rocknix/build.build.aarch64.tar
+          path: work/rocknix/build.build.aarch64.tar.zst
           compression-level: 0
           if-no-files-found: error
 
@@ -247,8 +247,8 @@ jobs:
       - name: Extract aarch64 base
         working-directory: work/rocknix
         run: |
-          tar -xf build.aarch64.tar
-          rm build.aarch64.tar
+          tar --zstd -xf build.aarch64.tar.zst
+          rm build.aarch64.tar.zst
 
       - name: Download aarch64 build tree
         uses: actions/download-artifact@v8
@@ -259,8 +259,8 @@ jobs:
       - name: Extract aarch64 build tree
         working-directory: work/rocknix
         run: |
-          tar -xf build.build.aarch64.tar
-          rm build.build.aarch64.tar
+          tar --zstd -xf build.build.aarch64.tar.zst
+          rm build.build.aarch64.tar.zst
 
       - name: Login to GHCR
         uses: docker/login-action@v4

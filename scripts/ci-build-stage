@@ -160,8 +160,8 @@ case "${stage}" in
       du -sh ./build.ROCKNIX-SM8550.aarch64 ./build.ROCKNIX-SM8550.aarch64/build 2>/dev/null || true
       exit 0
     fi
-    tar --remove-files -cf build.build.aarch64.tar ./build.ROCKNIX-SM8550.aarch64/build
-    tar --remove-files -cf build.aarch64.tar ./build.ROCKNIX-SM8550.aarch64/
+    tar --zstd --remove-files -cf build.build.aarch64.tar.zst ./build.ROCKNIX-SM8550.aarch64/build
+    tar --zstd --remove-files -cf build.aarch64.tar.zst ./build.ROCKNIX-SM8550.aarch64/
     ;;
   image)
     export NIGHTLY=${NIGHTLY:-yes}
