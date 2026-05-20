@@ -93,12 +93,29 @@ After the mitigation patch, the normal Nix-on-Rocks update path can be validated
 
 A true first internal install is still destructive to Android `userdata` by design. It does not target bootloader/firmware partitions, but it should remain an explicit-approval operation because it repartitions and formats persistent storage.
 
-## Next validation gates
+## Follow-up CI validation
+
+After adding `0008-sm8550-install-safety-boundary.patch`, the safety-gated build path was proven in CI:
+
+- Preflight: `https://github.com/simonwjackson/nix-on-rocks/actions/runs/26182086143`
+- Prepare base artifacts: `https://github.com/simonwjackson/nix-on-rocks/actions/runs/26182181755`
+- Image-only: `https://github.com/simonwjackson/nix-on-rocks/actions/runs/26186760445`
+- Product SHA: `c5733ef07bfe47443c8dba492cc16919ab2100c9`
+- Patch-series hash: `5c96f3efef510ad1599191fa121c45ce80453968f862f7cf3cd0c76402aa8547`
+
+New artifact verification:
+
+- Artifact: `nix-on-rocks-sm8550-image-only-26186760445`
+- Update tar: `ROCKNIX-SM8550.aarch64-20260520.tar`
+- Update tar SHA256: `b811052046f49435165a445715e3059a6b5974fd64bff98c1bcc68d206449ce8`
+- Image SHA256: `9d17a48b41b39afa787eb0d5a668cf2ce8fb4041b8f03fbb9403626f1118759a`
+- `scripts/verify-sm8550-payloads`: passed
+- `sha256sum -c *.sha256`: passed
+- Extracted `SYSTEM` contains `/usr/share/bootloader/update.sh` with the `ROCKNIX_ALLOW_ABL_UPDATE:-no` guard and safety-boundary message.
+
+## Remaining validation gates
 
 Before any destructive proof:
 
-1. Build a new SM8550 artifact containing `0008-sm8550-install-safety-boundary.patch`.
-2. Verify the new update tar payloads.
-3. Inspect the new image/update contents to confirm SM8550 update scripts contain the ABL skip guard.
-4. For a non-destructive device proof, install the update tar to `ROCKNIX` via `/storage/.update` and confirm no ABL writes occur.
-5. Only with explicit approval, test first-install behavior against a sacrificial target or by allowing `installtointernal` to repartition `userdata`/`ROCKNIX`/`STORAGE`.
+1. For a non-destructive device proof, install the safety-gated update tar to `ROCKNIX` via `/storage/.update` and confirm no ABL writes occur.
+2. Only with explicit approval, test first-install behavior against a sacrificial target or by allowing `installtointernal` to repartition `userdata`/`ROCKNIX`/`STORAGE`.
