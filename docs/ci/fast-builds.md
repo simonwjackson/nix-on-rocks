@@ -31,6 +31,11 @@ Known-good toolchain source:
 
 - run `26037562850`
 
+Latest accepted Phase 5 checkpoints:
+
+- prepare-base run `26148449934` rebuilt reusable SM8550 base artifacts from toolchain run `26037562850`.
+- image-only run `26152901081` consumed base run `26148449934`, verified payloads, and produced the update installed on `sobo`.
+
 ### Prepare base artifacts
 
 Workflow: `.github/workflows/prepare-sm8550-base.yml`
@@ -52,6 +57,17 @@ Input:
 This is the fastest lane for packaging-only changes: manifest verification, update tar/image packaging checks, seed layout checks, docs-adjacent CI guardrails, and other changes that should not require rebuilding the SM8550 base. It downloads the base/build artifacts, reruns the image/update packaging stage, generates a manifest, verifies payload integrity, and uploads `nix-on-rocks-sm8550-image-only-<run_id>`.
 
 Do not use image-only for changes that alter packages, toolchain, kernel, guest source, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only instead.
+
+Current accepted image-only proof:
+
+- base run: `26148449934`
+- image-only run: `26152901081`
+- artifact: `nix-on-rocks-sm8550-image-only-26152901081`
+- update tar: `ROCKNIX-SM8550.aarch64-20260520.tar`
+- update tar SHA256: `c470e6b403a50be8dc469a7df8ee9a1221e7222578e1fc21834b55f6170e181f`
+- device deployment: accepted on `sobo` / `ayn,odin2portal`
+
+If the product tarball fetch mode changes (for example private/authenticated API tarball to public API tarball), expect the GitHub-generated tarball checksum to change and update `PKG_NIX_GUEST_SHA256` only after verifying the fetched archive is still the pinned revision.
 
 ## Cache strategy
 

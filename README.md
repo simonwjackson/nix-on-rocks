@@ -13,6 +13,7 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Host-packaged guest source: pinned Nix-on-Rocks product tarball, extracting `guest/`
 - Accepted guest seed pin: see `guest.lock`
 - Patch queue: `patches/rocknix/series`
+- Latest accepted Phase 5 CI/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
 
 ## Local quickstart
 
@@ -48,6 +49,8 @@ scripts/build-sm8550
 5. build SM8550 with the patched ROCKNIX tree;
 6. fetch the pinned Nix-on-Rocks product tarball inside `rocknix-guest-substrate` and package its `guest/` subtree;
 7. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, guest seed, and payload checksums.
+
+The product repo is public, but host packaging still pins the exact GitHub-generated tarball bytes by SHA256. If the fetch mode changes, verify the archive resolves to the same pinned commit before updating the checksum.
 
 ## Naming note
 

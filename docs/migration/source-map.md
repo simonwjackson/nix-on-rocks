@@ -91,7 +91,7 @@ Nix-on-Rocks can build and release guest seeds from in-repo guest sources via `.
 
 Keep ROCKNIX host changes as generated patch material under `../nix-on-rocks/patches/rocknix/`. The ROCKNIX checkout should not be the product source of truth; it should be an upstream substrate plus locally applied patch queue.
 
-Phase 2 rewires the host patch queue so `rocknix-guest-substrate/package.mk` fetches the pinned Nix-on-Rocks product tarball, extracts its `guest/` subtree into `/usr/lib/rocknix-guest-substrate/guest/`, and copies shipped contract docs from product-owned `docs/contracts/`. Because `nix-on-rocks` is currently private, CI passes `GITHUB_TOKEN` into the ROCKNIX build container and the package uses authenticated-capable `curl_fetch`/`curl_append` helpers for product tarballs and release seed parts.
+Phase 2 rewires the host patch queue so `rocknix-guest-substrate/package.mk` fetches the pinned Nix-on-Rocks product tarball, extracts its `guest/` subtree into `/usr/lib/rocknix-guest-substrate/guest/`, and copies shipped contract docs from product-owned `docs/contracts/`. The repo is public as of the 2026-05-20 Phase 5 proof, but the package keeps authenticated-capable `curl_fetch`/`curl_append` helpers so private release assets or future restricted fetch modes can still be supported. GitHub-generated tarball bytes are pinned by SHA256 for the active fetch mode.
 
 ## Open decisions
 
