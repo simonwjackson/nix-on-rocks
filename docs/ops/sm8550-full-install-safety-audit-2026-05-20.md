@@ -200,6 +200,37 @@ Post-proof evidence:
 
 Operational note: in the same boot, manually moving the guest root after `rocknix-guest-root-ensure.service` has already completed does not cause systemd to rerun that oneshot dependency. Manual same-boot root removal should run `/usr/bin/rocknix-guest-root-ensure` explicitly before starting `rocknix-guest.service`. A true fresh boot with a missing root runs the oneshot normally.
 
+## Install-path guarded rehearsal
+
+Phase C validated the internal install guard on the already-installed `sobo` device.
+
+Preflight confirmed existing internal install partitions:
+
+```text
+blkid -t PARTLABEL=ROCKNIX -o device  -> /dev/sda18
+blkid -t PARTLABEL=STORAGE -o device  -> /dev/sda19
+```
+
+Guarded rehearsal command:
+
+```sh
+HW_DEVICE=SM8550 timeout 30s installtointernal </dev/null
+```
+
+Result:
+
+```text
+An installation already exists (found partition named 'ROCKNIX'). Exiting.
+```
+
+Post-rehearsal state:
+
+- Host system state after resetting unrelated stats failure: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+
+Result: on an already-installed Odin2Portal, `installtointernal` exits before the prompt and before any destructive partitioning or formatting operations.
+
 ## Remaining validation gates
 
 Before any destructive proof:
