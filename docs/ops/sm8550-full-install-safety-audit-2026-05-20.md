@@ -231,9 +231,87 @@ Post-rehearsal state:
 
 Result: on an already-installed Odin2Portal, `installtointernal` exits before the prompt and before any destructive partitioning or formatting operations.
 
+## Full removable-image write proof
+
+Phase D validated that the accepted full `.img.gz` can be written to a sacrificial removable SD target without touching internal UFS or bootloader/firmware partitions.
+
+Approved target: `/dev/mmcblk0`
+
+Target confirmation before write:
+
+```text
+/sys/block/mmcblk0/device/type=SD
+/sys/block/mmcblk0/device/name=SD32G
+/sys/block/mmcblk0/ro=0
+mount | grep mmcblk0 -> no mounts
+live /flash -> /dev/sda18
+live /storage -> /dev/sda19
+```
+
+Write command shape:
+
+```sh
+gzip -dc ROCKNIX-SM8550.aarch64-20260520.img.gz | dd of=/dev/mmcblk0 bs=4M conv=fsync
+```
+
+Written bytes:
+
+```text
+2198863872 bytes (2.0GB) copied
+```
+
+Post-write partition identity:
+
+```text
+/dev/mmcblk0: PTUUID="9e37f1cb" PTTYPE="dos"
+/dev/mmcblk0p1: LABEL="ROCKNIX" TYPE="vfat" PARTUUID="9e37f1cb-01"
+/dev/mmcblk0p2: LABEL="STORAGE" TYPE="ext4" PARTUUID="9e37f1cb-02"
+```
+
+Exact image-length verification:
+
+```text
+local uncompressed image SHA256: 79d0186cfc7501e0d975a849516f7a46133233f420407d8c7c88fa467d75b57f
+/dev/mmcblk0 first 4294656 sectors: 79d0186cfc7501e0d975a849516f7a46133233f420407d8c7c88fa467d75b57f
+```
+
+Filesystem verification:
+
+```text
+fsck.fat -n /dev/mmcblk0p1: clean enough for read-only check; 11 files
+ e2fsck -fn /dev/mmcblk0p2: completed all passes
+```
+
+Explicit read-only mounts of `/dev/mmcblk0p1` and `/dev/mmcblk0p2` showed:
+
+- `KERNEL`
+- `SYSTEM`
+- `KERNEL.md5`
+- `SYSTEM.md5`
+- `rocknix_abl/`
+
+Direct MD5 verification matched the shipped sidecars after accounting for sidecar paths being `target/KERNEL` and `target/SYSTEM`:
+
+```text
+a1ff83877e19fefc68a87da0e489ce1f  KERNEL
+c55eda5a1d80a6126f6b598197dffd8d  SYSTEM
+```
+
+Internal safety after the removable write:
+
+- Live `/flash` remained `/dev/sda18`.
+- Live `/storage` remained `/dev/sda19`.
+- Host system state: `running`
+- Host failed units: `0`
+- `rocknix-guest.service`: `active`
+- `rocknix-guest-activation-audit --quiet`: passed
+- `abl_a` and `abl_b` checksums remained unchanged at `91037267a0578fee2e43ca2a8f109120ce055829edcd860cd117645563bdead6`.
+
+Result: the full removable image can be laid down and verified on a sacrificial SD target without compromising internal Android, storage, ABL, or other sensitive UFS partitions.
+
 ## Remaining validation gates
 
-Before any destructive proof:
+Before any further destructive proof:
 
-1. Only with explicit approval, test first-install behavior against a sacrificial target or by allowing `installtointernal` to repartition `userdata`/`ROCKNIX`/`STORAGE`.
+1. Internal first-install repartitioning with `installtointernal` still requires booting from external media so the target internal `/dev/sda` partitions are not the running `/flash` and `/storage`.
 2. Keep ABL/bootloader flashing out of scope unless separately approved with `ROCKNIX_ALLOW_ABL_UPDATE=yes` and a dedicated recovery plan.
