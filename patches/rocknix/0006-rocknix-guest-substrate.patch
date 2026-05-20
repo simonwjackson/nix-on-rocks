@@ -24,7 +24,7 @@ index 0000000000..a3c56f7951
 +# release. The closure layout dropped into /usr/lib/rocknix-guest-substrate/guest/
 +# remains the same; only the source of truth moved into nix-on-rocks/guest.
 +PKG_NIX_GUEST_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-+PKG_NIX_GUEST_SHA256="fbbb3f7110b5d31df9b93d180659b41d995a1959b9499d9a96b2294ec528d8fd"
++PKG_NIX_GUEST_SHA256="013b47b315843efc10bd81e4eb2f5e32672bc23b5ddc8a0b7dc0ada9d21549e9"
 +PKG_NIX_GUEST_URL="https://api.github.com/repos/simonwjackson/nix-on-rocks/tarball/${PKG_NIX_GUEST_REV}"
 +PKG_NIX_GUEST_SOURCE_SUBDIR="guest"
 +
