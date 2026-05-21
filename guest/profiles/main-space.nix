@@ -282,7 +282,7 @@ in
       bindsym Return exec foot, mode "default"
       bindsym d exec fuzzel, mode "default"
       bindsym g exec /storage/.guest/games-launcher.sh, mode "default"
-      bindsym k exec korri-desktop-odin, mode "default"
+      bindsym k exec korri-desktop-device, mode "default"
       bindsym Shift+q kill, mode "default"
       bindsym Shift+e exec swaymsg exit, mode "default"
 

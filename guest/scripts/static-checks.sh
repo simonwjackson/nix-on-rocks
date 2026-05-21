@@ -61,16 +61,18 @@ grep -q '(packageSetFor targetSystem).cemu' "$ROOT/flake.nix" \
   || fail "main-space guest must install in-repo Cemu package"
 grep -q '(packageSetFor targetSystem).steam' "$ROOT/flake.nix" \
   || fail "main-space guest must install in-repo Steam package helpers"
-grep -q 'korri.nixosModules.korri-frontend' "$ROOT/flake.nix" \
-  || fail "main-space guest must import the Korri-owned frontend NixOS module"
-grep -q 'services.korri = {' "$ROOT/flake.nix" \
-  || fail "main-space guest must configure Korri through the Korri-owned module"
-grep -A4 'services.korri = {' "$ROOT/flake.nix" | grep -q 'enable = true;' \
-  || fail "main-space guest must enable Korri through services.korri"
-grep -A4 'services.korri = {' "$ROOT/flake.nix" | grep -q 'korri.packages.${targetSystem}.korri-desktop-odin' \
-  || fail "main-space guest must use Korri's Odin desktop package variant until Korri publishes a device alias"
-grep -q 'path = \[ config.services.korri.package \];' "$ROOT/flake.nix" \
-  || fail "sway kiosk service PATH must include the configured Korri package"
+grep -q 'korri.nixosModules.korri' "$ROOT/flake.nix" \
+  || fail "main-space guest must import Korri-owned NixOS modules"
+grep -q 'services.korri.client = {' "$ROOT/flake.nix" \
+  || fail "main-space guest must configure the Korri client module"
+grep -A4 'services.korri.client = {' "$ROOT/flake.nix" | grep -q 'enable = true;' \
+  || fail "main-space guest must enable Korri through services.korri.client"
+grep -A4 'services.korri.client = {' "$ROOT/flake.nix" | grep -q 'korri.packages.${targetSystem}.korri-desktop-device' \
+  || fail "main-space guest must use Korri's device desktop package variant"
+grep -q 'services.korri.inputd.enable = true;' "$ROOT/flake.nix" \
+  || fail "main-space guest must enable Korri inputd for native controller signals"
+grep -q 'path = \[ config.services.korri.client.package \];' "$ROOT/flake.nix" \
+  || fail "sway kiosk service PATH must include the configured Korri client package"
 grep -q 'rocknix-guest-main-space-thor' "$ROOT/flake.nix" \
   || fail "guest flake must expose a Thor main-space configuration"
 grep -q 'rocknix-guest-main-space-odin2portal' "$ROOT/flake.nix" \
@@ -307,7 +309,7 @@ grep -q 'CEMU_BIOS_ROOT = "/storage/roms/bios/cemu"' "$ROOT/profiles/main-space.
   || fail "main-space session must own temporary Cemu BIOS compatibility root"
 grep -q 'CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask' "$ROOT/profiles/main-space.nix" \
   || fail "main-space session must consume the SM8550 device Cemu affinity default"
-grep -q 'bindsym k exec korri-desktop-odin' "$ROOT/profiles/main-space.nix" \
+grep -q 'bindsym k exec korri-desktop-device' "$ROOT/profiles/main-space.nix" \
   || fail "main-space Home chord must expose Korri launch"
 grep -q 'default = "0xF8"' "$ROOT/modules/device.nix" \
   || fail "SM8550 device defaults must retain measured Odin2 Cemu affinity default"
