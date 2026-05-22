@@ -1,8 +1,10 @@
-# Accepted guest rootfs seed for the initial SM8550 patch-product proof.
-# New guest source lives in ./guest; these values pin the currently accepted
-# Odin2Portal seed consumed by the host patch queue until the next seed release.
-GUEST_DEVICE="odin2portal"
-GUEST_COMPATIBLE="ayn,odin2portal"
+# Accepted guest rootfs seed for the SM8550 Thor device-acceptance branch.
+# This branch pins the host build to the Thor seed at the same guest revision
+# (d5d00fe4) that sobo/Odin2Portal has accepted, so bandai's image differs from
+# the accepted sobo image only in the seed-related fields. See
+# docs/plans/2026-05-21-001-feat-sm8550-thor-device-acceptance-plan.md.
+GUEST_DEVICE="thor"
+GUEST_COMPATIBLE="ayn,thor"
 GUEST_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst"
-GUEST_SEED_SHA256="650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
+GUEST_SEED_SHA256="0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb"
