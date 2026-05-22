@@ -8,11 +8,13 @@
   config,
   lib,
   pkgs,
+  options,
   ...
 }:
 
 let
   rocknixInputplumber = pkgs.callPackage ../packages/inputplumber { };
+  hasKorriKiosk = options.services ? korri && options.services.korri ? kiosk;
 in
 {
   environment.systemPackages = [ rocknixInputplumber ];
@@ -35,14 +37,17 @@ in
   # package above. Order it before sway so libseat sees the virtual devices and
   # does not race raw controller ownership.
   systemd.services.inputplumber = {
-    before = [ "rocknix-sway-kiosk.service" ];
+    before = [
+      "main-space-sway-kiosk.service"
+      "korri-kiosk.service"
+    ];
     serviceConfig = {
       Restart = lib.mkForce "on-failure";
       RestartSec = lib.mkForce 2;
     };
   };
 
-  systemd.services.rocknix-sway-kiosk = {
+  systemd.services.main-space-sway-kiosk = lib.mkIf (!hasKorriKiosk) {
     wants = [ "inputplumber.service" ];
     after = [ "inputplumber.service" ];
   };

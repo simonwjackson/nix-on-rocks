@@ -77,8 +77,8 @@ in
   # from main-space are:
   #   - PATH adds fuzzel + git so keybinds can launch them
   #   - /etc/sway/config (below) bakes interactive keybinds + swaybar
-  systemd.services.rocknix-sway-kiosk = {
-    description = "ROCKNIX Layer 14 sway dev-env session";
+  systemd.services.main-space-sway-kiosk = {
+    description = "Main-space sway dev-env session";
     wantedBy = [ "multi-user.target" ];
     after = [ "multi-user.target" "systemd-user-sessions.service" ];
 

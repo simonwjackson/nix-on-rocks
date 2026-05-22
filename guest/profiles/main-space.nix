@@ -16,14 +16,13 @@
 # bits formerly only available in profiles/dev-env.nix -- a bottom swaybar
 # with clock/battery, Home-prefixed sway chord bindings (Home then Return
 # for foot, Home then d for fuzzel, Home then g for games-launcher,
-# workspaces 1-9, focus/move/layout), and `exec foot` so a cold boot lands
-# the user on something interactive
-# instead of a black screen. The audio/Steam/Cemu module composition is
-# unchanged.
+# workspaces 1-9, focus/move/layout). The audio/Steam/Cemu module composition
+# is unchanged.
 {
   config,
   lib,
   pkgs,
+  korriHasKiosk ? false,
   ...
 }:
 
@@ -35,6 +34,10 @@ let
   # output, it survives sway parsing untouched and runs under the same
   # bash the kiosk unit adds to its PATH.
   sm8550 = config.rocknix.sm8550;
+  hasKorriKiosk = korriHasKiosk;
+  korriClientPath = lib.optionals (config.services.korri.client.enable or false) [
+    config.services.korri.client.package
+  ];
 
   swayBarStatus = pkgs.writeShellScript "sway-bar-status" ''
     while true; do
@@ -68,194 +71,12 @@ let
       xdg-desktop-portal-gtk.service xdg-desktop-portal.service \
       >/dev/null 2>&1 || true
   '';
-in
 
-{
-  imports = [
-    ../modules/base.nix
-    ../modules/device.nix
-    ../modules/tools.nix
-    ../modules/ssh.nix
-    ../modules/display.nix
-    ../modules/audio.nix
-    ../modules/input.nix
-    ../modules/network.nix
-    ../modules/lid.nix
-    ../modules/steam.nix
-  ];
-
-  # Layer 14 default hostname: distinguish from the Layer 10b minimal
-  # "rocknix-guest" while allowing device profiles to provide stable
-  # per-device names for SSH, Tailscale, and journals.
-  networking.hostName = lib.mkDefault "rocknix-nix";
-
-  # Tier E2 surfaced tz-data.service 203/EXEC on every switch because
-  # ROCKNIX's tz-data unit ExecStart=/bin/ln -sf /usr/share/zoneinfo/${TIMEZONE}
-  # and the variable was empty. Setting time.timeZone declaratively here
-  # avoids the noise (NixOS owns its own zoneinfo path).
-  time.timeZone = "America/New_York";
-
-  # Stop the rate-limited journal-flush noise that fires when the guest's
-  # /run is tmpfs and journald can't pre-allocate.
-  services.journald.extraConfig = ''
-    Storage=volatile
-    RuntimeMaxUse=64M
-  '';
-
-  # Stable root session bus for the kiosk session and FHS-wrapped generic
-  # Linux apps such as Steam.  sway's wrapper can create a private dbus socket
-  # under /tmp via dbus-run-session, but that breaks FHS private-tmp wrappers:
-  # /run/user/0/bus becomes a symlink into a different /tmp.  Owning the bus at
-  # /run/user/0/bus keeps it visible through the bind-mounted /run namespace.
-  systemd.services.rocknix-session-dbus = {
-    description = "ROCKNIX Layer 14 root session D-Bus";
-    wantedBy = [ "multi-user.target" ];
-    before = [ "rocknix-sway-kiosk.service" ];
-    serviceConfig = {
-      Type = "simple";
-      User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
-      ExecStart = "${pkgs.dbus}/bin/dbus-daemon --session --address=unix:path=/run/user/0/bus --nofork --nopidfile";
-      Restart = "on-failure";
-      RestartSec = 3;
-      StandardOutput = "journal";
-      StandardError = "journal";
-    };
-  };
-
-  # Layer 14 first-light autostart wiring (Thor validation 2026-05-08).
-  #
-  # We do NOT use services.greetd: greetd's PAM stack pulls in
-  # pam_systemd.so which fails to dlopen inside nspawn ("failed to map
-  # segment from shared object") because nspawn's seccomp/capability
-  # profile blocks the mmap pattern PAM modules use. greetd then exits
-  # cleanly but never spawns a session.
-  #
-  # Instead, ship a bare systemd service that runs sway directly.
-  # wlroots's seatd backend (built into sway) takes /dev/dri/card0 and
-  # /dev/tty1 master without needing PAM or logind sessions.
-  #
-  # Why no TTYPath / StandardInput=tty / PAMName: live validation on Thor
-  # 2026-05-08 showed that the moment systemd is asked to claim a TTY for
-  # the unit it tries to run a PAM auth pre-exec step that fails silently
-  # inside nspawn (no logind, no pam_systemd) and the unit exits 127
-  # before sway is even reached. wlroots's libseat backend acquires its
-  # own VT directly from /dev/tty0 / /dev/tty1 (which the host nspawn
-  # unit binds in) when sway initialises the DRM session, so there is no
-  # need to hand the unit a TTY explicitly.
-  systemd.services.rocknix-sway-kiosk = {
-    description = "ROCKNIX Layer 14 sway kiosk session";
-    wantedBy = [ "multi-user.target" ];
-    # Do not order After=multi-user.target here. This service is WantedBy
-    # multi-user.target; ordering it after the target lets the target complete
-    # without reliably launching the compositor during boot. Order only after
-    # the concrete prerequisites it actually needs.
-    after = [
-      "systemd-user-sessions.service"
-      "rocknix-session-dbus.service"
-    ];
-    requires = [ "rocknix-session-dbus.service" ];
-
-    # sway's wrapper invokes dbus-run-session which spawns dbus-daemon.
-    # Without dbus on the unit's PATH the wrapper fails with
-    # "dbus-run-session: failed to execute message bus daemon
-    # 'dbus-daemon': No such file or directory" before sway is reached.
-    #
-    # Sway client commands (foot, swaybg, swaylock) inherit sway's PATH;
-    # add them here so `swaymsg exec foot` works without requiring the
-    # caller to set absolute paths.
-    #
-    # bashInteractive is required because sway's exec mechanism
-    # (both `swaymsg exec` over IPC and `bindsym ... exec ...` keybinds)
-    # calls `execlp("sh", "sh", "-c", cmd, NULL)`. Without bash on the
-    # unit's PATH that lookup fails with ENOENT and sway logs
-    # `[sway/commands/exec_always.c:65] execve failed: No such file or
-    # directory` for every exec attempt. The systemd default service
-    # PATH on NixOS does not include any shell. Verified live on Thor
-    # 2026-05-08: PATH inspection of sway's /proc/<pid>/environ showed
-    # only nix store package bin/ dirs, none containing `sh`.
-    #
-    # Interactive-profile additions (combined main-space):
-    #   - fuzzel: launcher invoked by the Home then d chord.
-    #   - git: handy for in-session scratch work; matches dev-env parity.
-    #   - coreutils: provides `date` and `cat` used by swayBarStatus.
-    #   - sway: makes the `swaybar` helper reachable. Sway forks swaybar
-    #     via execlp("swaybar", ...), same PATH-lookup mechanism as the
-    #     exec fix above. Without sway's bin/ on PATH the bar block
-    #     never spawns and only swaybg is visible.
-    path = with pkgs; [
-      dbus
-      foot
-      swaybg
-      swaylock
-      bashInteractive
-      fuzzel
-      git
-      coreutils
-      sway
-    ];
-
-    serviceConfig = {
-      Type = "simple";
-      User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
-      ExecStart = "${pkgs.sway}/bin/sway -c /etc/sway/config";
-      Restart = "on-failure";
-      RestartSec = 3;
-      StandardOutput = "journal";
-      StandardError = "journal";
-    };
-    environment = {
-      # Session-owned defaults for graphical apps launched via swaymsg exec.
-      # Cemu's launcher should not have to manufacture Wayland/audio/XDG
-      # basics; those belong to the Layer 14 guest session.
-      XDG_RUNTIME_DIR = "/run/user/0";
-      # WAYLAND_DISPLAY intentionally NOT pre-set here. Sway exports its
-      # own WAYLAND_DISPLAY into the systemd activation environment when
-      # the compositor finishes initializing, which is what clients
-      # spawned via `swaymsg exec` / `bindsym ... exec` inherit. If we
-      # pre-set it on the unit, wlroots reads the same variable at
-      # startup, decides a parent Wayland socket exists, and selects its
-      # nested *Wayland* backend instead of DRM. Sway then dies with
-      # "backend/wayland/backend.c:608 Could not connect to remote
-      # display: No such file or directory". Verified live on Thor
-      # 2026-05-11 after cold boot.
-      DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/0/bus";
-      XDG_CURRENT_DESKTOP = "sway";
-      SDL_AUDIODRIVER = "pulseaudio";
-      HOME = "/storage";
-      XDG_CONFIG_HOME = "/storage/.config";
-      XDG_DATA_HOME = "/storage/.local/share";
-      XDG_CACHE_HOME = "/storage/.cache";
-      # Temporary Cemu compatibility root for existing ROCKNIX BIOS/keys/MLC
-      # state. cemu-storage-adapter.sh consumes this; the package wrapper does
-      # not know about ROCKNIX /storage paths.
-      CEMU_BIOS_ROOT = "/storage/roms/bios/cemu";
-      # Measured SM8550 Cemu affinity policy. Runtime A/B harnesses can set
-      # CEMU_AFFINITY_MASK=none to test scheduler behavior explicitly.
-      CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask;
-
-      WLR_NO_HARDWARE_CURSORS = "1";
-      WLR_LIBINPUT_NO_DEVICES = "1";
-      USER = "root";
-    };
-  };
-
-  # Developer-shell packages baked in for parity with the former
-  # dev-env profile. None of these are needed by sway itself; they
-  # exist so the interactive Home-chord bindings below (Home then d for
-  # fuzzel, etc.) and an interactive `foot` shell are useful out of the box.
-  environment.systemPackages = with pkgs; [
-    fuzzel
-    git
-    htop
-    btop
-  ];
-
-  # Bake a device-aware sway config into /etc. The shared SM8550 defaults
-  # remain the Thor-validated display and touch routing; Odin 2 Portal can
-  # override only the measured device block without forking the kiosk policy.
-  environment.etc."sway/config".text = ''
+  # Device-aware Sway config shared by the legacy main-space service and the
+  # Korri-owned kiosk service. The generated Korri config owns client autostart;
+  # this fragment stays platform-owned: display routing, portal bootstrap,
+  # key chords, and the status bar.
+  mainSpaceSwayConfig = ''
     # ROCKNIX Layer 14 sway config (${sm8550.deviceId} / SM8550).
     seat * hide_cursor 1000
     default_border none
@@ -354,10 +175,259 @@ in
       }
     }
 
-    # ---- Auto-launch on session start ----
-    #
-    # One terminal so the user lands on something interactive instead
-    # of an empty dark screen. They can close it with Home then Shift+Q.
-    exec foot
   '';
-}
+in
+
+({
+  assertions = [
+    {
+      assertion = hasKorriKiosk || !(config.services.korri.kiosk.enable or false);
+      message = ''
+        main-space is composing services.korri.kiosk, but korriHasKiosk is false.
+        Set specialArgs.korriHasKiosk = true when importing the Korri kiosk module
+        with nix-on-rocks main-space so only one Sway compositor owns the session.
+      '';
+    }
+  ];
+
+  imports = [
+    ../modules/base.nix
+    ../modules/device.nix
+    ../modules/tools.nix
+    ../modules/ssh.nix
+    ../modules/display.nix
+    ../modules/audio.nix
+    ../modules/input.nix
+    ../modules/network.nix
+    ../modules/lid.nix
+    ../modules/steam.nix
+  ];
+
+  # Layer 14 default hostname: distinguish from the Layer 10b minimal
+  # "rocknix-guest" while allowing device profiles to provide stable
+  # per-device names for SSH, Tailscale, and journals.
+  networking.hostName = lib.mkDefault "rocknix-nix";
+
+  # Tier E2 surfaced tz-data.service 203/EXEC on every switch because
+  # ROCKNIX's tz-data unit ExecStart=/bin/ln -sf /usr/share/zoneinfo/${TIMEZONE}
+  # and the variable was empty. Setting time.timeZone declaratively here
+  # avoids the noise (NixOS owns its own zoneinfo path).
+  time.timeZone = "America/New_York";
+
+  # Stop the rate-limited journal-flush noise that fires when the guest's
+  # /run is tmpfs and journald can't pre-allocate.
+  services.journald.extraConfig = ''
+    Storage=volatile
+    RuntimeMaxUse=64M
+  '';
+
+  # Stable root session bus for the kiosk session and FHS-wrapped generic
+  # Linux apps such as Steam.  sway's wrapper can create a private dbus socket
+  # under /tmp via dbus-run-session, but that breaks FHS private-tmp wrappers:
+  # /run/user/0/bus becomes a symlink into a different /tmp.  Owning the bus at
+  # /run/user/0/bus keeps it visible through the bind-mounted /run namespace.
+  systemd.services.main-space-session-dbus = {
+    description = "Main-space root session D-Bus";
+    wantedBy = [ "multi-user.target" ];
+    before = [
+      "main-space-sway-kiosk.service"
+      "korri-kiosk.service"
+    ];
+    serviceConfig = {
+      Type = "simple";
+      User = "root";
+      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
+      ExecStart = "${pkgs.dbus}/bin/dbus-daemon --session --address=unix:path=/run/user/0/bus --nofork --nopidfile";
+      Restart = "on-failure";
+      RestartSec = 3;
+      StandardOutput = "journal";
+      StandardError = "journal";
+    };
+  };
+
+  # Layer 14 first-light autostart wiring (Thor validation 2026-05-08).
+  #
+  # We do NOT use services.greetd: greetd's PAM stack pulls in
+  # pam_systemd.so which fails to dlopen inside nspawn ("failed to map
+  # segment from shared object") because nspawn's seccomp/capability
+  # profile blocks the mmap pattern PAM modules use. greetd then exits
+  # cleanly but never spawns a session.
+  #
+  # Instead, ship a bare systemd service that runs sway directly.
+  # wlroots's seatd backend (built into sway) takes /dev/dri/card0 and
+  # /dev/tty1 master without needing PAM or logind sessions.
+  #
+  # Why no TTYPath / StandardInput=tty / PAMName: live validation on Thor
+  # 2026-05-08 showed that the moment systemd is asked to claim a TTY for
+  # the unit it tries to run a PAM auth pre-exec step that fails silently
+  # inside nspawn (no logind, no pam_systemd) and the unit exits 127
+  # before sway is even reached. wlroots's libseat backend acquires its
+  # own VT directly from /dev/tty0 / /dev/tty1 (which the host nspawn
+  # unit binds in) when sway initialises the DRM session, so there is no
+  # need to hand the unit a TTY explicitly.
+  systemd.services.main-space-sway-kiosk = lib.mkIf (!hasKorriKiosk) {
+    description = "Main-space sway kiosk session";
+    wantedBy = [ "multi-user.target" ];
+    # Do not order After=multi-user.target here. This service is WantedBy
+    # multi-user.target; ordering it after the target lets the target complete
+    # without reliably launching the compositor during boot. Order only after
+    # the concrete prerequisites it actually needs.
+    after = [
+      "systemd-user-sessions.service"
+      "main-space-session-dbus.service"
+    ];
+    requires = [ "main-space-session-dbus.service" ];
+
+    # sway's wrapper invokes dbus-run-session which spawns dbus-daemon.
+    # Without dbus on the unit's PATH the wrapper fails with
+    # "dbus-run-session: failed to execute message bus daemon
+    # 'dbus-daemon': No such file or directory" before sway is reached.
+    #
+    # Sway client commands (foot, swaybg, swaylock) inherit sway's PATH;
+    # add them here so `swaymsg exec foot` works without requiring the
+    # caller to set absolute paths.
+    #
+    # bashInteractive is required because sway's exec mechanism
+    # (both `swaymsg exec` over IPC and `bindsym ... exec ...` keybinds)
+    # calls `execlp("sh", "sh", "-c", cmd, NULL)`. Without bash on the
+    # unit's PATH that lookup fails with ENOENT and sway logs
+    # `[sway/commands/exec_always.c:65] execve failed: No such file or
+    # directory` for every exec attempt. The systemd default service
+    # PATH on NixOS does not include any shell. Verified live on Thor
+    # 2026-05-08: PATH inspection of sway's /proc/<pid>/environ showed
+    # only nix store package bin/ dirs, none containing `sh`.
+    #
+    # Interactive-profile additions (combined main-space):
+    #   - fuzzel: launcher invoked by the Home then d chord.
+    #   - git: handy for in-session scratch work; matches dev-env parity.
+    #   - coreutils: provides `date` and `cat` used by swayBarStatus.
+    #   - sway: makes the `swaybar` helper reachable. Sway forks swaybar
+    #     via execlp("swaybar", ...), same PATH-lookup mechanism as the
+    #     exec fix above. Without sway's bin/ on PATH the bar block
+    #     never spawns and only swaybg is visible.
+    path = korriClientPath ++ (with pkgs; [
+      dbus
+      foot
+      swaybg
+      swaylock
+      bashInteractive
+      fuzzel
+      git
+      coreutils
+      sway
+    ]);
+
+    serviceConfig = {
+      Type = "simple";
+      User = "root";
+      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
+      ExecStart = "${pkgs.sway}/bin/sway -c /etc/sway/config";
+      Restart = "on-failure";
+      RestartSec = 3;
+      StandardOutput = "journal";
+      StandardError = "journal";
+    };
+    environment = {
+      # Session-owned defaults for graphical apps launched via swaymsg exec.
+      # Cemu's launcher should not have to manufacture Wayland/audio/XDG
+      # basics; those belong to the Layer 14 guest session.
+      XDG_RUNTIME_DIR = "/run/user/0";
+      # WAYLAND_DISPLAY intentionally NOT pre-set here. Sway exports its
+      # own WAYLAND_DISPLAY into the systemd activation environment when
+      # the compositor finishes initializing, which is what clients
+      # spawned via `swaymsg exec` / `bindsym ... exec` inherit. If we
+      # pre-set it on the unit, wlroots reads the same variable at
+      # startup, decides a parent Wayland socket exists, and selects its
+      # nested *Wayland* backend instead of DRM. Sway then dies with
+      # "backend/wayland/backend.c:608 Could not connect to remote
+      # display: No such file or directory". Verified live on Thor
+      # 2026-05-11 after cold boot.
+      DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/0/bus";
+      XDG_CURRENT_DESKTOP = "sway";
+      SDL_AUDIODRIVER = "pulseaudio";
+      HOME = "/storage";
+      XDG_CONFIG_HOME = "/storage/.config";
+      XDG_DATA_HOME = "/storage/.local/share";
+      XDG_CACHE_HOME = "/storage/.cache";
+      # Temporary Cemu compatibility root for existing ROCKNIX BIOS/keys/MLC
+      # state. cemu-storage-adapter.sh consumes this; the package wrapper does
+      # not know about ROCKNIX /storage paths.
+      CEMU_BIOS_ROOT = "/storage/roms/bios/cemu";
+      # Measured SM8550 Cemu affinity policy. Runtime A/B harnesses can set
+      # CEMU_AFFINITY_MASK=none to test scheduler behavior explicitly.
+      CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask;
+
+      WLR_NO_HARDWARE_CURSORS = "1";
+      WLR_LIBINPUT_NO_DEVICES = "1";
+      USER = "root";
+    };
+  };
+
+
+  # Developer-shell packages baked in for parity with the former
+  # dev-env profile. None of these are needed by sway itself; they
+  # exist so the interactive Home-chord bindings below (Home then d for
+  # fuzzel, Home then Return for foot, etc.) are useful out of the box.
+  environment.systemPackages = with pkgs; [
+    fuzzel
+    git
+    htop
+    btop
+  ];
+
+  # Keep /etc/sway/config for fallback compositions that import main-space
+  # without Korri's kiosk module. When Korri is present, the same fragment is
+  # appended to services.korri.kiosk.sway.extraConfig instead.
+  environment.etc."sway/config".text = lib.mkIf (!hasKorriKiosk) mainSpaceSwayConfig;
+} // lib.optionalAttrs hasKorriKiosk {
+  services.korri.kiosk = {
+    enable = lib.mkDefault true;
+    user = lib.mkDefault "root";
+    createUser = lib.mkDefault false;
+    home = lib.mkDefault "/storage";
+    runtimeDir = lib.mkDefault "/run/user/0";
+
+    sessionBus = {
+      mode = lib.mkDefault "existing";
+      address = lib.mkDefault "unix:path=/run/user/0/bus";
+      services = lib.mkDefault [ "main-space-session-dbus.service" ];
+    };
+
+    input = {
+      required = lib.mkDefault true;
+      provider = {
+        enable = lib.mkDefault true;
+        name = lib.mkDefault "inputplumber";
+        services = lib.mkDefault [ "inputplumber.service" ];
+      };
+    };
+
+    # Sway exec/keybind commands inherit this PATH from the product-owned
+    # Korri kiosk service. Keep shell, launcher, bar, and interactive tools
+    # available without baking absolute paths into platform fragments.
+    path = korriClientPath ++ (with pkgs; [
+      coreutils
+      dbus
+      foot
+      swaybg
+      swaylock
+      bashInteractive
+      fuzzel
+      git
+      sway
+    ]);
+
+    environment = {
+      XDG_CURRENT_DESKTOP = "sway";
+      SDL_AUDIODRIVER = "pulseaudio";
+      XDG_CACHE_HOME = "/storage/.cache";
+      CEMU_BIOS_ROOT = "/storage/roms/bios/cemu";
+      CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask;
+      WLR_NO_HARDWARE_CURSORS = "1";
+      WLR_LIBINPUT_NO_DEVICES = "1";
+      USER = "root";
+    };
+
+    sway.extraConfig = mainSpaceSwayConfig;
+  };
+})

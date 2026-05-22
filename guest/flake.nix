@@ -52,12 +52,15 @@
         deviceProfile: extraModules:
         nixpkgs.lib.nixosSystem {
           system = targetSystem;
+          specialArgs = {
+            korriHasKiosk = builtins.hasAttr "korri-kiosk" korri.nixosModules;
+          };
           modules = [
             korri.nixosModules.korri
             ./profiles/main-space.nix
             deviceProfile
             (
-              { config, ... }:
+              { ... }:
               {
                 services.korri.client = {
                   enable = true;
@@ -65,8 +68,6 @@
                 };
 
                 services.korri.inputd.enable = true;
-
-                systemd.services.rocknix-sway-kiosk.path = [ config.services.korri.client.package ];
 
                 # Keep the emulator package source of truth in this guest flake so
                 # profile composition, package derivations, and launch adapters are

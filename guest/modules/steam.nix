@@ -396,7 +396,7 @@ in
     steamUinputPrep
   ];
 
-  systemd.services.rocknix-steam-uinput = {
+  systemd.services.main-space-steam-uinput = {
     description = "Prepare the guest uinput device for Steam Input";
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {

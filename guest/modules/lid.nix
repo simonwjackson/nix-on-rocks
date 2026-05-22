@@ -87,7 +87,7 @@ let
     done
     nmcli -t -f WIFI radio 2>/dev/null | head -1 > "${stateDir}/wifi.state" || true
     rfkill list bluetooth 2>/dev/null > "${stateDir}/bt.state" || true
-    if systemctl --quiet is-active rocknix-pipewire.service 2>/dev/null; then
+    if systemctl --quiet is-active main-space-pipewire.service 2>/dev/null; then
       echo active > "${stateDir}/pipewire.state"
     fi
 
@@ -104,9 +104,17 @@ let
     #   sway-bar-status). Anything else in the cgroup gets SIGSTOPped:
     #   foot, fuzzel, glmark2-wayland, cemu, retroarch, etc. The
     #   stopped-PID list is recorded so lid-open only thaws those.
-    SWAY_CG=/sys/fs/cgroup/system.slice/rocknix-sway-kiosk.service
+    SWAY_CG=
+    for candidate in \
+      /sys/fs/cgroup/system.slice/korri-kiosk.service \
+      /sys/fs/cgroup/system.slice/main-space-sway-kiosk.service; do
+      if [ -r "$candidate/cgroup.procs" ]; then
+        SWAY_CG="$candidate"
+        break
+      fi
+    done
     : > "${stateDir}/stopped.pids"
-    if [ -r "$SWAY_CG/cgroup.procs" ]; then
+    if [ -n "$SWAY_CG" ] && [ -r "$SWAY_CG/cgroup.procs" ]; then
       while IFS= read -r pid; do
         [ -n "$pid" ] || continue
         comm=$(cat "/proc/$pid/comm" 2>/dev/null || echo "")
@@ -128,7 +136,7 @@ let
 
     # ---- 4. stop audio if running ----
     if [ -f "${stateDir}/pipewire.state" ]; then
-      systemctl stop rocknix-pipewire-pulse.service rocknix-wireplumber.service rocknix-pipewire.service 2>/dev/null || true
+      systemctl stop main-space-pipewire-pulse.service main-space-wireplumber.service main-space-pipewire.service 2>/dev/null || true
     fi
 
     # ---- 5. Wi-Fi off (kills SSH if you're connected -- by design) ----
@@ -193,7 +201,7 @@ let
 
     # ---- 4. Audio restore ----
     if [ -f "${stateDir}/pipewire.state" ]; then
-      systemctl start rocknix-pipewire.service rocknix-wireplumber.service rocknix-pipewire-pulse.service 2>/dev/null || true
+      systemctl start main-space-pipewire.service main-space-wireplumber.service main-space-pipewire-pulse.service 2>/dev/null || true
       rm -f "${stateDir}/pipewire.state"
     fi
 
@@ -269,7 +277,7 @@ let
     fi
   '';
 
-  hardwareButtonHandler = pkgs.writeShellScriptBin "rocknix-hardware-button-handler" ''
+  hardwareButtonHandler = pkgs.writeShellScriptBin "main-space-hardware-button-handler" ''
     set -u
     export PATH=${lib.makeBinPath (with pkgs; [ evtest coreutils gnugrep ])}
 
@@ -370,8 +378,8 @@ in
   # HandleLidSwitch=suspend; in nspawn, suspend isn't supported, but the
   # error handling escalates and the cumulative effect on Thor 2026-05-08
   # was a full container shutdown on the next lid edge. Our
-  # rocknix-hardware-button-handler is the SINGLE owner of lid/power/volume
-  # semantics in Layer 14.
+  # main-space-hardware-button-handler is the SINGLE owner of lid/power/volume
+  # semantics in main-space.
   services.logind.settings.Login = {
     HandleLidSwitch = "ignore";
     HandleLidSwitchExternalPower = "ignore";
@@ -380,8 +388,8 @@ in
     HandleSuspendKey = "ignore";
   };
 
-  systemd.services.rocknix-hardware-button-handler = {
-    description = "ROCKNIX Layer 14 hardware button handler (volume, power, lid)";
+  systemd.services.main-space-hardware-button-handler = {
+    description = "Main-space hardware button handler (volume, power, lid)";
     wantedBy = [ "multi-user.target" ];
     # Order after the root-scoped audio services this module's audio.nix
     # sibling actually provides. The legacy NixOS-managed unit names
@@ -393,9 +401,9 @@ in
     # "no PipeWire/PulseAudio control socket available".
     after = [
       "systemd-user-sessions.service"
-      "rocknix-pipewire.service"
-      "rocknix-pipewire-pulse.service"
-      "rocknix-wireplumber.service"
+      "main-space-pipewire.service"
+      "main-space-pipewire-pulse.service"
+      "main-space-wireplumber.service"
     ];
     # rocknix-volume invokes wpctl / pactl, which both probe the
     # PipeWire socket at $XDG_RUNTIME_DIR/pipewire-0 and the Pulse
@@ -403,7 +411,7 @@ in
     # systemd minimal environment by default; without these vars its
     # children fail with "no PipeWire/PulseAudio control socket
     # available" even though the sockets exist under /run/user/0/.
-    # Same triplet the rocknix-pipewire* services use for their own
+    # Same triplet the main-space-pipewire* services use for their own
     # anchor (see modules/audio.nix). Verified on Thor 2026-05-11.
     environment = {
       XDG_RUNTIME_DIR = "/run/user/0";
@@ -412,7 +420,7 @@ in
     };
     serviceConfig = {
       Type = "simple";
-      ExecStart = "${hardwareButtonHandler}/bin/rocknix-hardware-button-handler";
+      ExecStart = "${hardwareButtonHandler}/bin/main-space-hardware-button-handler";
       Restart = "on-failure";
       RestartSec = "5s";
       # No sandboxing -- needs to read /dev/input, write /sys cpufreq, run

@@ -148,7 +148,9 @@ preflight() {
 
   run_guest 20 'PATH=/run/current-system/sw/bin:/bin:/usr/bin
 if ! ls /run/user/0/sway-ipc.0.*.sock >/dev/null 2>&1; then
-  systemctl start rocknix-sway-kiosk.service >/dev/null 2>&1 || true
+  systemctl start korri-kiosk.service >/dev/null 2>&1 \
+    || systemctl start main-space-sway-kiosk.service >/dev/null 2>&1 \
+    || true
 fi
 SOCK=$(ls /run/user/0/sway-ipc.0.*.sock 2>/dev/null | head -1 || true)
 echo "SOCK=$SOCK"

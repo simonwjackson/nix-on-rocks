@@ -19,9 +19,9 @@ let
 in
 {
   # Keep NixOS PipeWire configuration available, but do not rely on its user
-  # units: the Layer 14 kiosk bypasses PAM/logind user sessions. The root-owned
-  # rocknix-* services below run the graph in the same /run/user/0 runtime as
-  # Sway and launched apps.
+  # units: the main-space kiosk bypasses PAM/logind user sessions. The
+  # root-owned main-space-* services below run the graph in the same
+  # /run/user/0 runtime as Sway and launched apps.
   services.pipewire = {
     enable = true;
     alsa.enable = true;
@@ -50,10 +50,10 @@ in
   # bluetoothd as part of the guest boot so paired HID devices reconnect.
   systemd.services.bluetooth.wantedBy = [ "multi-user.target" ];
 
-  systemd.services.rocknix-pipewire = {
-    description = "ROCKNIX Layer 14 root PipeWire service";
+  systemd.services.main-space-pipewire = {
+    description = "Main-space root PipeWire service";
     wantedBy = [ "multi-user.target" ];
-    after = [ "rocknix-session-dbus.service" ];
+    after = [ "main-space-session-dbus.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";
@@ -65,11 +65,11 @@ in
     environment = audioServiceEnvironment;
   };
 
-  systemd.services.rocknix-pipewire-pulse = {
-    description = "ROCKNIX Layer 14 root PipeWire PulseAudio service";
+  systemd.services.main-space-pipewire-pulse = {
+    description = "Main-space root PipeWire PulseAudio service";
     wantedBy = [ "multi-user.target" ];
-    after = [ "rocknix-pipewire.service" "rocknix-session-dbus.service" ];
-    requires = [ "rocknix-pipewire.service" ];
+    after = [ "main-space-pipewire.service" "main-space-session-dbus.service" ];
+    requires = [ "main-space-pipewire.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";
@@ -81,11 +81,11 @@ in
     environment = audioServiceEnvironment;
   };
 
-  systemd.services.rocknix-wireplumber = {
-    description = "ROCKNIX Layer 14 root WirePlumber service";
+  systemd.services.main-space-wireplumber = {
+    description = "Main-space root WirePlumber service";
     wantedBy = [ "multi-user.target" ];
-    after = [ "rocknix-pipewire.service" "rocknix-session-dbus.service" ];
-    requires = [ "rocknix-pipewire.service" ];
+    after = [ "main-space-pipewire.service" "main-space-session-dbus.service" ];
+    requires = [ "main-space-pipewire.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";

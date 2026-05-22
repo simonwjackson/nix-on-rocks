@@ -71,7 +71,7 @@ grep -A4 'services.korri.client = {' "$ROOT/flake.nix" | grep -q 'korri.packages
   || fail "main-space guest must use Korri's device desktop package variant"
 grep -q 'services.korri.inputd.enable = true;' "$ROOT/flake.nix" \
   || fail "main-space guest must enable Korri inputd for native controller signals"
-grep -q 'path = \[ config.services.korri.client.package \];' "$ROOT/flake.nix" \
+grep -q 'korriClientPath = lib.optionals' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service PATH must include the configured Korri client package"
 grep -q 'rocknix-guest-main-space-thor' "$ROOT/flake.nix" \
   || fail "guest flake must expose a Thor main-space configuration"
@@ -190,11 +190,11 @@ grep -q 'powerOnBoot = true' "$ROOT/modules/audio.nix" \
   || fail "guest Bluetooth must power on at boot for trusted HID reconnect"
 grep -q 'systemd.services.bluetooth.wantedBy = \[ "multi-user.target" \]' "$ROOT/modules/audio.nix" \
   || fail "guest Bluetooth service must start during main-space boot"
-grep -q 'systemd.services.rocknix-pipewire' "$ROOT/modules/audio.nix" \
+grep -q 'systemd.services.main-space-pipewire' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped PipeWire service for the kiosk session"
-grep -q 'systemd.services.rocknix-pipewire-pulse' "$ROOT/modules/audio.nix" \
+grep -q 'systemd.services.main-space-pipewire-pulse' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped PipeWire PulseAudio service"
-grep -q 'systemd.services.rocknix-wireplumber' "$ROOT/modules/audio.nix" \
+grep -q 'systemd.services.main-space-wireplumber' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped WirePlumber service"
 grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/modules/audio.nix" \
   || fail "audio module must start audio services in the kiosk boot target"
@@ -212,8 +212,9 @@ grep -q 'ayn_mcu' "$ROOT/packages/inputplumber/sm8550/capability_maps/ayn_mcu.ya
   || fail "guest InputPlumber package must include ROCKNIX SM8550 AYN capability map"
 grep -q 'c /dev/uinput' "$ROOT/modules/input.nix" \
   || fail "input module must create /dev/uinput for guest-owned virtual devices"
-grep -q 'before = \[ "rocknix-sway-kiosk.service" \]' "$ROOT/modules/input.nix" \
-  || fail "guest InputPlumber must order before sway"
+grep -q '"korri-kiosk.service"' "$ROOT/modules/input.nix" \
+  && grep -q '"main-space-sway-kiosk.service"' "$ROOT/modules/input.nix" \
+  || fail "guest InputPlumber must order before Korri and fallback sway sessions"
 grep -q '../modules/input.nix' "$ROOT/profiles/main-space.nix" \
   || fail "main-space profile must import the guest input module"
 grep -q 'ayn-odin2-ucm' "$ROOT/flake.nix" \
@@ -236,7 +237,7 @@ grep -q 'PlaybackPCM "hw:${CardId},0"' "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/
   || fail "AYN Odin2 UCM package must include Thor card-id symlink"
 ! grep -q 'module-alsa-sink\|sink_name=thor_hw0\|rocknix-audio-alsa-sink' "$ROOT/modules/audio.nix" "$ROOT/modules/lid.nix" \
   || fail "audio path must not depend on the diagnostic thor_hw0 module-alsa-sink workaround"
-grep -q 'rocknix-hardware-button-handler' "$ROOT/modules/lid.nix" \
+grep -q 'main-space-hardware-button-handler' "$ROOT/modules/lid.nix" \
   || fail "lid module must own guest hardware button handling"
 grep -q 'rocknix-volume' "$ROOT/modules/lid.nix" \
   || fail "lid module must provide a guest volume helper"
@@ -296,12 +297,12 @@ grep -q 'iwd' "$ROOT/modules/network.nix" \
   || fail "network module must include guest iwd for Wi-Fi ownership"
 grep -q 'time.timeZone' "$ROOT/profiles/main-space.nix" \
   || fail "main-space profile must set time.timeZone"
-grep -q 'systemd.services.rocknix-sway-kiosk' "$ROOT/profiles/main-space.nix" \
-  || fail "main-space profile must define the sway kiosk service"
+grep -q 'systemd.services.main-space-sway-kiosk' "$ROOT/profiles/main-space.nix" \
+  || fail "main-space profile must define the fallback sway kiosk service"
 grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service must be wanted by multi-user.target"
 grep -q '"systemd-user-sessions.service"' "$ROOT/profiles/main-space.nix" \
-  && grep -q '"rocknix-session-dbus.service"' "$ROOT/profiles/main-space.nix" \
+  && grep -q '"main-space-session-dbus.service"' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service must order only after concrete prerequisites"
 ! grep -q 'after = \[ "multi-user.target"' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service must not order After=multi-user.target"
