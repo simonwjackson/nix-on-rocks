@@ -8,6 +8,7 @@ The Nix-on-ROCK product lane separates CI build evidence from on-device acceptan
 
 Latest accepted evidence:
 
+- 2026-05-22 Thor/bandai device proof: `docs/acceptance/sm8550-device-acceptance-2026-05-22-thor.md`
 - 2026-05-20 Phase 5 CI/image-only/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
 - 2026-05-19 external product-lane and Phase 2 proof: `docs/acceptance/sm8550-device-acceptance-2026-05-19.md`
 
