@@ -2348,10 +2348,10 @@ index 0000000000..e1411eeeb4
 +exit 0
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
 new file mode 100755
-index 0000000000..e3ba9f2668
+index 0000000000..6227eb128b
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,282 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -2564,6 +2564,18 @@ index 0000000000..e3ba9f2668
 +  log "pass v4l2 codec ${v_node}"
 +done
 +
++# Qualcomm Hexagon DSP RPC endpoints. SM8550 exposes /dev/fastrpc-adsp
++# (audio DSP), /dev/fastrpc-cdsp (compute DSP), and a secure variant of
++# the compute endpoint. Guest workloads that want to offload audio post-
++# processing, on-device ML, or camera ISP work to the DSP need direct
++# access to these endpoints. Enumeration is conditional so this is
++# safe on SM8550 variants where the DSP nodes are not present.
++for fastrpc_node in /dev/fastrpc-adsp /dev/fastrpc-cdsp /dev/fastrpc-cdsp-secure; do
++  [ -c "${fastrpc_node}" ] || continue
++  emit_arg "--bind=${fastrpc_node}"
++  log "pass ${fastrpc_node} (Hexagon DSP RPC)"
++done
++
 +emit_device_allow "DeviceAllow=/dev/net/tun rwm"
 +emit_device_allow "DeviceAllow=/dev/uhid rwm"
 +emit_device_allow "DeviceAllow=/dev/snd/controlC0 rwm"
@@ -2598,6 +2610,12 @@ index 0000000000..e3ba9f2668
 +# nodes, so a numbered DeviceAllow per node would either drift out of sync
 +# with the kernel's actual ordinal assignments or duplicate the enumeration.
 +emit_device_allow "DeviceAllow=char-video4linux rwm"
++# Companions to the fastrpc bind loop above. DeviceAllow is harmless when
++# the underlying node is absent; emit unconditionally and keep node
++# presence as the only gate on the actual bind list.
++emit_device_allow "DeviceAllow=/dev/fastrpc-adsp rwm"
++emit_device_allow "DeviceAllow=/dev/fastrpc-cdsp rwm"
++emit_device_allow "DeviceAllow=/dev/fastrpc-cdsp-secure rwm"
 +
 +emit_safe_block_binds
 +
@@ -3008,10 +3026,10 @@ index 0000000000..b3783b8c25
 +WantedBy=rocknix-main-space.target
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
 new file mode 100644
-index 0000000000..41580339c6
+index 0000000000..a1d2140b30
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,175 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +#
@@ -3127,6 +3145,12 @@ index 0000000000..41580339c6
 +# cgroup companion. Without it, the bind succeeds but every open() inside the
 +# guest returns EPERM and Moonlight's v4l2m2m enumeration finds nothing.
 +DeviceAllow=char-video4linux rwm
++# Qualcomm Hexagon DSP RPC endpoints (SM8550). Guest workloads that
++# offload audio / compute / camera ISP work to the DSP need direct
++# access. Harmless when no consumer is running in the guest.
++DeviceAllow=/dev/fastrpc-adsp rwm
++DeviceAllow=/dev/fastrpc-cdsp rwm
++DeviceAllow=/dev/fastrpc-cdsp-secure rwm
 +
 +# Game/media storage is passed by rocknix-guest-start after excluding any
 +# block root that backs mounted host filesystems. Keep block DeviceAllow exact
@@ -3255,10 +3279,10 @@ index 0000000000..6ccb1238d2
 +WantedBy=sysinit.target
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
 new file mode 100755
-index 0000000000..3a7dc88225
+index 0000000000..4326ad17ca
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-@@ -0,0 +1,246 @@
+@@ -0,0 +1,250 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3384,7 +3408,10 @@ index 0000000000..3a7dc88225
 +  'DeviceAllow=/dev/tty0 rwm' \
 +  'DeviceAllow=/dev/tty1 rwm' \
 +  'DeviceAllow=/dev/rfkill rwm' \
-+  'DeviceAllow=char-video4linux rwm'; do
++  'DeviceAllow=char-video4linux rwm' \
++  'DeviceAllow=/dev/fastrpc-adsp rwm' \
++  'DeviceAllow=/dev/fastrpc-cdsp rwm' \
++  'DeviceAllow=/dev/fastrpc-cdsp-secure rwm'; do
 +  check_grep "${device_allow}" "${guest_unit}" "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +check_grep '--capability=CAP_NET_ADMIN' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3393,6 +3420,7 @@ index 0000000000..3a7dc88225
 +check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uhid for guest Bluetooth HID devices"
 +check_grep '--bind=/dev/uinput' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uinput for guest InputPlumber"
 +check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
++check_grep 'for fastrpc_node in /dev/fastrpc-adsp' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate Hexagon DSP RPC endpoints at runtime"
 +check_grep '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must keep the single host/guest storage seam through the compatibility bind"
 +check_grep 'has_candidate_media_member' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must classify media without probing blocked devices"
 +if grep -q 'blkid' "${SCRIPT_ROOT}/rocknix-guest-start"; then
@@ -3507,10 +3535,10 @@ index 0000000000..3a7dc88225
 +printf 'rocknix-guest-substrate thin-host runtime smoke passed\n'
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 new file mode 100755
-index 0000000000..bd11769bb3
+index 0000000000..f1f3e66dff
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1398 @@
+@@ -0,0 +1,1405 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3746,7 +3774,10 @@ index 0000000000..bd11769bb3
 +  'DeviceAllow=/dev/tty0 rwm' \
 +  'DeviceAllow=/dev/tty1 rwm' \
 +  'DeviceAllow=/dev/rfkill rwm' \
-+  'DeviceAllow=char-video4linux rwm'; do
++  'DeviceAllow=char-video4linux rwm' \
++  'DeviceAllow=/dev/fastrpc-adsp rwm' \
++  'DeviceAllow=/dev/fastrpc-cdsp rwm' \
++  'DeviceAllow=/dev/fastrpc-cdsp-secure rwm'; do
 +  grep -q "${device_allow}" "${guest_unit}" || fail "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +grep -q -- '--capability=CAP_NET_ADMIN' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3758,6 +3789,10 @@ index 0000000000..bd11769bb3
 +grep -q -- '--bind=/dev/snd' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through sound devices"
 +grep -q -- '--bind=${v_node}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/video* codec nodes for Moonlight v4l2m2m"
 +grep -q -- 'for v_node in /dev/video' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate /dev/video[0-9]* at runtime rather than hardcode ordinals"
++grep -q -- 'for fastrpc_node in /dev/fastrpc-adsp /dev/fastrpc-cdsp /dev/fastrpc-cdsp-secure' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate Hexagon DSP RPC endpoints at runtime"
++grep -q 'DeviceAllow=/dev/fastrpc-adsp rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fastrpc-adsp at runtime"
++grep -q 'DeviceAllow=/dev/fastrpc-cdsp rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fastrpc-cdsp at runtime"
++grep -q 'DeviceAllow=/dev/fastrpc-cdsp-secure rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fastrpc-cdsp-secure at runtime"
 +grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind scrubbed udev db"
 +grep -q -- '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must keep the single host/guest storage seam"
 +! grep -q -- '--bind-ro=/storage/roms' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host ROM library"
