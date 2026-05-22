@@ -1,6 +1,6 @@
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
 new file mode 100644
-index 0000000000..a3c56f7951
+index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
 @@ -0,0 +1,252 @@
@@ -2348,10 +2348,10 @@ index 0000000000..e1411eeeb4
 +exit 0
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
 new file mode 100755
-index 0000000000..394c335cfc
+index 0000000000..e3ba9f2668
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
-@@ -0,0 +1,246 @@
+@@ -0,0 +1,264 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -2551,6 +2551,19 @@ index 0000000000..394c335cfc
 +emit_arg "--bind=/sys/devices/system/cpu/cpufreq"
 +emit_arg "--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}"
 +
++# Pass through any v4l2 codec character devices the kernel exposes
++# (qcom-iris-decoder/encoder on SM8550). Iterating over /dev/video[0-9]*
++# rather than hardcoding ordinals avoids breakage when driver probe order
++# shifts node numbers across kernel revisions, and mirrors the runtime
++# enumeration pattern used by emit_safe_block_binds for game/media storage.
++# Without this, Moonlight (and any other v4l2m2m consumer in the guest)
++# sees an empty /dev/video* and silently falls back to software decode.
++for v_node in /dev/video[0-9]*; do
++  [ -c "${v_node}" ] || continue
++  emit_arg "--bind=${v_node}"
++  log "pass v4l2 codec ${v_node}"
++done
++
 +emit_device_allow "DeviceAllow=/dev/net/tun rwm"
 +emit_device_allow "DeviceAllow=/dev/uhid rwm"
 +emit_device_allow "DeviceAllow=/dev/snd/controlC0 rwm"
@@ -2580,6 +2593,11 @@ index 0000000000..394c335cfc
 +emit_device_allow "DeviceAllow=/dev/tty0 rwm"
 +emit_device_allow "DeviceAllow=/dev/tty1 rwm"
 +emit_device_allow "DeviceAllow=/dev/rfkill rwm"
++# Companion to the /dev/video[0-9]* bind loop above. char-video4linux (major
++# 81) is a class allow on purpose: the bind loop runs over runtime-enumerated
++# nodes, so a numbered DeviceAllow per node would either drift out of sync
++# with the kernel's actual ordinal assignments or duplicate the enumeration.
++emit_device_allow "DeviceAllow=char-video4linux rwm"
 +
 +emit_safe_block_binds
 +
@@ -2990,10 +3008,10 @@ index 0000000000..b3783b8c25
 +WantedBy=rocknix-main-space.target
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
 new file mode 100644
-index 0000000000..caa9d4694c
+index 0000000000..41580339c6
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,169 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +#
@@ -3103,6 +3121,12 @@ index 0000000000..caa9d4694c
 +DeviceAllow=/dev/tty0 rwm
 +DeviceAllow=/dev/tty1 rwm
 +DeviceAllow=/dev/rfkill rwm
++# qcom-iris (SM8550) exposes /dev/video0 (decoder) + /dev/video1 (encoder)
++# at probe time. The rocknix-guest-start script binds whichever video[0-9]*
++# nodes the kernel registered into the container; this class allow is the
++# cgroup companion. Without it, the bind succeeds but every open() inside the
++# guest returns EPERM and Moonlight's v4l2m2m enumeration finds nothing.
++DeviceAllow=char-video4linux rwm
 +
 +# Game/media storage is passed by rocknix-guest-start after excluding any
 +# block root that backs mounted host filesystems. Keep block DeviceAllow exact
@@ -3231,10 +3255,10 @@ index 0000000000..6ccb1238d2
 +WantedBy=sysinit.target
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
 new file mode 100755
-index 0000000000..e7d958aee5
+index 0000000000..3a7dc88225
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-@@ -0,0 +1,244 @@
+@@ -0,0 +1,246 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3359,7 +3383,8 @@ index 0000000000..e7d958aee5
 +  'DeviceAllow=/dev/uinput rwm' \
 +  'DeviceAllow=/dev/tty0 rwm' \
 +  'DeviceAllow=/dev/tty1 rwm' \
-+  'DeviceAllow=/dev/rfkill rwm'; do
++  'DeviceAllow=/dev/rfkill rwm' \
++  'DeviceAllow=char-video4linux rwm'; do
 +  check_grep "${device_allow}" "${guest_unit}" "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +check_grep '--capability=CAP_NET_ADMIN' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3367,6 +3392,7 @@ index 0000000000..e7d958aee5
 +check_grep '--bind=/dev/net/tun' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through tun for guest Tailscale"
 +check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uhid for guest Bluetooth HID devices"
 +check_grep '--bind=/dev/uinput' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uinput for guest InputPlumber"
++check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
 +check_grep '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must keep the single host/guest storage seam through the compatibility bind"
 +check_grep 'has_candidate_media_member' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must classify media without probing blocked devices"
 +if grep -q 'blkid' "${SCRIPT_ROOT}/rocknix-guest-start"; then
@@ -3481,10 +3507,10 @@ index 0000000000..e7d958aee5
 +printf 'rocknix-guest-substrate thin-host runtime smoke passed\n'
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 new file mode 100755
-index 0000000000..2fae755cd1
+index 0000000000..bd11769bb3
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1395 @@
+@@ -0,0 +1,1398 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3719,7 +3745,8 @@ index 0000000000..2fae755cd1
 +  'DeviceAllow=/dev/uinput rwm' \
 +  'DeviceAllow=/dev/tty0 rwm' \
 +  'DeviceAllow=/dev/tty1 rwm' \
-+  'DeviceAllow=/dev/rfkill rwm'; do
++  'DeviceAllow=/dev/rfkill rwm' \
++  'DeviceAllow=char-video4linux rwm'; do
 +  grep -q "${device_allow}" "${guest_unit}" || fail "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +grep -q -- '--capability=CAP_NET_ADMIN' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3729,6 +3756,8 @@ index 0000000000..2fae755cd1
 +grep -q -- '--bind=/dev/input' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through input devices"
 +grep -q -- '--bind=/dev/uinput' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uinput for guest InputPlumber"
 +grep -q -- '--bind=/dev/snd' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through sound devices"
++grep -q -- '--bind=${v_node}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/video* codec nodes for Moonlight v4l2m2m"
++grep -q -- 'for v_node in /dev/video' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate /dev/video[0-9]* at runtime rather than hardcode ordinals"
 +grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind scrubbed udev db"
 +grep -q -- '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must keep the single host/guest storage seam"
 +! grep -q -- '--bind-ro=/storage/roms' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host ROM library"
