@@ -8,6 +8,43 @@ This runbook covers the narrow Phase 5–style acceptance: install the
 Thor-pinned update tar through `/storage/.update/` and capture
 `DeviceAccepted` evidence.
 
+## Artifact identity
+
+Built by image-only workflow run
+[`26266211051`](https://github.com/simonwjackson/nix-on-rocks/actions/runs/26266211051)
+from branch `feat/sm8550-thor-acceptance` at `8bcd1f0727266b43719b66858ddc94399aacdb6c`
+on base run `26182181755`.
+
+Manifest fields:
+
+- Upstream ROCKNIX SHA: `f080b462f54b5807bdd16ac7cc2ab64528b038b1`
+- Source branch SHA: `3ed044db39bcf69256fbae02fa4b17595da3a0c1`
+- Patch-series hash: `f97847670919c084b91cb4b1b717f96ec9cbc0e1e87d587706ea50e257773951`
+- Accepted compatible: `ayn,thor`
+- Guest seed: `rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst`
+  (SHA256 `0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb`)
+
+Payloads:
+
+- `ROCKNIX-SM8550.aarch64-20260522.tar` SHA256 `7f2927a75b4c6c6341eac9e84b118d5ce5b0e0cfde3783986f1cde3557e84b66`
+- `ROCKNIX-SM8550.aarch64-20260522.img.gz` SHA256 `9adf643e7b67c1a476b13c3642c354dc8ce1abea6cf0235be03824ce82f31ba3`
+
+Local verification results before any device write:
+
+- `scripts/verify-sm8550-payloads`: passed
+- `sha256sum -c *.sha256`: passed for both `.tar` and `.img.gz`
+- Update tar contains `target/SYSTEM`, `target/KERNEL`, and `target/seed/rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst`
+- Embedded seed SHA256 inside update tar matches the published Thor release
+
+Artifact location on `zao`:
+
+```text
+/tmp/nix-on-rocks-thor-image/work/rocknix/target/ROCKNIX-SM8550.aarch64-20260522.tar
+/tmp/nix-on-rocks-thor-image/work/rocknix/target/ROCKNIX-SM8550.aarch64-20260522.tar.sha256
+/tmp/nix-on-rocks-thor-image/work/rocknix/target/ROCKNIX-SM8550.aarch64-20260522.img.gz
+/tmp/nix-on-rocks-thor-image/work/rocknix/target/ROCKNIX-SM8550.aarch64-20260522.img.gz.sha256
+```
+
 ## Pre-flight on bandai
 
 Before staging the update tar, capture the current state for the acceptance
@@ -55,20 +92,22 @@ runs.
 
 If `/storage/nix-on-rock/images/seeds/` already contains the Thor seed
 `rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst` and its SHA256 matches
-`<TBD_after_CI>` then nothing further is needed before the update reboot.
+`0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb` then
+nothing further is needed before the update reboot.
 
 If the seed is missing or has the wrong SHA256, the install reboot will fail
 closed at `rocknix-guest-root-ensure`. Manual recovery path:
 
 ```sh
-# from a host that has the artifact (the same one that ran the local payload
-# verification step described below):
-scp rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst \
-    root@bandai:/storage/nix-on-rock/images/seeds/
+# extract the seed from the update tar and stage it directly:
+tar xOf /tmp/nix-on-rocks-thor-image/work/rocknix/target/ROCKNIX-SM8550.aarch64-20260522.tar \
+  ROCKNIX-SM8550.aarch64-20260522/target/seed/rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst \
+  | ssh root@bandai 'cat > /storage/nix-on-rock/images/seeds/rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst'
 
 ssh root@bandai '
   sha256sum /storage/nix-on-rock/images/seeds/rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst
 '
+# expect: 0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb
 ```
 
 ## Local artifact verification (before any device write)
@@ -96,13 +135,14 @@ This is the normal ROCKNIX update path. Do not touch Android, firmware, or
 bootloader partitions.
 
 ```sh
-scp ROCKNIX-SM8550.aarch64-<date>.tar \
-    ROCKNIX-SM8550.aarch64-<date>.tar.sha256 \
+cd /tmp/nix-on-rocks-thor-image/work/rocknix/target
+scp ROCKNIX-SM8550.aarch64-20260522.tar \
+    ROCKNIX-SM8550.aarch64-20260522.tar.sha256 \
     root@bandai:/storage/.update/
 
 ssh root@bandai '
   cd /storage/.update/
-  sha256sum -c ROCKNIX-SM8550.aarch64-<date>.tar.sha256
+  sha256sum -c ROCKNIX-SM8550.aarch64-20260522.tar.sha256
   ls -lh
 '
 
@@ -152,7 +192,7 @@ ssh root@bandai '
 Expected:
 
 - `hostname` is `bandai` (Thor profile sets `networking.hostName = "bandai"`).
-- `BUILD_ID` matches the SHA of `nix-on-rocks` that produced the image.
+- `BUILD_ID` matches `8bcd1f0727266b43719b66858ddc94399aacdb6c`.
 - `compatible` first entry is `ayn,thor`.
 - `systemctl is-system-running` is `running`.
 - `rocknix-guest.service` is `active`.
@@ -206,6 +246,14 @@ Once all checks pass, paste the captured output into
 `docs/acceptance/sm8550-device-acceptance-2026-05-22-thor.md` following the
 2026-05-19 / -20 sobo doc layout, scoped explicitly to `ayn,thor` / bandai.
 Update the "Latest accepted evidence" list in `docs/acceptance/sm8550-acceptance.md`.
+
+Required evidence to record:
+
+- All pre/post-install command outputs from the sections above.
+- Workflow run URL: <https://github.com/simonwjackson/nix-on-rocks/actions/runs/26266211051>
+- Seed release URL: <https://github.com/simonwjackson/nix-on-rocks/releases/tag/rootfs-seed-thor-d5d00fe4b588>
+- Branch and product SHA: `feat/sm8550-thor-acceptance` @ `8bcd1f0727266b43719b66858ddc94399aacdb6c`
+- Cold-reboot pass.
 
 ## Fall-back paths
 
