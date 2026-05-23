@@ -1,85 +1,28 @@
-From 0d02f37452a69cf3e2936cd820424c139ad2c008 Mon Sep 17 00:00:00 2001
+From 9ec3d92046c1f7d3b8ccbe4bdbd2dda2b3f76bf3 Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
-Subject: [PATCH] Add v4l2m2m platform: zero-copy HEVC/H.264 over EGL DMA-BUF
+Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
+ presentation
 
-New backend (v4l2m2m) targeting Qualcomm SM8550 (Adreno 740 + iris VPU +
-freedreno Mesa). Decodes via FFmpeg's hevc_v4l2m2m / h264_v4l2m2m
-wrappers, imports the resulting AV_PIX_FMT_DRM_PRIME frames into EGL
-via EGL_LINUX_DMA_BUF_EXT, and samples them through a
-GL_TEXTURE_EXTERNAL_OES texture on an SDL2 GL ES 3.0 window.
-
-The display surface is an SDL2 GL window (not a direct KMS overlay
-plane like the ffmpeg_drm platform PR #932 adds), so this platform
-cohabits with a compositor that already owns DRM master -- gamescope
-in the kiosk-launch configuration this fork targets.
-
-Architecture:
-
-  * decoder: avcodec_find_decoder_by_name("hevc_v4l2m2m" /
-    "h264_v4l2m2m"). Never falls through to software hevc/h264 -- if
-    the wrapper is unavailable the platform fails closed so operators
-    catch the regression in launch.log rather than as a CPU spike.
-
-  * get_format: pins AV_PIX_FMT_DRM_PRIME. Returns NONE if the
-    decoder offers no DRM_PRIME output, which aborts decoder open
-    instead of silently engaging a software path the rest of the
-    platform cannot consume.
-
-  * display: SDL2 + GL ES 3.0 context, dedicated display thread that
-    takes the GL context current there. Per-frame EGLImage import
-    against the AVDRMFrameDescriptor's single layer with explicit
-    BT.709 + narrow-range hints; quad sampled via samplerExternalOES
-    in an essl3 fragment shader.
-
-  * lifecycle: av_frame_clone on the submit thread before handing the
-    frame to the display thread (avcodec_receive_frame's AVFrame
-    storage is reused on the next call -- skipping the clone is the
-    canonical buffer-recycle tearing class of bug). glFinish before
-    av_frame_free on the display thread (coarse correctness lever; a
-    follow-up should switch to EGL_KHR_fence_sync to avoid the
-    pipeline stall).
-
-Build: requires libdrm, EGL, GLESv2, SDL2, libavcodec >= 4.x. The
-gate is `ENABLE_V4L2M2M AND AVCODEC_FOUND AND AVUTIL_FOUND AND
-DRM_LIBRARY AND EGL_FOUND AND GLES_FOUND AND SDL_FOUND`. Add the
-v4l2m2m sources to the moonlight binary (statically linked, like
-ffmpeg_drm) rather than as a separate dlopen plugin (like rk), so
-runtime selection is a no-op once the build configures.
-
-References:
-  * PR #932 (vendored as patches 0001 / 0001a) -- prior art for the
-    platform-registration skeleton.
-  * docs/thinking/2026-05-22-moonlight-embedded-ffmpeg-drm-prime.md
-    -- AVDRMFrameDescriptor layout, EGL import contract, fd
-    ownership rules.
-  * docs/thinking/2026-05-22-moonlight-embedded-rk-structure.md
-    -- callback contract, registration shape, scope analysis.
-
-Tested: compile-clean on aarch64 (fuji, gcc 14, FFmpeg 8.0,
-libdrm 2.4.131, EGL 1.5, GLES 3.2, SDL2 2.32.64); binary advertises
-v4l2m2m in -platform help, decoder_callbacks_v4l2m2m symbol exported,
-argument parser accepts -platform v4l2m2m. Not yet tested on Sobo
-hardware (G1+).
 ---
  CMakeLists.txt      |  17 +-
  src/main.c          |   2 +-
- src/platform.c      |  20 ++
+ src/platform.c      |  20 +
  src/platform.h      |   2 +-
- src/video/v4l2m2m.c | 613 ++++++++++++++++++++++++++++++++++++++++++++
+ src/video/v4l2m2m.c | 935 ++++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |   3 +
- 6 files changed, 654 insertions(+), 3 deletions(-)
+ 6 files changed, 976 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index ecbf3e9..1963538 100644
+index ecbf3e9..af636ad 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -26,6 +26,7 @@ find_package(PkgConfig REQUIRED)
  option(ENABLE_SDL "Compile SDL support" ON)
  option(ENABLE_FFMPEG "Compile FFMPEG support" ON)
  option(ENABLE_FFMPEG_DRM "Compile FFmpeg V4L2 + DRM PRIME display backend" ON)
-+option(ENABLE_V4L2M2M "Compile SM8550 V4L2 M2M + EGL DMA-BUF zero-copy backend" ON)
++option(ENABLE_V4L2M2M "Compile SM8550 V4L2 M2M hardware decode + SDL NV12 backend" ON)
  option(ENABLE_X11 "Compile X11 support (requires ENABLE_FFMPEG)" ON)
  option(ENABLE_CEC "Compile CEC support" ON)
  option(ENABLE_PULSE "Compile PulseAudio support" ON)
@@ -98,7 +41,7 @@ index ecbf3e9..1963538 100644
 +  target_link_libraries(moonlight
 +    ${AVCODEC_LIBRARIES} ${AVUTIL_LIBRARIES} ${DRM_LIBRARY}
 +    ${EGL_LIBRARIES} ${GLES_LIBRARIES} ${SDL_LIBRARIES})
-+  message(STATUS "V4L2 M2M + EGL DMA-BUF backend enabled")
++  message(STATUS "V4L2 M2M + SDL NV12 backend enabled")
 +endif()
 +
  if (SOFTWARE_FOUND)
@@ -127,7 +70,7 @@ index d4d443b..96eaa98 100644
    printf("\t-quitappafter\t\tSend quit app request to remote after quitting session\n");
    printf("\t-viewonly\t\tDisable all input processing (view-only mode)\n");
 diff --git a/src/platform.c b/src/platform.c
-index 005b21a..a958cbe 100644
+index 005b21a..0fb6ae3 100644
 --- a/src/platform.c
 +++ b/src/platform.c
 @@ -70,6 +70,10 @@ enum platform platform_check(char* name) {
@@ -181,7 +124,7 @@ index 005b21a..a958cbe 100644
    case FFMPEG_DRM:
      return "FFmpeg V4L2 + DRM PRIME";
 +  case V4L2M2M:
-+    return "V4L2 M2M + EGL DMA-BUF (SM8550)";
++    return "V4L2 M2M + SDL NV12 (SM8550)";
    case X11:
      return "X Window System (software decoding)";
    case X11_VAAPI:
@@ -200,47 +143,41 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..df3e2c6
+index 0000000..7264a2c
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,613 @@
+@@ -0,0 +1,935 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
-+ * V4L2 M2M + EGL DMA-BUF zero-copy display backend for Qualcomm SM8550
++ * V4L2 M2M hardware-decode backend for Qualcomm SM8550
 + * (Adreno 740 + iris VPU + freedreno Mesa).
 + *
-+ * Pipeline:
++ * Shipping pipeline:
 + *
-+ *   FFmpeg `hevc_v4l2m2m` / `h264_v4l2m2m`  --[V4L2 CAPTURE queue]-->
-+ *   AVFrame { format = AV_PIX_FMT_DRM_PRIME, data[0] = AVDRMFrameDescriptor* } -->
-+ *   eglCreateImageKHR(EGL_LINUX_DMA_BUF_EXT) -->
-+ *   glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES) -->
-+ *   samplerExternalOES quad -->
-+ *   SDL_GL_SwapWindow
++ *   FFmpeg `hevc_v4l2m2m` / `h264_v4l2m2m`  --[iris VPU]-->
++ *   AVFrame { format = AV_PIX_FMT_NV12 } -->
++ *   SDL_UpdateNVTexture() -->
++ *   SDL_RenderCopy() / SDL_RenderPresent()
 + *
-+ * The display surface is an SDL2 GL window (not a direct KMS overlay
-+ * plane like ffmpeg_drm) so this platform cohabits with gamescope, which
-+ * owns DRM master in the kiosk-launch configuration this repo targets.
++ * This keeps the expensive HEVC/H.264 decode on the iris VPU while using
++ * SDL's renderer for presentation. SDL owns Wayland window sizing,
++ * compositor scale, live resize, and display moves, which matters for
++ * devices like AYN Thor where the window may appear on either screen or
++ * be resized while streaming.
 + *
-+ * Decoder discipline (per docs/thinking/2026-05-22-moonlight-embedded-
-+ * ffmpeg-drm-prime.md §5): the dmabuf fds in AVDRMFrameDescriptor are
-+ * owned by FFmpeg's V4L2 capture-queue pool. EGL dups them on import; we
-+ * never close() them and we hold the AVFrame ref until the GL command
-+ * stream is flushed past the draw, which we approximate with glFinish()
-+ * before av_frame_free. A later refinement should switch to
-+ * EGL_KHR_fence_sync. Until then glFinish keeps the buffer-recycle
-+ * tearing class of bug at bay at the cost of one pipeline stall per
-+ * frame.
++ * This is not currently true zero-copy: FFmpeg 8.0's v4l2_m2m decoder
++ * wrapper advertises `capture=NV12/drm_prime` when asked for DRM_PRIME,
++ * but v4l2_try_start() then overwrites avctx->pix_fmt with the native
++ * V4L2 capture format (NV12) after VIDIOC_G_FMT. In practice, the iris
++ * path emits CPU-visible NV12 frames. The upload cost is about 85 MB/s
++ * at 720p60, which measured as a practical win anyway: ~49% process CPU
++ * for the software SDL baseline vs ~13% for this VPU-backed path on Sobo.
 + *
-+ * Codec selection: avcodec_find_decoder_by_name -- never
-+ * avcodec_find_decoder(AV_CODEC_ID_HEVC), which returns the software
-+ * decoder on a stock FFmpeg build. If the V4L2 decoder is unavailable
-+ * the platform fails open (logs and returns -1 from setup) rather than
-+ * silently using software, so the operator sees the regression in
-+ * `launch.log` before it shows up as a CPU spike on the device.
++ * The dormant DRM_PRIME/EGL helpers remain for now as scaffolding for a
++ * follow-up zero-copy experiment (ffmpeg_drm or direct V4L2/VIDIOC_EXPBUF),
++ * but the active presentation path is SDL NV12.
 + */
-+
 +#include "video.h"
 +#include "../util.h"
 +
@@ -258,6 +195,7 @@ index 0000000..df3e2c6
 +#include <libavcodec/avcodec.h>
 +#include <libavutil/avutil.h>
 +#include <libavutil/hwcontext_drm.h>
++#include <libavutil/pixdesc.h>
 +#include <libavutil/pixfmt.h>
 +
 +#include <drm_fourcc.h>
@@ -266,7 +204,7 @@ index 0000000..df3e2c6
 +
 +#include <EGL/egl.h>
 +#include <EGL/eglext.h>
-+#include <GLES2/gl2.h>
++#include <GLES3/gl3.h>
 +#include <GLES2/gl2ext.h>
 +
 +/* Single-frame display queue. PR #932's ffmpeg_drm.c uses the same
@@ -279,15 +217,57 @@ index 0000000..df3e2c6
 +static size_t        nal_size   = 0;
 +
 +static SDL_Window    *window    = NULL;
-+static SDL_GLContext  gl_ctx    = NULL;
++static SDL_GLContext  gl_ctx    = NULL;   /* DRM_PRIME path only (inactive on iris/FFmpeg v4l2m2m) */
++static SDL_Renderer  *sdl_renderer = NULL;
++static SDL_Texture   *sdl_nv12_texture = NULL;
++static int            sdl_tex_w = 0;
++static int            sdl_tex_h = 0;
++static SDL_Rect       sdl_dst_rect = {0, 0, 0, 0};
 +static EGLDisplay     egl_dpy   = EGL_NO_DISPLAY;
 +
 +/* GL state -- created on the display thread, after it takes the GL
 + * context current. Touching these outside the display thread is a bug. */
-+static GLuint         gl_program = 0;
-+static GLuint         gl_texture = 0;
-+static GLuint         gl_vbo     = 0;
++static GLuint         gl_program = 0;     /* DRM_PRIME path: samplerExternalOES program */
++static GLuint         gl_texture = 0;     /* DRM_PRIME path: external texture */
++static GLuint         gl_vbo     = 0;     /* shared fullscreen-quad VBO */
 +static GLint          gl_uloc_tex = -1;
++
++/* NV12 fallback GL state (Plan A). FFmpeg's hevc_v4l2m2m wrapper
++ * unconditionally overrides av_pix_fmt with the V4L2 native pixel
++ * format in v4l2_try_start(): see libavcodec/v4l2_m2m_dec.c line ~50
++ * of v4l2_try_start, "avctx->pix_fmt = ff_v4l2_format_v4l2_to_avfmt(...)".
++ * That means our DRM_PRIME preference is silently discarded and the
++ * wrapper emits plain NV12 from MMAP'd buffers. We accept that here and
++ * upload Y + UV planes to GL textures, sampling them in a BT.709
++ * YUV->RGB fragment shader. The iris VPU still does HEVC decode -- we
++ * pay only the upload cost (~85 MB/s @ 720p60).
++ *
++ * The DRM_PRIME path above is kept compiled-in for two reasons:
++ *   (1) On a future FFmpeg or a future direct-V4L2 path (Plan C in the
++ *       project journal), DRM_PRIME frames may start arriving and we
++ *       want the zero-copy path to engage automatically without code
++ *       changes.
++ *   (2) draw_frame() branches at runtime on frame->format; the
++ *       dead-for-now DRM_PRIME path stays exercised by the type
++ *       checker and the linker, so bit-rot is contained. */
++static GLuint         gl_program_nv12 = 0;
++static GLuint         gl_texture_y    = 0;
++static GLuint         gl_texture_uv   = 0;
++static GLint          gl_uloc_y_nv12  = -1;
++static GLint          gl_uloc_uv_nv12 = -1;
++static int            gl_nv12_width   = 0;
++static int            gl_nv12_height  = 0;
++static bool           gl_nv12_inited  = false;
++
++/* Presentation state. The decoded stream size and the compositor-visible
++ * window size are independent: on Sobo the stream is 1280x720 while sway's
++ * logical output is 960x540, and on Thor the window may move between
++ * differently-sized/scaled displays. Recompute viewport + quad whenever
++ * SDL reports a resize/display move. */
++static int            gl_viewport_w   = 0;
++static int            gl_viewport_h   = 0;
++static int            gl_video_w      = 0;
++static int            gl_video_h      = 0;
 +
 +/* eglCreateImageKHR / eglDestroyImageKHR /
 + * glEGLImageTargetTexture2DOES are extension entry points that must be
@@ -316,6 +296,16 @@ index 0000000..df3e2c6
 +static enum AVPixelFormat get_drm_prime_fmt(AVCodecContext *ctx,
 +                                            const enum AVPixelFormat *fmts) {
 +  (void)ctx;
++  /* Diagnostic: log every format the decoder offers. The hevc_v4l2m2m
++   * wrapper without an attached hw_device_ctx of type DRM falls back
++   * to NV12 / YUV420P (software-readable). Seeing only NV12 in this
++   * list is the canonical signature of "need hw_device_ctx". */
++  char dbg[256] = {0};
++  size_t off = 0;
++  for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++)
++    off += snprintf(dbg + off, sizeof(dbg) - off,
++                    "%s%s", off ? "," : "", av_get_pix_fmt_name(*p));
++  LOG("get_format: offered=[%s]", dbg);
 +  for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++) {
 +    if (*p == AV_PIX_FMT_DRM_PRIME)
 +      return *p;
@@ -367,6 +357,48 @@ index 0000000..df3e2c6
 +  "out vec4 fragColor;\n"
 +  "void main() {\n"
 +  "  fragColor = texture(u_tex, v_uv);\n"
++  "}\n";
++
++/* NV12 path shaders. Vertex shader is identical to the DRM_PRIME one
++ * (just outputs uv), but inlined separately so each path stays
++ * self-contained for grep-ability. */
++static const char *vertex_shader_src_nv12 =
++  "#version 300 es\n"
++  "in vec2 a_pos;\n"
++  "in vec2 a_uv;\n"
++  "out vec2 v_uv;\n"
++  "void main() {\n"
++  "  v_uv = a_uv;\n"
++  "  gl_Position = vec4(a_pos, 0.0, 1.0);\n"
++  "}\n";
++
++/* NV12 fragment shader: sample Y from u_tex_y (GL_R8) and UV from
++ * u_tex_uv (GL_RG8 at half resolution), apply BT.709 limited-range
++ * YUV->RGB. Coefficients from ITU-R BT.709 Annex B; using limited-range
++ * scaling because Sunshine encodes that way by default (Y in [16,235],
++ * UV in [16,240]). */
++static const char *fragment_shader_src_nv12 =
++  "#version 300 es\n"
++  "precision mediump float;\n"
++  "uniform sampler2D u_tex_y;\n"
++  "uniform sampler2D u_tex_uv;\n"
++  "in vec2 v_uv;\n"
++  "out vec4 fragColor;\n"
++  "void main() {\n"
++  "  float y  = texture(u_tex_y,  v_uv).r;\n"
++  "  vec2  uv = texture(u_tex_uv, v_uv).rg - vec2(0.5);\n"
++  "  // BT.709 limited range expansion:\n"
++  "  //   Y' = (Y - 16/255) * (255/219)\n"
++  "  //   Cb = (Cb - 128/255) * (255/224) -- the - 128/255 is the\n"
++  "  //   - vec2(0.5) above (we sampled 8-bit GL_RG into [0,1]).\n"
++  "  float yp = (y - 16.0/255.0) * (255.0/219.0);\n"
++  "  float cb = uv.x * (255.0/224.0);\n"
++  "  float cr = uv.y * (255.0/224.0);\n"
++  "  vec3  rgb;\n"
++  "  rgb.r = yp + 1.5748 * cr;\n"
++  "  rgb.g = yp - 0.1873 * cb - 0.4681 * cr;\n"
++  "  rgb.b = yp + 1.8556 * cb;\n"
++  "  fragColor = vec4(clamp(rgb, 0.0, 1.0), 1.0);\n"
 +  "}\n";
 +
 +static GLuint compile_shader(GLenum type, const char *src) {
@@ -446,7 +478,7 @@ index 0000000..df3e2c6
 +  };
 +  glGenBuffers(1, &gl_vbo);
 +  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
-+  glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_STATIC_DRAW);
++  glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_DYNAMIC_DRAW);
 +
 +  glGenTextures(1, &gl_texture);
 +  glBindTexture(GL_TEXTURE_EXTERNAL_OES, gl_texture);
@@ -460,6 +492,140 @@ index 0000000..df3e2c6
 +
 +  LOG("gl_init: program=%u tex=%u viewport=%dx%d ext_ok",
 +      gl_program, gl_texture, viewport_w, viewport_h);
++  return 0;
++}
++
++static void pump_sdl_window_events(void) {
++  SDL_Event event;
++  while (SDL_PollEvent(&event)) {
++    if (event.type == SDL_WINDOWEVENT) {
++      switch (event.window.event) {
++      case SDL_WINDOWEVENT_SIZE_CHANGED:
++      case SDL_WINDOWEVENT_RESIZED:
++      case SDL_WINDOWEVENT_DISPLAY_CHANGED:
++        /* The next draw_frame() will call update_render_geometry() and
++         * pick up the new drawable/window size. Keep the log compact but
++         * useful for Thor multi-display bring-up. */
++        LOG("window event: type=%u data=%d,%d display=%d",
++            event.window.event, event.window.data1, event.window.data2,
++            SDL_GetWindowDisplayIndex(window));
++        gl_viewport_w = 0;
++        gl_viewport_h = 0;
++        break;
++      default:
++        break;
++      }
++    }
++  }
++}
++
++static void update_render_geometry(int video_w, int video_h) {
++  int out_w = 0, out_h = 0;
++  if (sdl_renderer) {
++    SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
++  }
++  if (out_w <= 0 || out_h <= 0) {
++    SDL_GetWindowSize(window, &out_w, &out_h);
++  }
++  if (out_w <= 0 || out_h <= 0)
++    return;
++
++  if (out_w == gl_viewport_w && out_h == gl_viewport_h &&
++      video_w == gl_video_w && video_h == gl_video_h)
++    return;
++
++  gl_viewport_w = out_w;
++  gl_viewport_h = out_h;
++  gl_video_w = video_w;
++  gl_video_h = video_h;
++
++  SDL_Rect dst = {0, 0, out_w, out_h};
++  if (video_w > 0 && video_h > 0) {
++    float video_aspect = (float) video_w / (float) video_h;
++    float out_aspect = (float) out_w / (float) out_h;
++    if (out_aspect > video_aspect) {
++      dst.w = (int) ((float) out_h * video_aspect + 0.5f);
++      dst.x = (out_w - dst.w) / 2;
++    } else if (out_aspect < video_aspect) {
++      dst.h = (int) ((float) out_w / video_aspect + 0.5f);
++      dst.y = (out_h - dst.h) / 2;
++    }
++  }
++  sdl_dst_rect = dst;
++
++  LOG("presentation(SDL): video=%dx%d output=%dx%d dst=%d,%d %dx%d display=%d",
++      video_w, video_h, out_w, out_h,
++      dst.x, dst.y, dst.w, dst.h,
++      SDL_GetWindowDisplayIndex(window));
++}
++/* Lazy NV12 GL setup. Called on the first frame whose pix_fmt is NV12
++ * (and on resolution changes). Keeps the DRM_PRIME-path GL state
++ * untouched so a future zero-copy run doesn't need a teardown. */
++static int gl_init_nv12(int width, int height) {
++  if (gl_nv12_inited && gl_nv12_width == width && gl_nv12_height == height)
++    return 0;
++
++  /* Tear down prior state if the resolution changed mid-stream
++   * (Sunshine renegotiates on display reconfig). */
++  if (gl_nv12_inited) {
++    if (gl_program_nv12) { glDeleteProgram(gl_program_nv12); gl_program_nv12 = 0; }
++    if (gl_texture_y)    { glDeleteTextures(1, &gl_texture_y); gl_texture_y = 0; }
++    if (gl_texture_uv)   { glDeleteTextures(1, &gl_texture_uv); gl_texture_uv = 0; }
++    gl_nv12_inited = false;
++  }
++
++  GLuint vs = compile_shader(GL_VERTEX_SHADER,   vertex_shader_src_nv12);
++  GLuint fs = compile_shader(GL_FRAGMENT_SHADER, fragment_shader_src_nv12);
++  if (!vs || !fs) {
++    if (vs) glDeleteShader(vs);
++    if (fs) glDeleteShader(fs);
++    return -1;
++  }
++  gl_program_nv12 = glCreateProgram();
++  glAttachShader(gl_program_nv12, vs);
++  glAttachShader(gl_program_nv12, fs);
++  glBindAttribLocation(gl_program_nv12, 0, "a_pos");
++  glBindAttribLocation(gl_program_nv12, 1, "a_uv");
++  glLinkProgram(gl_program_nv12);
++  glDeleteShader(vs);
++  glDeleteShader(fs);
++  GLint linked = 0;
++  glGetProgramiv(gl_program_nv12, GL_LINK_STATUS, &linked);
++  if (!linked) {
++    char log[1024] = {0};
++    glGetProgramInfoLog(gl_program_nv12, sizeof log - 1, NULL, log);
++    LOG("gl_init_nv12: program link failed: %s", log);
++    return -1;
++  }
++  gl_uloc_y_nv12  = glGetUniformLocation(gl_program_nv12, "u_tex_y");
++  gl_uloc_uv_nv12 = glGetUniformLocation(gl_program_nv12, "u_tex_uv");
++
++  /* Y plane texture: single-channel 8-bit, full resolution. */
++  glGenTextures(1, &gl_texture_y);
++  glBindTexture(GL_TEXTURE_2D, gl_texture_y);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++  glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, width, height, 0,
++               GL_RED, GL_UNSIGNED_BYTE, NULL);
++
++  /* UV plane texture: two-channel 8-bit, half resolution in both axes
++   * (NV12 chroma is 2x2-subsampled). */
++  glGenTextures(1, &gl_texture_uv);
++  glBindTexture(GL_TEXTURE_2D, gl_texture_uv);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++  glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, width / 2, height / 2, 0,
++               GL_RG, GL_UNSIGNED_BYTE, NULL);
++
++  gl_nv12_width  = width;
++  gl_nv12_height = height;
++  gl_nv12_inited = true;
++  LOG("gl_init_nv12: program=%u y=%u uv=%u %dx%d",
++      gl_program_nv12, gl_texture_y, gl_texture_uv, width, height);
 +  return 0;
 +}
 +
@@ -552,39 +718,77 @@ index 0000000..df3e2c6
 +  return img;
 +}
 +
++/* Forward decls for the dispatching draw_frame(). */
++static void draw_frame_drm_prime(AVFrame *frame);
++static void draw_frame_nv12(AVFrame *frame);
++
 +static void draw_frame(AVFrame *frame) {
-+  const AVDRMFrameDescriptor *desc = (const AVDRMFrameDescriptor *) frame->data[0];
-+  EGLImageKHR img = import_dmabuf(desc, frame->width, frame->height);
-+  if (img == EGL_NO_IMAGE_KHR)
-+    return;
-+
-+  glClear(GL_COLOR_BUFFER_BIT);
-+  glUseProgram(gl_program);
-+  glActiveTexture(GL_TEXTURE0);
-+  glBindTexture(GL_TEXTURE_EXTERNAL_OES, gl_texture);
-+  gl_image_target_texture(GL_TEXTURE_EXTERNAL_OES, img);
-+  glUniform1i(gl_uloc_tex, 0);
-+
-+  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
-+  glEnableVertexAttribArray(0);
-+  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)(0));
-+  glEnableVertexAttribArray(1);
-+  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)(2 * sizeof(GLfloat)));
-+  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-+  glDisableVertexAttribArray(0);
-+  glDisableVertexAttribArray(1);
-+
-+  SDL_GL_SwapWindow(window);
-+
-+  /* Drop EGL's dup before we drop FFmpeg's ref. Order matters per
-+   * docs/thinking/2026-05-22-moonlight-embedded-ffmpeg-drm-prime.md §5
-+   * "Recommended discipline": destroy the EGLImage, then unref the
-+   * AVFrame. glFinish here is the coarse correctness lever -- a future
-+   * change should use EGL_KHR_fence_sync to avoid the pipeline stall. */
-+  glFinish();
-+  egl_destroy_image(egl_dpy, img);
++  static int draw_count = 0;
++  if (++draw_count <= 3)
++    LOG("draw_frame: #%d size=%dx%d fmt=%s linesize=[%d,%d,%d,%d]",
++        draw_count, frame->width, frame->height,
++        av_get_pix_fmt_name(frame->format),
++        frame->linesize[0], frame->linesize[1],
++        frame->linesize[2], frame->linesize[3]);
++  pump_sdl_window_events();
++  update_render_geometry(frame->width, frame->height);
++  if (frame->format == AV_PIX_FMT_DRM_PRIME) {
++    draw_frame_drm_prime(frame);
++  } else if (frame->format == AV_PIX_FMT_NV12) {
++    draw_frame_nv12(frame);
++  } else {
++    static bool warned = false;
++    if (!warned) {
++      LOG("draw_frame: unsupported pix_fmt=%s -- no DRM_PRIME or NV12 path,"
++          " pixel data discarded", av_get_pix_fmt_name(frame->format));
++      warned = true;
++    }
++  }
 +}
 +
++static void draw_frame_nv12(AVFrame *frame) {
++  if (!sdl_renderer)
++    return;
++
++  if (!sdl_nv12_texture || sdl_tex_w != frame->width || sdl_tex_h != frame->height) {
++    if (sdl_nv12_texture) {
++      SDL_DestroyTexture(sdl_nv12_texture);
++      sdl_nv12_texture = NULL;
++    }
++    sdl_nv12_texture = SDL_CreateTexture(sdl_renderer,
++                                         SDL_PIXELFORMAT_NV12,
++                                         SDL_TEXTUREACCESS_STREAMING,
++                                         frame->width, frame->height);
++    if (!sdl_nv12_texture) {
++      LOG("SDL_CreateTexture(NV12 %dx%d) failed: %s",
++          frame->width, frame->height, SDL_GetError());
++      return;
++    }
++    sdl_tex_w = frame->width;
++    sdl_tex_h = frame->height;
++    LOG("SDL renderer: created NV12 texture %dx%d", sdl_tex_w, sdl_tex_h);
++  }
++
++  if (SDL_UpdateNVTexture(sdl_nv12_texture, NULL,
++                          frame->data[0], frame->linesize[0],
++                          frame->data[1], frame->linesize[1]) != 0) {
++    LOG("SDL_UpdateNVTexture failed: %s", SDL_GetError());
++    return;
++  }
++
++  SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 255);
++  SDL_RenderClear(sdl_renderer);
++  SDL_RenderCopy(sdl_renderer, sdl_nv12_texture, NULL, &sdl_dst_rect);
++  SDL_RenderPresent(sdl_renderer);
++}
++static void draw_frame_drm_prime(AVFrame *frame) {
++  (void) frame;
++  static bool warned = false;
++  if (!warned) {
++    LOG("draw_frame: DRM_PRIME frame received but SDL renderer path is active; frame discarded");
++    warned = true;
++  }
++}
 +/* ------------------------------------------------------------------ */
 +/* Display thread                                                     */
 +/* ------------------------------------------------------------------ */
@@ -592,10 +796,12 @@ index 0000000..df3e2c6
 +static void *display_loop(void *arg) {
 +  (void) arg;
 +
-+  /* Take the GL context current on this thread. Set up GL state here so
-+   * the program/textures live on the same thread that uses them. */
-+  if (SDL_GL_MakeCurrent(window, gl_ctx) != 0) {
-+    LOG("display thread: SDL_GL_MakeCurrent failed: %s", SDL_GetError());
++
++  sdl_renderer = SDL_CreateRenderer(window, -1,
++                                    SDL_RENDERER_ACCELERATED |
++                                    SDL_RENDERER_PRESENTVSYNC);
++  if (!sdl_renderer) {
++    LOG("SDL_CreateRenderer failed: %s", SDL_GetError());
 +    pthread_mutex_lock(&disp_mtx);
 +    disp_setup_rc = -1;
 +    disp_ready = true;
@@ -603,31 +809,21 @@ index 0000000..df3e2c6
 +    pthread_mutex_unlock(&disp_mtx);
 +    return NULL;
 +  }
++  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 +
-+  egl_dpy = eglGetCurrentDisplay();
-+  if (egl_dpy == EGL_NO_DISPLAY) {
-+    LOG("display thread: eglGetCurrentDisplay returned EGL_NO_DISPLAY"
-+        " -- is SDL using a non-EGL video driver?");
-+    pthread_mutex_lock(&disp_mtx);
-+    disp_setup_rc = -1;
-+    disp_ready = true;
-+    pthread_cond_signal(&disp_cond);
-+    pthread_mutex_unlock(&disp_mtx);
-+    return NULL;
-+  }
-+
-+  int win_w = 0, win_h = 0;
-+  SDL_GL_GetDrawableSize(window, &win_w, &win_h);
-+  int rc = gl_init(win_w, win_h);
++  int out_w = 0, out_h = 0;
++  SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
++  if (out_w <= 0 || out_h <= 0)
++    SDL_GetWindowSize(window, &out_w, &out_h);
++  LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s",
++      out_w, out_h, SDL_GetWindowDisplayIndex(window),
++      SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown");
 +
 +  pthread_mutex_lock(&disp_mtx);
-+  disp_setup_rc = rc;
++  disp_setup_rc = 0;
 +  disp_ready = true;
 +  pthread_cond_signal(&disp_cond);
 +  pthread_mutex_unlock(&disp_mtx);
-+
-+  if (rc != 0)
-+    return NULL;
 +
 +  for (;;) {
 +    AVFrame *frame = NULL;
@@ -673,11 +869,37 @@ index 0000000..df3e2c6
 +  codec_ctx->thread_count = 1;
 +  codec_ctx->width        = width;
 +  codec_ctx->height       = height;
++  /* Critical: set pix_fmt to DRM_PRIME *before* avcodec_open2.
++   * The v4l2m2m wrapper reads avctx->pix_fmt at init time and copies
++   * it into capture->av_pix_fmt; only then does it offer DRM_PRIME
++   * via ff_get_format() during the eventual format negotiation. With
++   * AV_PIX_FMT_NONE here (the default), the wrapper bypasses
++   * get_format() entirely and emits the V4L2 native format (NV12 for
++   * iris), and our display thread starves waiting for frames it will
++   * never receive. */
++  codec_ctx->pix_fmt      = AV_PIX_FMT_DRM_PRIME;
 +  codec_ctx->get_format   = get_drm_prime_fmt;
-+  /* hevc_v4l2m2m does not require hw_device_ctx; the wrapper opens
-+   * /dev/videoN itself. Setting one here is harmless but unnecessary
-+   * (per docs/thinking/2026-05-22-moonlight-embedded-ffmpeg-drm-prime.md
-+   * §3). */
++  /* Attach an AV_HWDEVICE_TYPE_DRM device ctx so the v4l2m2m wrapper
++   * negotiates the V4L2 capture queue with V4L2_MEMORY_DMABUF + DRM
++   * PRIME export, and offers AV_PIX_FMT_DRM_PRIME via get_format().
++   * Without this, the wrapper falls back to NV12 software output and
++   * our zero-copy import path never sees a frame -- the display thread
++   * sleeps forever on disp_cond and the SDL window is never committed.
++   *
++   * Open the DRM render node (renderD128) rather than the primary node
++   * (card0) so we don't need DRM master; gamescope still owns
++   * master via the kiosk path. Render nodes are sufficient for the
++   * dma-buf import we need here. */
++  AVBufferRef *hw_dev = NULL;
++  if (av_hwdevice_ctx_create(&hw_dev, AV_HWDEVICE_TYPE_DRM,
++                             "/dev/dri/renderD128", NULL, 0) >= 0) {
++    codec_ctx->hw_device_ctx = av_buffer_ref(hw_dev);
++    av_buffer_unref(&hw_dev);
++    LOG("setup: attached AV_HWDEVICE_TYPE_DRM render node");
++  } else {
++    LOG("setup: av_hwdevice_ctx_create(DRM) failed -- v4l2m2m will"
++        " fall back to NV12 software output and our import path will not run");
++  }
 +
 +  if (avcodec_open2(codec_ctx, codec, NULL) < 0) {
 +    LOG("avcodec_open2 failed for %s", codec->name);
@@ -691,34 +913,59 @@ index 0000000..df3e2c6
 +    return -1;
 +  }
 +
-+  /* SDL2 GL window. Match the moonlight stream resolution; gamescope
-+   * will composite this into its own output surface. */
++  /* SDL2 GL window. The stream size and the compositor-visible window
++   * size are separate concerns. Create an initially-hidden, resizable
++   * GL surface, choose an initial display size from SDL's display bounds,
++   * then let runtime window/display events keep the viewport correct.
++   *
++   * MOONLIGHT_DISPLAY_INDEX can force a display for dual-screen devices
++   * like AYN Thor. Without it, SDL's default display selection is used
++   * and subsequent compositor moves/resizes are handled dynamically. */
 +  if (SDL_Init(SDL_INIT_VIDEO) < 0) {
 +    LOG("SDL_Init: %s", SDL_GetError());
 +    return -1;
 +  }
-+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,  SDL_GL_CONTEXT_PROFILE_ES);
-+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
-+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
-+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
++  int display_index = 0;
++  const char *display_env = getenv("MOONLIGHT_DISPLAY_INDEX");
++  if (display_env && *display_env) {
++    char *endptr = NULL;
++    long parsed = strtol(display_env, &endptr, 10);
++    if (endptr && *endptr == '\0' && parsed >= 0 && parsed < SDL_GetNumVideoDisplays())
++      display_index = (int) parsed;
++    else
++      LOG("setup: ignoring invalid MOONLIGHT_DISPLAY_INDEX=%s", display_env);
++  }
++
++  SDL_Rect bounds = {0, 0, width, height};
++  if (SDL_GetDisplayUsableBounds(display_index, &bounds) != 0 ||
++      bounds.w <= 0 || bounds.h <= 0) {
++    LOG("SDL_GetDisplayUsableBounds(%d) failed, falling back to stream size: %s",
++        display_index, SDL_GetError());
++    bounds.x = 0;
++    bounds.y = 0;
++    bounds.w = width;
++    bounds.h = height;
++  }
++  LOG("setup: stream=%dx%d display[%d]_bounds=%dx%d@%d,%d displays=%d",
++      width, height, display_index, bounds.w, bounds.h, bounds.x, bounds.y,
++      SDL_GetNumVideoDisplays());
 +
 +  window = SDL_CreateWindow("Moonlight",
-+                            SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-+                            width, height,
-+                            SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS);
++                            bounds.x, bounds.y,
++                            bounds.w, bounds.h,
++                            SDL_WINDOW_BORDERLESS |
++                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
++  if (window) {
++    /* Ensure SDL's surface size starts at the selected display bounds even
++     * if the compositor adjusted placement during creation. */
++    SDL_SetWindowPosition(window, bounds.x, bounds.y);
++    SDL_SetWindowSize(window, bounds.w, bounds.h);
++    SDL_ShowWindow(window);
++  }
 +  if (!window) {
 +    LOG("SDL_CreateWindow: %s", SDL_GetError());
 +    return -1;
 +  }
-+  gl_ctx = SDL_GL_CreateContext(window);
-+  if (!gl_ctx) {
-+    LOG("SDL_GL_CreateContext: %s", SDL_GetError());
-+    return -1;
-+  }
-+  /* Release the context from the main thread so the display thread can
-+   * make it current there. */
-+  SDL_GL_MakeCurrent(window, NULL);
-+
 +  disp_eos    = false;
 +  disp_ready  = false;
 +  disp_setup_rc = 0;
@@ -751,9 +998,16 @@ index 0000000..df3e2c6
 +  pthread_mutex_unlock(&disp_mtx);
 +  pthread_join(disp_thread, NULL);
 +
-+  if (gl_program) { glDeleteProgram(gl_program); gl_program = 0; }
-+  if (gl_texture) { glDeleteTextures(1, &gl_texture); gl_texture = 0; }
-+  if (gl_vbo)     { glDeleteBuffers(1, &gl_vbo); gl_vbo = 0; }
++  if (sdl_nv12_texture) { SDL_DestroyTexture(sdl_nv12_texture); sdl_nv12_texture = NULL; sdl_tex_w = sdl_tex_h = 0; }
++  if (sdl_renderer)     { SDL_DestroyRenderer(sdl_renderer); sdl_renderer = NULL; }
++  if (gl_program)      { glDeleteProgram(gl_program); gl_program = 0; }
++  if (gl_texture)      { glDeleteTextures(1, &gl_texture); gl_texture = 0; }
++  if (gl_program_nv12) { glDeleteProgram(gl_program_nv12); gl_program_nv12 = 0; }
++  if (gl_texture_y)    { glDeleteTextures(1, &gl_texture_y); gl_texture_y = 0; }
++  if (gl_texture_uv)   { glDeleteTextures(1, &gl_texture_uv); gl_texture_uv = 0; }
++  gl_nv12_inited = false;
++  gl_viewport_w = gl_viewport_h = gl_video_w = gl_video_h = 0;
++  if (gl_vbo)          { glDeleteBuffers(1, &gl_vbo); gl_vbo = 0; }
 +
 +  if (gl_ctx)  { SDL_GL_DeleteContext(gl_ctx); gl_ctx = NULL; }
 +  if (window)  { SDL_DestroyWindow(window); window = NULL; }
@@ -788,13 +1042,24 @@ index 0000000..df3e2c6
 +
 +  int ret;
 +  while ((ret = avcodec_receive_frame(codec_ctx, f)) == 0) {
-+    if (f->format == AV_PIX_FMT_DRM_PRIME) {
-+      /* avcodec_receive_frame reuses `f` on the next call. Clone so the
-+       * display thread owns its own AVFrame -- the underlying dmabuf
-+       * stays alive via the V4L2 capture-queue refcount.
-+       * Per ffmpeg-drm-prime.md §5 "Common bugs": #2 av_frame_unref
-+       * before eglCreateImageKHR is the canonical buffer-recycle race;
-+       * the clone keeps us above that bar. */
++    static bool logged_first_frame = false;
++    if (!logged_first_frame) {
++      LOG("submit: first frame from decoder format=%s (DRM_PRIME=%s)",
++          av_get_pix_fmt_name(f->format),
++          f->format == AV_PIX_FMT_DRM_PRIME ? "YES" : "no");
++      logged_first_frame = true;
++    }
++    /* Accept both DRM_PRIME (zero-copy path, currently dead -- see
++     * note above gl_program_nv12) and NV12 (Plan A path -- what the
++     * FFmpeg v4l2m2m wrapper actually emits on the iris driver). The
++     * format branch in draw_frame() picks the right upload path.
++     *
++     * av_frame_clone is required for BOTH paths: for DRM_PRIME it
++     * keeps the dmabuf object refcounted; for NV12 it keeps the V4L2
++     * MMAP'd plane data alive until the display thread finishes the
++     * glTexSubImage2D upload (otherwise FFmpeg could recycle the V4L2
++     * buffer while the GL driver is still reading it). */
++    if (f->format == AV_PIX_FMT_DRM_PRIME || f->format == AV_PIX_FMT_NV12) {
 +      AVFrame *clone = av_frame_clone(f);
 +      if (clone) {
 +        pthread_mutex_lock(&disp_mtx);

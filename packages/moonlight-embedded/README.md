@@ -1,9 +1,9 @@
 # moonlight-embedded (SM8550)
 
 Downstream build of [moonlight-embedded](https://github.com/moonlight-stream/moonlight-embedded)
-carrying a patch stack that adds zero-copy V4L2 stateful M2M hardware HEVC
-(and H.264) decode for Qualcomm SM8550 handhelds (Adreno 740 + iris VPU +
-freedreno + Mesa).
+carrying a patch stack that adds V4L2 stateful M2M hardware HEVC/H.264
+decode for Qualcomm SM8550 handhelds (Adreno 740 + iris VPU + freedreno +
+Mesa) and presents the iris VPU's NV12 output through SDL.
 
 ## Status
 
@@ -11,14 +11,16 @@ freedreno + Mesa).
 |---|---|
 | Vanilla upstream v2.7.1 derivation | shipped |
 | `ffmpeg_drm` vendored from upstream PR #932 (V4L2 Request + KMS atomic) | shipped (patches `0001` + `0001a`) |
-| `v4l2m2m` (this repo's new platform: hevc_v4l2m2m + EGL DMA-buf import) | not yet implemented (patch `0002`, U4 of plan 003) |
-| Validated on Sobo via gamescope | not yet |
+| `v4l2m2m` (this repo's new platform: hevc_v4l2m2m/h264_v4l2m2m + SDL NV12 presentation) | shipped in patch `0002` |
+| Validated on Sobo via Sway/gamescope-adjacent kiosk session | yes — VPU decode, SDL presentation, resize/aspect-fit, 30s A/B benchmark |
 
 The patches live as files in `patches/`, listed in `manifest.nix`. Today
 `nix build .#moonlight-embedded` produces a binary advertising the `sdl`
 (software decode, always available) and `ffmpeg_drm` (PR #932 KMS atomic —
 not useful under gamescope, which already owns DRM master) platforms. The
-`v4l2m2m` SM8550 zero-copy platform ships once patch `0002` lands.
+`v4l2m2m` SM8550 hardware-decode platform ships in patch `0002`. True
+DRM PRIME zero-copy remains deferred because FFmpeg 8.0's v4l2_m2m wrapper
+emits native NV12 frames on iris even when DRM_PRIME is requested.
 
 ## Build
 
@@ -43,7 +45,7 @@ The package installs `bin/moonlight` and write-evidence under
 Owned here (package-generic):
 
 - Upstream moonlight-embedded source pin and submodule contract
-- The C patches that add zero-copy HW decode on SM8550 hardware
+- The C patches that add V4L2 M2M HW decode on SM8550 hardware
 - Build-input set and cmake flag set
 - Per-platform availability metadata (`expectedPlatforms`) for downstream
   consumers to introspect via `passthru.moonlightPackageManifest`
@@ -59,12 +61,12 @@ Not owned here (downstream / consumer responsibility):
 These belong in the consuming flake (`nix-on-rocks` for ROCKNIX guests, or
 any other integration repo).
 
-## Patch architecture (planned)
+## Patch architecture
 
 ```
 patches/
   0001-vendored-ffmpeg-drm-prime-pr932.patch   # PR #932 verbatim
-  0002-add-v4l2m2m-egl-platform.patch          # our delta — SM8550-targeted
+  0002-add-v4l2m2m-sdl-nv12-platform.patch          # our delta — SM8550-targeted
 ```
 
 **0001** vendors upstream PR #932 (`praxis88/ffmpeg-drm-prime`,
@@ -83,13 +85,20 @@ advertise the new platform. 0001a adds the missing
 `pkg_check_modules(DRM libdrm)` probe and the help-text entry. Kept
 separate from 0001 to preserve verbatim vendoring of PR #932.
 
-**0002** is the SM8550-targeted platform: it forks 0001's structure to
-select `hevc_v4l2m2m` / `h264_v4l2m2m` decoders explicitly by name, and
-replaces the KMS atomic display thread with an EGL/GLES path
-(`eglCreateImageKHR(EGL_LINUX_DMA_BUF_EXT)` →
-`glEGLImageTargetTexture2DOES(GL_TEXTURE_EXTERNAL_OES)` →
-`samplerExternalOES` in the fragment shader) so it works under gamescope,
-which already owns DRM master.
+**0002** is the SM8550-targeted platform: it selects `hevc_v4l2m2m` /
+`h264_v4l2m2m` decoders explicitly by name so the iris VPU performs the
+expensive video decode, then presents the resulting NV12 frames through
+`SDL_UpdateNVTexture()` + `SDL_RenderCopy()`. That keeps SDL responsible
+for Wayland sizing, compositor scale, live resize, aspect-fit, and display
+moves — important for dual-screen devices like AYN Thor.
+
+The original zero-copy idea (FFmpeg `AV_PIX_FMT_DRM_PRIME` → EGL dma-buf
+import) is deferred. On FFmpeg 8.0 the v4l2_m2m wrapper advertises
+`capture=NV12/drm_prime` when requested, but `v4l2_try_start()` overwrites
+`avctx->pix_fmt` with the native V4L2 format after `VIDIOC_G_FMT`; on iris
+that means CPU-visible NV12 frames. The practical cost is small: the Sobo
+A/B benchmark measured ~49% Moonlight process CPU for the SDL software
+baseline vs ~13% for v4l2m2m + SDL NV12 presentation.
 
 ## Developing the patch stack
 

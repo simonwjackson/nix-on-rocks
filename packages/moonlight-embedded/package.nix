@@ -20,9 +20,9 @@
 , SDL2
 , systemdMinimal
 , util-linux
-# Pulled in by the SM8550 zero-copy patches (libdrm for AVDRMFrameDescriptor;
-# libglvnd for EGL + GLES2 import). Kept in the vanilla buildInputs so the
-# package shape is stable across patch presence.
+# Pulled in by the SM8550 HW-decode patches. libdrm/libglvnd are retained
+# for the vendored ffmpeg_drm patch and the deferred DRM_PRIME/EGL experiment;
+# the active v4l2m2m shipping path presents NV12 through SDL.
 , libdrm
 , libglvnd
 }:
@@ -31,7 +31,7 @@ let
   manifest = import ./manifest.nix;
 in
 
-# moonlight-embedded with the SM8550 zero-copy v4l2m2m HW decode patch stack.
+# moonlight-embedded with the SM8550 v4l2m2m HW decode patch stack.
 #
 # Upstream: https://github.com/moonlight-stream/moonlight-embedded
 # Patch rationale lives in patches/README.md alongside the patch files.
@@ -70,7 +70,7 @@ stdenv.mkDerivation rec {
     SDL2
     systemdMinimal
     util-linux
-    # Added by this package for the SM8550 zero-copy HW-decode patch stack:
+    # Added by this package for ffmpeg_drm + SM8550 HW-decode experiments:
     libdrm
     libglvnd
   ];
@@ -118,7 +118,7 @@ stdenv.mkDerivation rec {
   };
 
   meta = {
-    description = "Moonlight game streaming client for embedded Linux, with SM8550 zero-copy v4l2m2m HW decode patches";
+    description = "Moonlight game streaming client for embedded Linux, with SM8550 v4l2m2m HW decode patches";
     homepage = "https://github.com/moonlight-stream/moonlight-embedded";
     license = lib.licenses.gpl3Plus;
     mainProgram = "moonlight";

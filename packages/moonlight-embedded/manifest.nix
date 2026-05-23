@@ -1,9 +1,9 @@
-# moonlight-embedded package contract for SM8550 zero-copy HW decode work.
+# moonlight-embedded package contract for SM8550 HW decode work.
 #
 # This package builds upstream moonlight-embedded with a downstream patch
 # stack that adds a V4L2 stateful M2M (`hevc_v4l2m2m` / `h264_v4l2m2m`) +
-# EGL_LINUX_DMA_BUF_EXT zero-copy video platform suitable for Qualcomm
-# SM8550 (Adreno 740 + iris VPU + freedreno).
+# SDL NV12 presentation platform suitable for Qualcomm SM8550
+# (Adreno 740 + iris VPU + freedreno).
 #
 # Patch order matters and is documented per-entry. Keep this file data-only
 # so derivation, docs, and static checks share the same source of truth.
@@ -40,10 +40,10 @@
       role = "PR #932 references DRM_LIBRARY/DRM_INCLUDE_DIR but never sets them, so its build-gate is silently false. This adds the missing pkg_check_modules(DRM libdrm) probe and advertises ffmpeg_drm in main.c's -platform help text. Logically part of 0001 but kept separate to preserve verbatim vendoring of PR #932";
     }
     {
-      name = "0002-add-v4l2m2m-egl-platform.patch";
-      file = ./patches/0002-add-v4l2m2m-egl-platform.patch;
+      name = "0002-add-v4l2m2m-sdl-nv12-platform.patch";
+      file = ./patches/0002-add-v4l2m2m-sdl-nv12-platform.patch;
       upstreamPath = "this repo";
-      role = "Adds the SM8550-targeted v4l2m2m platform: selects hevc_v4l2m2m / h264_v4l2m2m by name, imports AVDRMFrameDescriptor dma-buf fds via EGL_LINUX_DMA_BUF_EXT, samples GL_TEXTURE_EXTERNAL_OES in an SDL2 GL ES 3.0 context. Registered alongside ffmpeg_drm so this fork covers both the KMS-overlay variant (PR #932) and the EGL-composited variant that cohabits with gamescope (which already owns DRM master). Depends on 0001 for the src/platform.h enum slot and on 0001a for the libdrm pkg-config probe in CMakeLists.txt";
+      role = "Adds the SM8550-targeted v4l2m2m platform: selects hevc_v4l2m2m / h264_v4l2m2m by name, receives the iris VPU's NV12 output from FFmpeg, and presents it through SDL_UpdateNVTexture + SDL_RenderCopy so SDL owns Wayland sizing, live resize, aspect-fit, and display moves. True DRM PRIME zero-copy is deferred because FFmpeg 8.0's v4l2_m2m wrapper overwrites the requested DRM_PRIME pix_fmt with native NV12 after VIDIOC_G_FMT. Registered alongside ffmpeg_drm so this fork covers both the upstream KMS-overlay experiment (PR #932) and the SM8550 VPU decode path that cohabits with gamescope/Sway.";
     }
   ];
 
@@ -71,7 +71,7 @@
   expectedPlatforms = [
     "sdl"           # always available — software decode through SDL2
     "ffmpeg_drm"    # added by patch 0001 (PR #932 vendored) + 0001a (build-gate fix)
-    "v4l2m2m"       # added by patch 0002 (this repo, SM8550 zero-copy)
+    "v4l2m2m"       # added by patch 0002 (this repo, SM8550 VPU decode + SDL NV12 presentation)
   ];
 
   knownIntentionalNixDeltas = [
@@ -83,7 +83,7 @@
     supported = [
       "moonlight CLI binary with sdl platform for software-decode fallback"
       "(post-patch) ffmpeg_drm platform for generic V4L2 Request hwaccel + KMS atomic display"
-      "(post-patch) v4l2m2m platform for SM8550 zero-copy hevc_v4l2m2m + EGL DMA-buf import"
+      "(post-patch) v4l2m2m platform for SM8550 hevc_v4l2m2m/h264_v4l2m2m hardware decode + SDL NV12 presentation"
     ];
     downstreamOwned = [
       "session compositor launch policy and geometry"
