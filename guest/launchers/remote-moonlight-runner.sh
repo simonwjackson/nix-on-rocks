@@ -222,6 +222,93 @@ mkdir -p "$RUN_DIR"
   ls -la /dev/video* 2>&1 | head -10
 } > "$RUN_DIR/host-state.txt" 2>&1
 
+hz="$(getconf CLK_TCK 2>/dev/null || echo 100)"
+pagesize="$(getconf PAGESIZE 2>/dev/null || echo 4096)"
+
+cpu_total() { awk '/^cpu /{s=0; for(i=2;i<=NF;i++) s+=$i; print s}' /proc/stat; }
+cpu_idle() { awk '/^cpu /{print $5+$6}' /proc/stat; }
+proc_ticks() { awk '{print $14+$15}' "/proc/$1/stat" 2>/dev/null || echo 0; }
+proc_rss_kib() { awk -v ps="$pagesize" '{printf "%.0f", $2*ps/1024}' "/proc/$1/statm" 2>/dev/null || echo 0; }
+thread_count() { ls "/proc/$1/task" 2>/dev/null | wc -l; }
+max_temp_mC() { for t in /sys/class/thermal/thermal_zone*/temp; do [ -r "$t" ] && cat "$t"; done 2>/dev/null | sort -nr | head -1; }
+
+summarize_samples() {
+  file="$1"
+  awk -F, -v hz="$hz" '
+    NR==2 {s=$1; pt=$2; rss=$3; ct=$5; ci=$6; temp=$7; min=$3; max=$3; n=1; next}
+    NR>2 {e=$1; pt2=$2; rss2=$3; if($3<min)min=$3; if($3>max)max=$3; ct2=$5; ci2=$6; temp=$7; n++}
+    END {
+      if (n == 0) { print "samples=0"; exit }
+      if (n == 1) { e=s+1; pt2=pt; rss2=rss; ct2=ct+1; ci2=ci; }
+      dt=e-s; if (dt<=0) dt=1;
+      cpu=ct2-ct; if (cpu<=0) cpu=1;
+      busy=(ct2-ct)-(ci2-ci);
+      printf "proc_cpu_pct=%.1f system_busy_pct=%.1f rss_mib=%.1f rss_range_mib=%.1f-%.1f max_temp_C=%.1f samples=%d", ((pt2-pt)/hz)/dt*100, busy/cpu*100, rss2/1024, min/1024, max/1024, temp/1000, n
+    }' "$file"
+}
+
+sample_moonlight_process() {
+  rundir="$1"
+  launcher_pid="$2"
+
+  if ! [ "$MOONLIGHT_DURATION_S" -gt 0 ] 2>/dev/null; then
+    printf 'sampling skipped: MOONLIGHT_DURATION_S=%s\n' "$MOONLIGHT_DURATION_S" > "$rundir/telemetry-summary.txt"
+    return 0
+  fi
+
+  pid=""
+  for _ in $(seq 1 30); do
+    pid="$(pgrep -n -x moonlight 2>/dev/null || true)"
+    [ -n "$pid" ] && break
+    kill -0 "$launcher_pid" 2>/dev/null || break
+    sleep 1
+  done
+
+  if [ -z "$pid" ]; then
+    printf 'moonlight process not observed\n' > "$rundir/telemetry-summary.txt"
+    return 0
+  fi
+
+  {
+    printf 'pid=%s\n' "$pid"
+    printf 'duration_s=%s\n' "$MOONLIGHT_DURATION_S"
+    printf 'hz=%s\n' "$hz"
+    printf 'pagesize=%s\n' "$pagesize"
+    printf 'rundir=%s\n' "$rundir"
+  } > "$rundir/telemetry-meta.txt"
+
+  echo "sec,proc_ticks,rss_kib,threads,cpu_total,cpu_idle,max_temp_mC" > "$rundir/telemetry-samples.csv"
+  start="$(date +%s)"
+  while kill -0 "$launcher_pid" 2>/dev/null && [ -d "/proc/$pid" ]; do
+    sec=$(( $(date +%s) - start ))
+    [ "$sec" -gt "$((MOONLIGHT_DURATION_S + 5))" ] && break
+    echo "$sec,$(proc_ticks "$pid"),$(proc_rss_kib "$pid"),$(thread_count "$pid"),$(cpu_total),$(cpu_idle),$(max_temp_mC || echo 0)" >> "$rundir/telemetry-samples.csv"
+    sleep 1
+  done
+
+  summarize_samples "$rundir/telemetry-samples.csv" > "$rundir/telemetry-summary.txt"
+}
+
+extract_launch_signals() {
+  log="$1"
+  out="$2"
+  for pat in \
+    'Network dropped' \
+    'Waiting for IDR' \
+    'Unrecoverable' \
+    'Received first' \
+    'Frames dropped' \
+    'packet loss' \
+    'RTT' \
+    'latency' \
+    'presentation(' \
+    'EGL_BAD' \
+    'glEGLImageTargetTexture' \
+    'glDrawArrays error'; do
+    printf '%s=%s\n' "$pat" "$(grep -ci "$pat" "$log" 2>/dev/null || true)"
+  done > "$out"
+}
+
 # Locate the streaming launcher. Prefer the operator-deployed copy at
 # /storage/.guest/ (the convention plan 001 U9 wires); fall back to the
 # in-tree copy two levels up from this script.
@@ -248,16 +335,20 @@ if [ -n "$STREAM_LAUNCHER" ]; then
         MOONLIGHT_PLATFORM="$MOONLIGHT_PLATFORM" \
         MOONLIGHT_AUDIO_DRIVER="$MOONLIGHT_AUDIO_DRIVER" \
         timeout --preserve-status "$MOONLIGHT_DURATION_S" \
-        "$STREAM_LAUNCHER" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" >>"$LAUNCH_LOG" 2>&1
-    RC=$?
+        "$STREAM_LAUNCHER" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" >>"$LAUNCH_LOG" 2>&1 &
   else
     env MOONLIGHT_BIN="$MOONLIGHT_BIN" \
         MOONLIGHT_KEYDIR="$MOONLIGHT_KEYDIR" \
         MOONLIGHT_PLATFORM="$MOONLIGHT_PLATFORM" \
         MOONLIGHT_AUDIO_DRIVER="$MOONLIGHT_AUDIO_DRIVER" \
-        "$STREAM_LAUNCHER" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" >>"$LAUNCH_LOG" 2>&1
-    RC=$?
+        "$STREAM_LAUNCHER" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" >>"$LAUNCH_LOG" 2>&1 &
   fi
+  LAUNCH_PID=$!
+  sample_moonlight_process "$RUN_DIR" "$LAUNCH_PID" &
+  SAMPLER_PID=$!
+  wait "$LAUNCH_PID"
+  RC=$?
+  wait "$SAMPLER_PID" 2>/dev/null || true
   set -e
 else
   # Fallback: invoke gamescope + moonlight inline. Useful for early dry-runs
@@ -281,8 +372,13 @@ else
     -keydir "$MOONLIGHT_KEYDIR" \
     -app "$MOONLIGHT_APP" \
     "$MOONLIGHT_HOST" \
-    >>"$LAUNCH_LOG" 2>&1
+    >>"$LAUNCH_LOG" 2>&1 &
+  LAUNCH_PID=$!
+  sample_moonlight_process "$RUN_DIR" "$LAUNCH_PID" &
+  SAMPLER_PID=$!
+  wait "$LAUNCH_PID"
   RC=$?
+  wait "$SAMPLER_PID" 2>/dev/null || true
   set -e
 fi
 
@@ -290,6 +386,8 @@ fi
 if [ "$MOONLIGHT_CAPTURE" = "1" ] && command -v grim >/dev/null 2>&1; then
   XDG_RUNTIME_DIR=/run/user/0 grim "$RUN_DIR/screenshot.png" 2>>"$LAUNCH_LOG" || true
 fi
+
+extract_launch_signals "$LAUNCH_LOG" "$RUN_DIR/signals.txt"
 
 printf '[%s] launcher exit=%s evidence=%s\n' \
   "$(date -Iseconds)" "$RC" "$RUN_DIR" >> "$LAUNCH_LOG"

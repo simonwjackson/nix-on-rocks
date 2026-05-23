@@ -12,6 +12,7 @@
 #   remote-moonlight-direct-ab.sh direct_sdl direct_dmabuf
 #
 # Variants:
+#   default        default shipping v4l2m2m platform, no direct-renderer env
 #   direct_sdl     MOONLIGHT_V4L2M2M_DIRECT=1, SDL NV12 presentation
 #   direct_dmabuf  MOONLIGHT_V4L2M2M_DIRECT=1, MOONLIGHT_V4L2M2M_DMABUF=1
 #
@@ -62,6 +63,9 @@ variant_env() {
     return 0
   fi
   case "$name" in
+    default|v4l2m2m)
+      printf '%s\n' ''
+      ;;
     direct_sdl)
       printf '%s\n' 'MOONLIGHT_V4L2M2M_DIRECT=1'
       ;;
@@ -113,7 +117,7 @@ summarize_csv() {
       dt=e-s; if (dt<=0) dt=1;
       cpu=ct2-ct; if (cpu<=0) cpu=1;
       busy=(ct2-ct)-(ci2-ci);
-      printf "proc_cpu_pct=%.1f system_busy_pct=%.1f rss_mib=%.1f rss_range_mib=%.1f-%.1f samples=%d", ((pt2-pt)/hz)/dt*100, busy/cpu*100, rss2/1024, min/1024, max/1024, n+1
+      printf "proc_cpu_pct=%.1f system_busy_pct=%.1f rss_mib=%.1f rss_range_mib=%.1f-%.1f max_temp_C=%.1f samples=%d", ((pt2-pt)/hz)/dt*100, busy/cpu*100, rss2/1024, min/1024, max/1024, $7/1000, n+1
     }' "$file"
 }
 
@@ -126,6 +130,11 @@ signal_counts() {
     'Network dropped' \
     'Waiting for IDR' \
     'Unrecoverable' \
+    'Received first' \
+    'Frames dropped' \
+    'packet loss' \
+    'RTT' \
+    'latency' \
     'no free OUTPUT' \
     'glEGLImageTargetTexture' \
     'glDrawArrays error' \

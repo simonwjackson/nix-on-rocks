@@ -72,20 +72,30 @@ EOF
 
 run_one() {
   local label="$1" platform="$2"
-  local run_dir exit_code
+  local run_dir exit_code run_output
   set +e
-  run_dir=$(env \
+  run_output=$(env \
     MOONLIGHT_RUNS_DIR="$PARENT_DIR/runs" \
     MOONLIGHT_HOST="$MOONLIGHT_HOST" \
     MOONLIGHT_APP="$MOONLIGHT_APP" \
     MOONLIGHT_PLATFORM="$platform" \
     MOONLIGHT_DURATION_S="$MOONLIGHT_DURATION_S" \
-    "$RUNNER" 2>>"$PARENT_DIR/dispatch.log" | tail -1)
+    "$RUNNER" 2>>"$PARENT_DIR/dispatch.log")
   exit_code=$?
+  run_dir=$(printf '%s\n' "$run_output" | tail -1)
   set -e
   printf '| %s | `%s` | `%s` | %s |\n' \
     "$label" "$platform" "${run_dir:-?}" "$exit_code" >> "$REPORT"
-  # Inline a short cross-link to the launch log for reviewers.
+  # Inline a short cross-link to the runner telemetry and launch log for reviewers.
+  if [ -n "$run_dir" ] && [ -d "$run_dir" ]; then
+    {
+      printf '\n### %s (`%s`) telemetry\n\n```text\n' "$label" "$platform"
+      [ -f "$run_dir/telemetry-summary.txt" ] && cat "$run_dir/telemetry-summary.txt" || printf 'telemetry-summary.txt missing\n'
+      printf '\n\n--- signals ---\n'
+      [ -f "$run_dir/signals.txt" ] && cat "$run_dir/signals.txt" || printf 'signals.txt missing\n'
+      printf '\n```\n'
+    } >> "$REPORT"
+  fi
   if [ -n "$run_dir" ] && [ -f "$run_dir/launch.log" ]; then
     {
       printf '\n### %s (`%s`) launch.log tail\n\n```text\n' "$label" "$platform"
