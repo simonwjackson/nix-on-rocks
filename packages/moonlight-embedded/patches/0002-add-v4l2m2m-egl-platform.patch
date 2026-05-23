@@ -1,4 +1,4 @@
-From 588b6823a4433879891ae816cbaa631bcced23f4 Mon Sep 17 00:00:00 2001
+From 0d02f37452a69cf3e2936cd820424c139ad2c008 Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: zero-copy HEVC/H.264 over EGL DMA-BUF
@@ -64,11 +64,11 @@ hardware (G1+).
 ---
  CMakeLists.txt      |  17 +-
  src/main.c          |   2 +-
- src/platform.c      |  11 +
+ src/platform.c      |  20 ++
  src/platform.h      |   2 +-
  src/video/v4l2m2m.c | 613 ++++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |   3 +
- 6 files changed, 645 insertions(+), 3 deletions(-)
+ 6 files changed, 654 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -127,7 +127,7 @@ index d4d443b..96eaa98 100644
    printf("\t-quitappafter\t\tSend quit app request to remote after quitting session\n");
    printf("\t-viewonly\t\tDisable all input processing (view-only mode)\n");
 diff --git a/src/platform.c b/src/platform.c
-index 005b21a..3c7ab03 100644
+index 005b21a..a958cbe 100644
 --- a/src/platform.c
 +++ b/src/platform.c
 @@ -70,6 +70,10 @@ enum platform platform_check(char* name) {
@@ -152,7 +152,23 @@ index 005b21a..3c7ab03 100644
    }
    return NULL;
  }
-@@ -227,6 +235,7 @@ bool platform_prefers_codec(enum platform system, enum codecs codec) {
+@@ -196,6 +204,15 @@ AUDIO_RENDERER_CALLBACKS* platform_get_audio(enum platform system, char* audio_d
+   case SDL:
+     return &audio_callbacks_sdl;
+   #endif
++  #ifdef HAVE_V4L2M2M
++  case V4L2M2M:
++    /* Our v4l2m2m platform already pulls in SDL2 for the display GL
++     * context. Reusing SDL audio means SDL_AUDIODRIVER=dummy works
++     * uniformly across both -platform sdl and -platform v4l2m2m,
++     * which matters on substrates where pulse/alsa are broken
++     * (operators get a video-only smoke posture without patching). */
++    return &audio_callbacks_sdl;
++  #endif
+   #ifdef HAVE_PI
+   case PI:
+     if (audio_device == NULL || strcmp(audio_device, "local") == 0 || strcmp(audio_device, "hdmi") == 0)
+@@ -227,6 +244,7 @@ bool platform_prefers_codec(enum platform system, enum codecs codec) {
      case AML:
      case RK:
      case FFMPEG_DRM:
@@ -160,7 +176,7 @@ index 005b21a..3c7ab03 100644
      case X11_VAAPI:
      case X11_VDPAU:
        return true;
-@@ -252,6 +261,8 @@ char* platform_name(enum platform system) {
+@@ -252,6 +270,8 @@ char* platform_name(enum platform system) {
      return "Rockchip VPU";
    case FFMPEG_DRM:
      return "FFmpeg V4L2 + DRM PRIME";
