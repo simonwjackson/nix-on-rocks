@@ -49,6 +49,15 @@
 #   MOONLIGHT_FPS             stream fps target          (default 60)
 #   MOONLIGHT_WIDTH           stream width               (default 1920)
 #   MOONLIGHT_HEIGHT          stream height              (default 1080)
+#   MOONLIGHT_AUDIO_DRIVER    SDL2 audio driver name     (default unset -- SDL picks)
+#                             Set to "dummy" when the audio substrate is
+#                             broken (e.g. PipeWire socket missing) so
+#                             moonlight does NOT tear down the whole stream
+#                             on `SDL_OpenAudio` failure. See
+#                             docs/solutions/integration-issues/
+#                             moonlight-embedded-sobo-substrate-2026-05-22.md
+#                             "Failure 4: audio-init failure cascades to
+#                             video stream teardown".
 #
 # Pairing:
 #
@@ -97,6 +106,15 @@ GS_EXTRA="${GS_EXTRA:-}"
 
 MOONLIGHT_KEYDIR="${MOONLIGHT_KEYDIR:-/storage/.cache/moonlight}"
 MOONLIGHT_PLATFORM="${MOONLIGHT_PLATFORM:-sdl}"
+
+# SDL audio driver override. When the substrate audio is broken (PipeWire
+# socket missing on ROCKNIX-on-rocks) and the operator wants a video-only
+# smoke, MOONLIGHT_AUDIO_DRIVER=dummy bypasses the audio init failure that
+# otherwise tears down the whole stream. Only export if set so SDL retains
+# its normal autodetection path in the happy case.
+if [ -n "${MOONLIGHT_AUDIO_DRIVER:-}" ]; then
+  export SDL_AUDIODRIVER="$MOONLIGHT_AUDIO_DRIVER"
+fi
 MOONLIGHT_BITRATE_KBPS="${MOONLIGHT_BITRATE_KBPS:-20000}"
 MOONLIGHT_FPS="${MOONLIGHT_FPS:-60}"
 MOONLIGHT_WIDTH="${MOONLIGHT_WIDTH:-1920}"
@@ -135,14 +153,21 @@ mkdir -p "$(dirname "$LOG_OUT")"
 echo "[$(date)] launching gamescope ${GS_NESTED_W}x${GS_NESTED_H}->${GS_OUT_W}x${GS_OUT_H} ${GS_FILTER} moonlight=$MOONLIGHT_BIN host=$HOST app=$APP platform=$MOONLIGHT_PLATFORM" | tee -a "$LOG_OUT" >&2
 exec >>"$LOG_OUT" 2>&1
 
+# moonlight-embedded CLI shape: `moonlight [action] (options) [host]`.
+# The app is an option (`-app <name>`), not a positional. Passing it as a
+# trailing positional yields a confusing "Too many options: No such file
+# or directory" abort even though pair / list work. Confirmed on Sobo
+# 2026-05-22 during plan 003 U4 G1 -- see migration notes for context.
 exec gamescope --backend sdl -f --force-windows-fullscreen \
   -W "$GS_OUT_W" -H "$GS_OUT_H" -w "$GS_NESTED_W" -h "$GS_NESTED_H" \
   -r "$GS_REFRESH" -S fit -F "$GS_FILTER" --sharpness "$GS_SHARPNESS" $GS_EXTRA -- \
   "$MOONLIGHT_BIN" \
+    stream \
     -platform "$MOONLIGHT_PLATFORM" \
     -keydir "$MOONLIGHT_KEYDIR" \
     -bitrate "$MOONLIGHT_BITRATE_KBPS" \
     -fps "$MOONLIGHT_FPS" \
     -width "$MOONLIGHT_WIDTH" \
     -height "$MOONLIGHT_HEIGHT" \
-    stream "$HOST" "$APP"
+    -app "$APP" \
+    "$HOST"

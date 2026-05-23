@@ -67,6 +67,16 @@ MOONLIGHT_RUNS_DIR="${MOONLIGHT_RUNS_DIR:-/storage/.guest/runs}"
 MOONLIGHT_DURATION_S="${MOONLIGHT_DURATION_S:-30}"
 MOONLIGHT_AUDIO_GATE="${MOONLIGHT_AUDIO_GATE:-1}"
 MOONLIGHT_CAPTURE="${MOONLIGHT_CAPTURE:-0}"
+# When the audio gate is parked (substrate audio known-broken, video-only
+# smoke posture per plan 003 U4 G5a), default the SDL audio driver to
+# `dummy` so moonlight does not tear down the whole stream on
+# SDL_OpenAudio failure. Operators can still override explicitly. See
+# docs/solutions/integration-issues/
+# moonlight-embedded-sobo-substrate-2026-05-22.md "Failure 4".
+if [ "$MOONLIGHT_AUDIO_GATE" = "0" ] && [ -z "${MOONLIGHT_AUDIO_DRIVER:-}" ]; then
+  MOONLIGHT_AUDIO_DRIVER=dummy
+fi
+MOONLIGHT_AUDIO_DRIVER="${MOONLIGHT_AUDIO_DRIVER:-}"
 
 if [ -z "$MOONLIGHT_HOST" ]; then
   cat >&2 <<EOF
@@ -177,6 +187,7 @@ mkdir -p "$RUN_DIR"
   printf 'MOONLIGHT_KEYDIR=%s\n' "$MOONLIGHT_KEYDIR"
   printf 'MOONLIGHT_DURATION_S=%s\n' "$MOONLIGHT_DURATION_S"
   printf 'MOONLIGHT_AUDIO_GATE=%s\n' "$MOONLIGHT_AUDIO_GATE"
+  printf 'MOONLIGHT_AUDIO_DRIVER=%s\n' "$MOONLIGHT_AUDIO_DRIVER"
   printf 'MOONLIGHT_CAPTURE=%s\n' "$MOONLIGHT_CAPTURE"
   printf 'TS=%s\n' "$TS"
   printf 'RUN_DIR=%s\n' "$RUN_DIR"
@@ -235,6 +246,7 @@ if [ -n "$STREAM_LAUNCHER" ]; then
     env MOONLIGHT_BIN="$MOONLIGHT_BIN" \
         MOONLIGHT_KEYDIR="$MOONLIGHT_KEYDIR" \
         MOONLIGHT_PLATFORM="$MOONLIGHT_PLATFORM" \
+        MOONLIGHT_AUDIO_DRIVER="$MOONLIGHT_AUDIO_DRIVER" \
         timeout --preserve-status "$MOONLIGHT_DURATION_S" \
         "$STREAM_LAUNCHER" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" >>"$LAUNCH_LOG" 2>&1
     RC=$?
@@ -242,6 +254,7 @@ if [ -n "$STREAM_LAUNCHER" ]; then
     env MOONLIGHT_BIN="$MOONLIGHT_BIN" \
         MOONLIGHT_KEYDIR="$MOONLIGHT_KEYDIR" \
         MOONLIGHT_PLATFORM="$MOONLIGHT_PLATFORM" \
+        MOONLIGHT_AUDIO_DRIVER="$MOONLIGHT_AUDIO_DRIVER" \
         "$STREAM_LAUNCHER" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" >>"$LAUNCH_LOG" 2>&1
     RC=$?
   fi
@@ -253,11 +266,21 @@ else
   printf '[%s] dispatching inline (no streaming launcher found) host=%s app=%s platform=%s\n' \
     "$(date -Iseconds)" "$MOONLIGHT_HOST" "$MOONLIGHT_APP" "$MOONLIGHT_PLATFORM" \
     > "$LAUNCH_LOG"
+  # Mirror the streaming launcher's audio-driver handling so inline runs
+  # have the same posture as launcher-dispatched runs.
+  if [ -n "$MOONLIGHT_AUDIO_DRIVER" ]; then
+    export SDL_AUDIODRIVER="$MOONLIGHT_AUDIO_DRIVER"
+  fi
   set +e
+  # CLI shape: `moonlight [action] (options) [host]`. The app is an
+  # option (`-app`), not a positional -- see
+  # start_moonlight_embedded_gamescope.sh for the same correction.
   "$MOONLIGHT_GAMESCOPE_BIN" -- "$MOONLIGHT_BIN" \
+    stream \
     -platform "$MOONLIGHT_PLATFORM" \
     -keydir "$MOONLIGHT_KEYDIR" \
-    stream "$MOONLIGHT_HOST" "$MOONLIGHT_APP" \
+    -app "$MOONLIGHT_APP" \
+    "$MOONLIGHT_HOST" \
     >>"$LAUNCH_LOG" 2>&1
   RC=$?
   set -e
