@@ -1,7 +1,7 @@
 ---
 title: refactor: Move Steam runtime mechanics behind the package seam
 type: refactor
-status: active
+status: completed
 date: 2026-05-23
 ---
 
