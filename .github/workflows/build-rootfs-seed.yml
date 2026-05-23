@@ -35,9 +35,6 @@ jobs:
   build-rootfs-seed:
     name: Build rootfs seed
     runs-on: ubuntu-24.04-arm
-    defaults:
-      run:
-        working-directory: guest
     env:
       DEVICE: ${{ inputs.device || 'thor' }}
       GH_TOKEN: ${{ github.token }}
@@ -92,7 +89,7 @@ jobs:
           } >> "${GITHUB_OUTPUT}"
 
       - name: Run guest static checks
-        run: ./scripts/static-checks.sh
+        run: ./guest/scripts/static-checks.sh
 
       - name: Build rootfs
         run: nix build ".#${{ steps.meta.outputs.package }}" --print-build-logs
@@ -162,7 +159,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ steps.meta.outputs.asset_prefix }}
-          path: guest/dist/*
+          path: dist/*
           if-no-files-found: error
           retention-days: 14
 
@@ -173,6 +170,6 @@ jobs:
           tag_name: ${{ steps.meta.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
           name: Nix-on-Rocks guest rootfs seed ${{ steps.meta.outputs.device }} ${{ steps.meta.outputs.short_sha }}
-          body_path: guest/dist/release-notes.md
-          files: guest/dist/*
+          body_path: dist/release-notes.md
+          files: dist/*
           fail_on_unmatched_files: true

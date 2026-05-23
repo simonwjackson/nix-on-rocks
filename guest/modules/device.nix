@@ -9,7 +9,7 @@
 
 let
   inherit (lib) mkOption types;
-  aynOdin2Ucm = pkgs.callPackage ../packages/audio/ayn-odin2-ucm { };
+  aynOdin2Ucm = pkgs.callPackage ../../packages/audio/ayn-odin2-ucm { };
 in
 {
   options.rocknix.sm8550 = {

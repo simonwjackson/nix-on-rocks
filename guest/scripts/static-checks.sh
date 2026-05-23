@@ -3,6 +3,11 @@
 set -euo pipefail
 
 ROOT="$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)"
+# After the monorepo merge (plan 001), flake.nix, flake.lock, and packages/
+# live at repo root rather than guest/. ROOT continues to anchor at guest/
+# for things that stayed there (modules/, profiles/, launchers/, justfile,
+# README.md, .github/). REPO_ROOT is used for the moved items.
+REPO_ROOT="$(CDPATH="" cd -- "$ROOT/.." && pwd)"
 DOCS_ROOT="${NIX_ON_ROCKS_DOCS_ROOT:-}"
 if [ -z "${DOCS_ROOT}" ]; then
   if [ -d "$ROOT/docs" ]; then
@@ -15,26 +20,26 @@ if [ -z "${DOCS_ROOT}" ]; then
 fi
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-[ -f "$ROOT/flake.nix" ] || fail "missing flake.nix"
-[ -f "$ROOT/flake.lock" ] || fail "missing flake.lock"
+[ -f "$REPO_ROOT/flake.nix" ] || fail "missing flake.nix"
+[ -f "$REPO_ROOT/flake.lock" ] || fail "missing flake.lock"
 [ -f "$ROOT/justfile" ] || fail "missing justfile"
 [ -f "$ROOT/rocknix-guest.nix" ] || fail "missing default guest config"
 [ -f "$ROOT/.github/workflows/build-rootfs-seed.yml" ] || fail "missing rootfs seed publish workflow"
 [ -d "$ROOT/modules" ] || fail "missing modules directory"
 [ -d "$ROOT/profiles" ] || fail "missing profiles directory"
 [ -d "$ROOT/launchers" ] || fail "missing launchers directory"
-[ -d "$ROOT/packages" ] || fail "missing packages directory"
+[ -d "$REPO_ROOT/packages" ] || fail "missing packages directory"
 
 # Flake shape and package exposure.
-grep -q 'targetSystem = "aarch64-linux"' "$ROOT/flake.nix" \
+grep -q 'targetSystem = "aarch64-linux"' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must target aarch64-linux"
-grep -q 'x86_64-linux' "$ROOT/flake.nix" \
+grep -q 'x86_64-linux' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose x86_64 host build package"
-grep -q 'nixos-25.11' "$ROOT/flake.nix" \
+grep -q 'nixos-25.11' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must pin the nixpkgs release input"
-grep -q 'korri.url = "github:' "$ROOT/flake.nix" \
+grep -q 'korri.url = "github:' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must keep Korri as a remote flake input"
-! grep -q 'korri.url = "path:' "$ROOT/flake.nix" \
+! grep -q 'korri.url = "path:' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must not commit a local Korri path input"
 grep -q 'KORRI_INPUT' "$ROOT/justfile" \
   || fail "justfile must preserve the local Korri override workflow"
@@ -44,59 +49,59 @@ grep -q 'korri.nixosModules.korri-frontend' "$ROOT/README.md" \
   || fail "README must document Korri module consumption"
 grep -q 'Home then `k`' "$ROOT/README.md" \
   || fail "README must document the Korri launch chord"
-! grep -R 'services\.korri\.nativeBridgeUrl\|nativeBridgeUrl = ' "$ROOT/flake.nix" "$ROOT/profiles" "$ROOT/modules" "$ROOT/README.md" >/tmp/rocknix-nix-guest-korri-bridge-grep.$$ \
+! grep -R 'services\.korri\.nativeBridgeUrl\|nativeBridgeUrl = ' "$REPO_ROOT/flake.nix" "$ROOT/profiles" "$ROOT/modules" "$ROOT/README.md" >/tmp/rocknix-nix-guest-korri-bridge-grep.$$ \
   || { cat /tmp/rocknix-nix-guest-korri-bridge-grep.$$ >&2; rm -f /tmp/rocknix-nix-guest-korri-bridge-grep.$$; fail "ROCKNIX must not own Korri nativeBridgeUrl configuration"; }
 rm -f /tmp/rocknix-nix-guest-korri-bridge-grep.$$
-grep -q 'nixpkgs-sdl2-classic.url = "github:NixOS/nixpkgs/nixos-24.11"' "$ROOT/flake.nix" \
+grep -q 'nixpkgs-sdl2-classic.url = "github:NixOS/nixpkgs/nixos-24.11"' "$REPO_ROOT/flake.nix" \
   || fail "Cemu package must retain narrow classic SDL2 input"
-grep -q 'cemu = pkgs.callPackage ./packages/cemu/package.nix' "$ROOT/flake.nix" \
+grep -q 'cemu = pkgs.callPackage ./packages/cemu/package.nix' "$REPO_ROOT/flake.nix" \
   || fail "root flake must expose packages.cemu from packages/cemu"
-grep -q 'steam = pkgs.callPackage ./packages/steam/package.nix' "$ROOT/flake.nix" \
+grep -q 'steam = pkgs.callPackage ./packages/steam/package.nix' "$REPO_ROOT/flake.nix" \
   || fail "root flake must expose packages.steam from packages/steam"
-grep -q 'default = cemu' "$ROOT/flake.nix" \
+grep -q 'default = cemu' "$REPO_ROOT/flake.nix" \
   || fail "default package must alias cemu"
-grep -q 'cemu-rocknix-package = cemu' "$ROOT/flake.nix" \
+grep -q 'cemu-rocknix-package = cemu' "$REPO_ROOT/flake.nix" \
   || fail "compatibility alias must remain available for current consumers"
-grep -q '(packageSetFor targetSystem).cemu' "$ROOT/flake.nix" \
+grep -q '(packageSetFor targetSystem).cemu' "$REPO_ROOT/flake.nix" \
   || fail "main-space guest must install in-repo Cemu package"
-grep -q '(packageSetFor targetSystem).steam' "$ROOT/flake.nix" \
+grep -q '(packageSetFor targetSystem).steam' "$REPO_ROOT/flake.nix" \
   || fail "main-space guest must install in-repo Steam package helpers"
-grep -q 'korri.nixosModules.korri' "$ROOT/flake.nix" \
+grep -q 'korri.nixosModules.korri' "$REPO_ROOT/flake.nix" \
   || fail "main-space guest must import Korri-owned NixOS modules"
-grep -q 'services.korri.client = {' "$ROOT/flake.nix" \
+grep -q 'services.korri.client = {' "$REPO_ROOT/flake.nix" \
   || fail "main-space guest must configure the Korri client module"
-grep -A4 'services.korri.client = {' "$ROOT/flake.nix" | grep -q 'enable = true;' \
+grep -A4 'services.korri.client = {' "$REPO_ROOT/flake.nix" | grep -q 'enable = true;' \
   || fail "main-space guest must enable Korri through services.korri.client"
-grep -A4 'services.korri.client = {' "$ROOT/flake.nix" | grep -q 'korri.packages.${targetSystem}.korri-desktop-device' \
+grep -A4 'services.korri.client = {' "$REPO_ROOT/flake.nix" | grep -q 'korri.packages.${targetSystem}.korri-desktop-device' \
   || fail "main-space guest must use Korri's device desktop package variant"
-grep -q 'services.korri.inputd.enable = true;' "$ROOT/flake.nix" \
+grep -q 'services.korri.inputd.enable = true;' "$REPO_ROOT/flake.nix" \
   || fail "main-space guest must enable Korri inputd for native controller signals"
 grep -q 'korriClientPath = lib.optionals' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service PATH must include the configured Korri client package"
-grep -q 'rocknix-guest-main-space-thor' "$ROOT/flake.nix" \
+grep -q 'rocknix-guest-main-space-thor' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose a Thor main-space configuration"
-grep -q 'rocknix-guest-main-space-odin2portal' "$ROOT/flake.nix" \
+grep -q 'rocknix-guest-main-space-odin2portal' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose an Odin 2 Portal main-space configuration"
-grep -q 'rocknix-guest-stage10-proof-thor' "$ROOT/flake.nix" \
+grep -q 'rocknix-guest-stage10-proof-thor' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose a Thor Stage 10 proof configuration"
-grep -q 'rocknix-guest-stage10-proof-odin2portal' "$ROOT/flake.nix" \
+grep -q 'rocknix-guest-stage10-proof-odin2portal' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose an Odin 2 Portal Stage 10 proof configuration"
-grep -q 'rocknix-stage10-proof-marker' "$ROOT/flake.nix" \
+grep -q 'rocknix-stage10-proof-marker' "$REPO_ROOT/flake.nix" \
   || fail "Stage 10 proof configurations must include the guest-owned proof marker"
-grep -q 'rocknix-guest-main-space-by-compatible' "$ROOT/flake.nix" \
+grep -q 'rocknix-guest-main-space-by-compatible' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose rocknix-guest-main-space-by-compatible (host-promoter device-id dispatch entry point)"
-grep -q 'deviceProfileByCompatible' "$ROOT/flake.nix" \
+grep -q 'deviceProfileByCompatible' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must define deviceProfileByCompatible dispatch table for host-side device selection"
-grep -q '"ayn,thor" = ./profiles/devices/thor.nix' "$ROOT/flake.nix" \
+grep -q '"ayn,thor" = ./guest/profiles/devices/thor.nix' "$REPO_ROOT/flake.nix" \
   || fail "deviceProfileByCompatible must register Thor (ayn,thor) -> profiles/devices/thor.nix"
-grep -q '"ayn,odin2portal" = ./profiles/devices/odin2portal.nix' "$ROOT/flake.nix" \
+grep -q '"ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix' "$REPO_ROOT/flake.nix" \
   || fail "deviceProfileByCompatible must register Odin 2 Portal (ayn,odin2portal) -> profiles/devices/odin2portal.nix"
-grep -q '/proc/device-tree/compatible' "$ROOT/flake.nix" \
+grep -q '/proc/device-tree/compatible' "$REPO_ROOT/flake.nix" \
   || fail "by-compatible dispatch must read /proc/device-tree/compatible"
-tr -s '[:space:]' ' ' < "$ROOT/flake.nix" \
+tr -s '[:space:]' ' ' < "$REPO_ROOT/flake.nix" \
   | grep -q 'mainSpaceByCompatibleConfiguration = mainSpaceConfigurationFor selectDeviceProfileFromCompatible' \
   || fail "by-compatible NixOS configuration must be built from selectDeviceProfileFromCompatible"
-grep -q '"rootfs-odin2portal"' "$ROOT/flake.nix" \
+grep -q '"rootfs-odin2portal"' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose an Odin 2 Portal rootfs package"
 grep -q 'output DSI-1 transform 270' "$ROOT/profiles/devices/odin2portal.nix" \
   || fail "Odin 2 Portal profile must keep its upright DSI-1 orientation"
@@ -104,12 +109,12 @@ grep -q 'input type:touch map_to_output DSI-1' "$ROOT/profiles/devices/odin2port
   || fail "Odin 2 Portal profile must route touch to its single DSI-1 panel"
 old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
 ! grep -R "github:simonwjackson/$old_package_repo\|nix.registry.$old_package_repo\|$old_package_repo.packages" \
-  "$ROOT/flake.nix" "$ROOT/flake.lock" "$ROOT/README.md" "$ROOT/launchers" >/tmp/rocknix-nix-guest-old-package-repo-grep.$$ \
+  "$REPO_ROOT/flake.nix" "$REPO_ROOT/flake.lock" "$ROOT/README.md" "$ROOT/launchers" >/tmp/rocknix-nix-guest-old-package-repo-grep.$$ \
   || { cat /tmp/rocknix-nix-guest-old-package-repo-grep.$$ >&2; rm -f /tmp/rocknix-nix-guest-old-package-repo-grep.$$; fail "guest repo must not depend on the former external package flake"; }
 rm -f /tmp/rocknix-nix-guest-old-package-repo-grep.$$
-grep -q 'root/etc/ssh/authorized_keys.d/root' "$ROOT/flake.nix" \
+grep -q 'root/etc/ssh/authorized_keys.d/root' "$REPO_ROOT/flake.nix" \
   || fail "rootfs must provide regular authorized_keys target for StrictModes"
-grep -q 'root/usr/bin/nix' "$ROOT/flake.nix" \
+grep -q 'root/usr/bin/nix' "$REPO_ROOT/flake.nix" \
   || fail "rootfs must expose /usr/bin/nix for bridge/smoke contracts"
 
 ROOTFS_SEED_WORKFLOW="$ROOT/.github/workflows/build-rootfs-seed.yml"
@@ -148,6 +153,7 @@ grep -R -q 'ports = \[ 2222 \];' "$ROOT" \
 grep -q 'profiles/ssh.nix' "$ROOT/rocknix-guest.nix" \
   || fail "default guest config must import SSH-capable modular profile"
 
+# Guest-internal files (live under guest/).
 for f in \
   modules/base.nix \
   modules/device.nix \
@@ -159,6 +165,17 @@ for f in \
   modules/network.nix \
   modules/lid.nix \
   modules/steam.nix \
+  profiles/minimal.nix \
+  profiles/ssh.nix \
+  profiles/main-space.nix \
+  profiles/dev-env.nix \
+  profiles/devices/thor.nix \
+  profiles/devices/odin2portal.nix; do
+  [ -f "$ROOT/$f" ] || fail "missing guest module/profile: $f"
+done
+
+# Package files (moved to repo root by the monorepo merge).
+for f in \
   packages/cemu/package.nix \
   packages/cemu/manifest.nix \
   packages/cemu/settings.SM8550.xml \
@@ -166,14 +183,8 @@ for f in \
   packages/steam/manifest.nix \
   packages/inputplumber/default.nix \
   packages/inputplumber/sm8550/devices/02-ayn-controller.yaml \
-  packages/inputplumber/sm8550/capability_maps/ayn_mcu.yaml \
-  profiles/minimal.nix \
-  profiles/ssh.nix \
-  profiles/main-space.nix \
-  profiles/dev-env.nix \
-  profiles/devices/thor.nix \
-  profiles/devices/odin2portal.nix; do
-  [ -f "$ROOT/$f" ] || fail "missing guest module/profile/package: $f"
+  packages/inputplumber/sm8550/capability_maps/ayn_mcu.yaml; do
+  [ -f "$REPO_ROOT/$f" ] || fail "missing package file: $f"
 done
 
 grep -q 'programs.sway' "$ROOT/modules/display.nix" \
@@ -204,11 +215,11 @@ grep -q 'PULSE_SERVER = "unix:/run/user/0/pulse/native"' "$ROOT/modules/audio.ni
   || fail "audio module must point clients at the root PipeWire Pulse socket"
 grep -q 'services.inputplumber' "$ROOT/modules/input.nix" \
   || fail "input module must enable guest-owned InputPlumber"
-grep -q '0.75.2' "$ROOT/packages/inputplumber/default.nix" \
+grep -q '0.75.2' "$REPO_ROOT/packages/inputplumber/default.nix" \
   || fail "guest InputPlumber package must match the validated ROCKNIX host version"
-grep -q 'name: AYN Layout' "$ROOT/packages/inputplumber/sm8550/devices/02-ayn-controller.yaml" \
+grep -q 'name: AYN Layout' "$REPO_ROOT/packages/inputplumber/sm8550/devices/02-ayn-controller.yaml" \
   || fail "guest InputPlumber package must include ROCKNIX SM8550 AYN controller map"
-grep -q 'ayn_mcu' "$ROOT/packages/inputplumber/sm8550/capability_maps/ayn_mcu.yaml" \
+grep -q 'ayn_mcu' "$REPO_ROOT/packages/inputplumber/sm8550/capability_maps/ayn_mcu.yaml" \
   || fail "guest InputPlumber package must include ROCKNIX SM8550 AYN capability map"
 grep -q 'c /dev/uinput' "$ROOT/modules/input.nix" \
   || fail "input module must create /dev/uinput for guest-owned virtual devices"
@@ -217,23 +228,23 @@ grep -q '"korri-kiosk.service"' "$ROOT/modules/input.nix" \
   || fail "guest InputPlumber must order before Korri and fallback sway sessions"
 grep -q '../modules/input.nix' "$ROOT/profiles/main-space.nix" \
   || fail "main-space profile must import the guest input module"
-grep -q 'ayn-odin2-ucm' "$ROOT/flake.nix" \
+grep -q 'ayn-odin2-ucm' "$REPO_ROOT/flake.nix" \
   || fail "root flake must expose the guest-owned AYN Odin2 UCM package"
 grep -q 'ALSA_CONFIG_UCM2' "$ROOT/modules/audio.nix" \
   || fail "audio module must route ALSA UCM lookup to the guest-owned UCM package"
 grep -q 'packages/audio/ayn-odin2-ucm' "$ROOT/modules/device.nix" \
   || fail "SM8550 device defaults must consume the in-repo AYN Odin2 UCM package"
-grep -q 'Use case configuration for AYN Odin2' "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/AYN-Odin2.conf" \
+grep -q 'Use case configuration for AYN Odin2' "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/AYN-Odin2.conf" \
   || fail "AYN Odin2 UCM package must include the card use-case file"
-grep -q 'PlaybackPCM "hw:${CardId},0"' "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/HiFi.conf" \
+grep -q 'PlaybackPCM "hw:${CardId},0"' "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/HiFi.conf" \
   || fail "AYN Odin2 UCM package must expose the speaker playback PCM"
-[ -L "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Odin2.conf" ] \
+[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Odin2.conf" ] \
   || fail "AYN Odin2 UCM package must include the SM8550 card-name symlink"
-[ -L "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/ayn-AYNOdin2-.conf" ] \
+[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/ayn-AYNOdin2-.conf" ] \
   || fail "AYN Odin2 UCM package must include the EFI-compatible card-name symlink"
-[ -L "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Thor.conf" ] \
+[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Thor.conf" ] \
   || fail "AYN Odin2 UCM package must include Thor long-name card symlink"
-[ -L "$ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYNThor.conf" ] \
+[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYNThor.conf" ] \
   || fail "AYN Odin2 UCM package must include Thor card-id symlink"
 ! grep -q 'module-alsa-sink\|sink_name=thor_hw0\|rocknix-audio-alsa-sink' "$ROOT/modules/audio.nix" "$ROOT/modules/lid.nix" \
   || fail "audio path must not depend on the diagnostic thor_hw0 module-alsa-sink workaround"
@@ -404,76 +415,76 @@ grep -q 'remote-cemu-import.sh' "$ROOT/launchers/remote-cemu-promote.sh" \
   || fail "Cemu promotion help must point to candidate closure import helper"
 
 # Package contracts migrated from the former package-only repo.
-grep -F -q 'exec "\$cemu_wrapper_dir/Cemu"' "$ROOT/packages/cemu/package.nix" \
+grep -F -q 'exec "\$cemu_wrapper_dir/Cemu"' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "package wrapper must exec real Cemu binary"
-grep -q 'vulkan_loader_lib_path=' "$ROOT/packages/cemu/package.nix" \
+grep -q 'vulkan_loader_lib_path=' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "package wrapper must own Vulkan loader path"
-grep -q 'audio_backend_lib_path=' "$ROOT/packages/cemu/package.nix" \
+grep -q 'audio_backend_lib_path=' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "package wrapper must expose Pulse/ALSA backend library path for bundled Cubeb"
-grep -q 'libpulseaudio' "$ROOT/packages/cemu/package.nix" \
+grep -q 'libpulseaudio' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must include Pulse headers/runtime for bundled Cubeb"
-grep -q 'alsa-lib' "$ROOT/packages/cemu/package.nix" \
+grep -q 'alsa-lib' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must include ALSA headers/runtime for bundled Cubeb fallback"
-grep -q 'USE_PULSE' "$ROOT/packages/cemu/package.nix" \
+grep -q 'USE_PULSE' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must gate on bundled Cubeb Pulse backend evidence"
-grep -q 'USE_ALSA' "$ROOT/packages/cemu/package.nix" \
+grep -q 'USE_ALSA' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must gate on bundled Cubeb ALSA backend evidence"
-grep -q 'cubeb_pulse.c' "$ROOT/packages/cemu/package.nix" \
+grep -q 'cubeb_pulse.c' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must prove bundled Cubeb Pulse source was compiled"
-grep -q 'cubeb_alsa.c' "$ROOT/packages/cemu/package.nix" \
+grep -q 'cubeb_alsa.c' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must prove bundled Cubeb ALSA source was compiled"
-grep -q 'cubeb-backend-evidence.txt' "$ROOT/packages/cemu/package.nix" \
+grep -q 'cubeb-backend-evidence.txt' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must persist Cubeb backend evidence"
-grep -q 'cubeb-backend-strings.txt' "$ROOT/packages/cemu/package.nix" \
+grep -q 'cubeb-backend-strings.txt' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "Cemu package must persist Cubeb runtime string evidence"
-grep -q 'SDL_VIDEO_ALLOW_SCREENSAVER' "$ROOT/packages/cemu/package.nix" \
+grep -q 'SDL_VIDEO_ALLOW_SCREENSAVER' "$REPO_ROOT/packages/cemu/package.nix" \
   || fail "package wrapper must own SDL screensaver guard"
-grep -q 'ROCKNIX cemu-sa package contract' "$ROOT/packages/cemu/manifest.nix" \
+grep -q 'ROCKNIX cemu-sa package contract' "$REPO_ROOT/packages/cemu/manifest.nix" \
   || fail "Cemu manifest must document ROCKNIX package contract source"
 
-grep -q 'ROCKNIX Steam ARM64 guest-native package contract' "$ROOT/packages/steam/manifest.nix" \
+grep -q 'ROCKNIX Steam ARM64 guest-native package contract' "$REPO_ROOT/packages/steam/manifest.nix" \
   || fail "Steam manifest must document ROCKNIX package contract source"
-grep -q 'rev = "[0-9a-f]\{40\}"' "$ROOT/packages/steam/manifest.nix" \
+grep -q 'rev = "[0-9a-f]\{40\}"' "$REPO_ROOT/packages/steam/manifest.nix" \
   || fail "Steam manifest must record pinned ROCKNIX source revision"
-grep -q 'guest-native-steam-target=true' "$ROOT/packages/steam/package.nix" \
+grep -q 'guest-native-steam-target=true' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package evidence must target guest-native Steam"
-grep -q 'host-steam-fallback=false' "$ROOT/packages/steam/package.nix" \
+grep -q 'host-steam-fallback=false' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package must not fall back to host Steam"
-grep -q 'immutable-nix-store-valve-arm64-seed-artifacts=false' "$ROOT/packages/steam/package.nix" \
+grep -q 'immutable-nix-store-valve-arm64-seed-artifacts=false' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam v1 package must not claim immutable Nix-store Valve ARM64 seed artifacts"
-grep -q 'steam-arm64-bootstrap' "$ROOT/packages/steam/package.nix" \
+grep -q 'steam-arm64-bootstrap' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package must install bootstrap helper"
-grep -q 'steam-arm64-seed' "$ROOT/packages/steam/package.nix" \
+grep -q 'steam-arm64-seed' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package must install ARM64 seed helper"
-grep -q 'steam-guest-native' "$ROOT/packages/steam/package.nix" \
+grep -q 'steam-guest-native' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package must install guest-native launcher helper"
-grep -q 'STEAM_HOME' "$ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
+grep -q 'STEAM_HOME' "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
   || fail "Steam bootstrap helper must require explicit STEAM_HOME"
-grep -q 'STEAM_GAMES_ROOT' "$ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
+grep -q 'STEAM_GAMES_ROOT' "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
   || fail "Steam bootstrap helper must require explicit STEAM_GAMES_ROOT"
-grep -q 'STEAM_DOT' "$ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
+grep -q 'STEAM_DOT' "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
   || fail "Steam bootstrap helper must require explicit STEAM_DOT"
-grep -q -- '--dry-run' "$ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
+grep -q -- '--dry-run' "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
   || fail "Steam bootstrap helper must support dry-run mode"
-grep -q 'STEAM_MANIFEST_URL' "$ROOT/packages/steam/scripts/steam-arm64-seed" \
+grep -q 'STEAM_MANIFEST_URL' "$REPO_ROOT/packages/steam/scripts/steam-arm64-seed" \
   || fail "Steam seed helper must know the ARM64 client manifest endpoint"
-grep -q 'steamrtarm64/steam' "$ROOT/packages/steam/scripts/steam-guest-native" \
+grep -q 'steamrtarm64/steam' "$REPO_ROOT/packages/steam/scripts/steam-guest-native" \
   || fail "Steam guest-native helper must execute the ARM64 Steam client"
-grep -q 'NIX_LD' "$ROOT/packages/steam/scripts/steam-guest-native" \
+grep -q 'NIX_LD' "$REPO_ROOT/packages/steam/scripts/steam-guest-native" \
   || fail "Steam guest-native helper must preflight NixOS dynamic linker strategy"
 for resource in compatibilitytool.vdf registry.vdf toolmanifest.vdf; do
-  [ -f "$ROOT/packages/steam/resources/${resource}" ] \
+  [ -f "$REPO_ROOT/packages/steam/resources/${resource}" ] \
     || fail "Steam resource missing: ${resource}"
 done
 
 if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck "$ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
-    "$ROOT/packages/steam/scripts/steam-arm64-seed" \
-    "$ROOT/packages/steam/scripts/steam-guest-native"
+  shellcheck "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
+    "$REPO_ROOT/packages/steam/scripts/steam-arm64-seed" \
+    "$REPO_ROOT/packages/steam/scripts/steam-guest-native"
 fi
 
 ! grep -R 'systemctl\|swaymsg\|FEXRootFSFetcher\|gamescope\|/storage' \
-  "$ROOT/packages/steam/package.nix" "$ROOT/packages/steam/scripts" >/tmp/rocknix-nix-guest-steam-boundary-grep.$$ \
+  "$REPO_ROOT/packages/steam/package.nix" "$REPO_ROOT/packages/steam/scripts" >/tmp/rocknix-nix-guest-steam-boundary-grep.$$ \
   || { cat /tmp/rocknix-nix-guest-steam-boundary-grep.$$ >&2; rm -f /tmp/rocknix-nix-guest-steam-boundary-grep.$$; fail "Steam package executable logic must not own ROCKNIX host/session/storage policy"; }
 rm -f /tmp/rocknix-nix-guest-steam-boundary-grep.$$
 
