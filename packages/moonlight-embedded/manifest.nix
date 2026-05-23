@@ -1,9 +1,9 @@
-# moonlight-embedded package contract for SM8550 zero-copy HW decode work.
+# moonlight-embedded package contract for SM8550 HW decode work.
 #
 # This package builds upstream moonlight-embedded with a downstream patch
 # stack that adds a V4L2 stateful M2M (`hevc_v4l2m2m` / `h264_v4l2m2m`) +
-# EGL_LINUX_DMA_BUF_EXT zero-copy video platform suitable for Qualcomm
-# SM8550 (Adreno 740 + iris VPU + freedreno).
+# SDL NV12 presentation platform suitable for Qualcomm SM8550
+# (Adreno 740 + iris VPU + freedreno).
 #
 # Patch order matters and is documented per-entry. Keep this file data-only
 # so derivation, docs, and static checks share the same source of truth.
@@ -39,12 +39,12 @@
       upstreamPath = "this repo";
       role = "PR #932 references DRM_LIBRARY/DRM_INCLUDE_DIR but never sets them, so its build-gate is silently false. This adds the missing pkg_check_modules(DRM libdrm) probe and advertises ffmpeg_drm in main.c's -platform help text. Logically part of 0001 but kept separate to preserve verbatim vendoring of PR #932";
     }
-    # Future: 0002-add-v4l2m2m-egl-platform.patch
-    #   Adds the SM8550-targeted platform: `hevc_v4l2m2m` / `h264_v4l2m2m`
-    #   decoder selection + EGL_LINUX_DMA_BUF_EXT import +
-    #   GL_TEXTURE_EXTERNAL_OES sampling against an SDL2 GL context.
-    #   Registered as `v4l2m2m` so it cohabits with `ffmpeg_drm`, `rk`,
-    #   `sdl`, etc.
+    {
+      name = "0002-add-v4l2m2m-sdl-nv12-platform.patch";
+      file = ./patches/0002-add-v4l2m2m-sdl-nv12-platform.patch;
+      upstreamPath = "this repo";
+      role = "Adds the SM8550-targeted v4l2m2m platform: selects hevc_v4l2m2m / h264_v4l2m2m by name, receives the iris VPU's NV12 output from FFmpeg, and presents it through SDL_UpdateNVTexture + SDL_RenderCopy so SDL owns Wayland sizing, live resize, aspect-fit, and display moves. True DRM PRIME zero-copy is deferred because FFmpeg 8.0's v4l2_m2m wrapper overwrites the requested DRM_PRIME pix_fmt with native NV12 after VIDIOC_G_FMT. Registered alongside ffmpeg_drm so this fork covers both the upstream KMS-overlay experiment (PR #932) and the SM8550 VPU decode path that cohabits with gamescope/Sway.";
+    }
   ];
 
   cmakeFlags = [
@@ -61,16 +61,17 @@
     "-DENABLE_SDL=ON"
     # Patch 0001 introduces ENABLE_FFMPEG_DRM (defaults ON in the patch,
     # but pin it here so the cmake invocation makes the intent explicit).
-    # Patch 0002 will introduce ENABLE_V4L2M2M.
+    # Patch 0002 introduces ENABLE_V4L2M2M (also defaults ON; same
+    # reasoning -- explicit beats implicit at the derivation boundary).
     "-DENABLE_FFMPEG_DRM=ON"
-    # "-DENABLE_V4L2M2M=ON"
+    "-DENABLE_V4L2M2M=ON"
   ];
 
   # Runtime platforms the package is expected to offer post-patch.
   expectedPlatforms = [
     "sdl"           # always available — software decode through SDL2
     "ffmpeg_drm"    # added by patch 0001 (PR #932 vendored) + 0001a (build-gate fix)
-    # "v4l2m2m"     # added by patch 0002 (our delta, SM8550 zero-copy)
+    "v4l2m2m"       # added by patch 0002 (this repo, SM8550 VPU decode + SDL NV12 presentation)
   ];
 
   knownIntentionalNixDeltas = [
@@ -82,7 +83,7 @@
     supported = [
       "moonlight CLI binary with sdl platform for software-decode fallback"
       "(post-patch) ffmpeg_drm platform for generic V4L2 Request hwaccel + KMS atomic display"
-      "(post-patch) v4l2m2m platform for SM8550 zero-copy hevc_v4l2m2m + EGL DMA-buf import"
+      "(post-patch) v4l2m2m platform for SM8550 hevc_v4l2m2m/h264_v4l2m2m hardware decode + SDL NV12 presentation"
     ];
     downstreamOwned = [
       "session compositor launch policy and geometry"
