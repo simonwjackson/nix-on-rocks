@@ -20,12 +20,32 @@ Both repos tagged `pre-merge-baseline-2026-05-22` immediately before structural 
 
 ## What changed (filled in as units complete)
 
-- [ ] **U1 — Snapshot & branch** (in progress)
-- [ ] U2 — Subtree import nix-sm8550 → `incoming-nix-sm8550/`
-- [ ] U3 — Atomic flake-promote to root + package move (`guest/packages/` → `packages/`, `guest/flake.nix` → `flake.nix`)
-- [ ] U4 — Absorb nix-sm8550 packages, carve `devices/sm8550/` slot, parameterize cemu via `socSettings`
-- [ ] U5 — Sobo integration smoke
-- [ ] U6 — Cleanup, README, merge to main
+- [x] **U1** — Snapshot & branch (`e076ed0`)
+- [x] **U2** — Subtree import nix-sm8550 → `incoming-nix-sm8550/` (`119524e` + `2c33fe6`)
+- [x] **U3** — Atomic flake-promote to root + package move (`5a517c3`)
+  - `guest/flake.nix` → `flake.nix`
+  - `guest/flake.lock` → `flake.lock`
+  - `guest/packages/` → `packages/`
+  - 37 files reorganized; static-checks re-anchored with `REPO_ROOT`; CI workflow `build-rootfs-seed.yml` updated
+- [x] **U4** — Absorb nix-sm8550 packages, carve `devices/sm8550/` slot, parameterize cemu (`1ab41de`)
+  - `devices/{,sm8550/}README.md` (new slot, documented for sm8250/Retroid)
+  - `devices/sm8550/audio/ayn-odin2-ucm/` (moved from `packages/audio/`)
+  - `devices/sm8550/cemu/settings.xml` (moved from `packages/cemu/settings.SM8550.xml`)
+  - `packages/cemu/package.nix` parameterized with `socSettings ? null, socName ? null`
+  - `packages/moonlight-embedded/` absorbed (with PR #932 patches); `opus` → `libopus` for nixos-25.11
+  - `packages/inputplumber/sm8550/` → `packages/inputplumber/maps/` (per-MCU naming honesty)
+  - Flake outputs: `+moonlight-embedded`, `+sm8550-ayn-odin2-ucm` (alias)
+  - Quarantine packages/ emptied (cemu/steam superseded, moonlight-embedded migrated)
+- [x] **U5a** — Build smoke (eval-only, Fuji x86_64)
+  - `nix build .#sm8550-ayn-odin2-ucm` succeeded
+  - drvPaths evaluate clean for: cemu, steam, moonlight-embedded, inputplumber, rootfs-{thor,odin2portal}, and 5 pure nixosConfigurations
+  - Full builds (especially cemu source compile) deferred to Sobo aarch64 in U5b
+- [ ] **U5b** — Sobo integration smoke (pending; needs hardware)
+  - Build `rootfs-thor` for aarch64 on Fuji
+  - Stage onto Sobo via stage10 generation-switch
+  - SSH smoke: cemu launches, settings present at `share/Cemu/config/SM8550/settings.xml`, sway runs, audio works
+  - On accept: tag `monorepo-merge-sobo-accepted-2026-05-22`
+- [ ] **U6 merge** — Merge `refactor/monorepo-merge` → `main`, tag `monorepo-merge-complete-2026-05-22` (gated on U5b)
 
 ---
 
