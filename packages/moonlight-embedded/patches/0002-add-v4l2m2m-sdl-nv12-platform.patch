@@ -1,4 +1,4 @@
-From f59bf078a7e3557509c906350de880f576da03c7 Mon Sep 17 00:00:00 2001
+From f7121b12c38a53dadbaa50aa59180ece5dac1429 Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
@@ -9,9 +9,9 @@ Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
  src/main.c          |    2 +-
  src/platform.c      |   20 +
  src/platform.h      |    2 +-
- src/video/v4l2m2m.c | 1786 +++++++++++++++++++++++++++++++++++++++++++
+ src/video/v4l2m2m.c | 1805 +++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |    3 +
- 6 files changed, 1827 insertions(+), 3 deletions(-)
+ 6 files changed, 1846 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -143,10 +143,10 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..5d0bb33
+index 0000000..64a6394
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,1786 @@
+@@ -0,0 +1,1805 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
@@ -251,6 +251,8 @@ index 0000000..5d0bb33
 +static DirectBuf direct_cap[DIRECT_CAP_BUFS];
 +static int direct_out_count = 0;
 +static int direct_cap_count = 0;
++static int direct_desired_out_bufs = DIRECT_OUT_BUFS;
++static int direct_desired_cap_bufs = DIRECT_CAP_BUFS;
 +static bool direct_capture_configured = false;
 +static int direct_stream_w = 0;
 +static int direct_stream_h = 0;
@@ -426,11 +428,6 @@ index 0000000..5d0bb33
 +    logged = true;
 +  }
 +
-+  AVFrame *clone = av_frame_clone(f);
-+  av_frame_free(&f);
-+  if (!clone)
-+    return -1;
-+
 +  pthread_mutex_lock(&disp_mtx);
 +  if (disp_pending) {
 +    /* Direct V4L2 capture buffers are requeued by the AVFrame free
@@ -439,10 +436,13 @@ index 0000000..5d0bb33
 +     * deadlock the decoder. direct_drain_capture_locked() also limits
 +     * itself to one pending display frame at a time. */
 +    pthread_mutex_unlock(&disp_mtx);
-+    av_frame_free(&clone);
++    av_frame_free(&f);
 +    return 1;
 +  }
-+  disp_pending = clone;
++  /* Direct frames are already uniquely owned here. Unlike FFmpeg frames,
++   * they do not need av_frame_clone(); the AVBufferRef attached above is
++   * enough to requeue the CAPTURE buffer when display frees the frame. */
++  disp_pending = f;
 +  pthread_cond_signal(&disp_cond);
 +  pthread_mutex_unlock(&disp_mtx);
 +  return 0;
@@ -520,7 +520,7 @@ index 0000000..5d0bb33
 +
 +  struct v4l2_requestbuffers req;
 +  memset(&req, 0, sizeof(req));
-+  req.count = DIRECT_CAP_BUFS;
++  req.count = direct_desired_cap_bufs;
 +  req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
 +  req.memory = V4L2_MEMORY_MMAP;
 +  if (v4l2_ioctl(direct_fd, VIDIOC_REQBUFS, &req, "REQBUFS CAPTURE") < 0)
@@ -559,8 +559,8 @@ index 0000000..5d0bb33
 +    return -1;
 +
 +  direct_capture_configured = true;
-+  LOG("direct: capture configured cap_bufs=%d exported_dma_bufs=%s",
-+      direct_cap_count, direct_cap[0].dma_fd >= 0 ? "yes" : "no");
++  LOG("direct: capture configured cap_bufs=%d/%d exported_dma_bufs=%s",
++      direct_cap_count, direct_desired_cap_bufs, direct_cap[0].dma_fd >= 0 ? "yes" : "no");
 +  return 0;
 +}
 +
@@ -646,9 +646,26 @@ index 0000000..5d0bb33
 +  return 0;
 +}
 +
++
++static int parse_direct_buf_count(const char *name, int fallback, int max_count) {
++  const char *value = getenv(name);
++  if (!value || !*value)
++    return fallback;
++  char *endptr = NULL;
++  long parsed = strtol(value, &endptr, 10);
++  if (!endptr || *endptr != '\0' || parsed < 2 || parsed > max_count) {
++    LOG("direct: ignoring invalid %s=%s (valid range 2..%d)", name, value, max_count);
++    return fallback;
++  }
++  return (int) parsed;
++}
++
 +static int direct_v4l2_setup(int videoFormat, int width, int height) {
 +  uint32_t coded_fmt = (videoFormat & VIDEO_FORMAT_MASK_H265) ?
 +    V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264;
++
++  direct_desired_out_bufs = parse_direct_buf_count("MOONLIGHT_V4L2M2M_OUT_BUFS", DIRECT_OUT_BUFS, DIRECT_OUT_BUFS);
++  direct_desired_cap_bufs = parse_direct_buf_count("MOONLIGHT_V4L2M2M_CAP_BUFS", DIRECT_CAP_BUFS, DIRECT_CAP_BUFS);
 +
 +  direct_stream_w = width;
 +  direct_stream_h = height;
@@ -680,7 +697,7 @@ index 0000000..5d0bb33
 +
 +  struct v4l2_requestbuffers req;
 +  memset(&req, 0, sizeof(req));
-+  req.count = DIRECT_OUT_BUFS;
++  req.count = direct_desired_out_bufs;
 +  req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
 +  req.memory = V4L2_MEMORY_MMAP;
 +  if (v4l2_ioctl(direct_fd, VIDIOC_REQBUFS, &req, "REQBUFS OUTPUT") < 0)
@@ -704,7 +721,7 @@ index 0000000..5d0bb33
 +  if (v4l2_ioctl(direct_fd, VIDIOC_STREAMON, &type, "STREAMON OUTPUT") < 0)
 +    return -1;
 +
-+  LOG("direct: setup complete out_bufs=%d capture=deferred", direct_out_count);
++  LOG("direct: setup complete out_bufs=%d/%d capture=deferred cap_requested=%d", direct_out_count, direct_desired_out_bufs, direct_desired_cap_bufs);
 +  return 0;
 +}
 +
@@ -733,6 +750,8 @@ index 0000000..5d0bb33
 +  direct_fd = -1;
 +  direct_out_count = direct_cap_count = 0;
 +  direct_capture_configured = false;
++  direct_desired_out_bufs = DIRECT_OUT_BUFS;
++  direct_desired_cap_bufs = DIRECT_CAP_BUFS;
 +}
 +
 +static int direct_v4l2_submit(PDECODE_UNIT du) {

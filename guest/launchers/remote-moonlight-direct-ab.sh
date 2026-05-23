@@ -120,6 +120,7 @@ summarize_csv() {
 signal_counts() {
   log="$1"
   for pat in \
+    'first cached plane EGL import succeeded' \
     'first plane EGL import succeeded' \
     'first EGL import succeeded' \
     'Network dropped' \
