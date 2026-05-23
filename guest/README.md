@@ -35,6 +35,7 @@ nix flake show --all-systems .
 Expected NixOS configurations and module exports:
 
 - `nixosModules.rocknix-guest-base` — downstream substrate contract; imports SM8550 guest plumbing without configuring Korri product services.
+- `lib.deviceProfileByCompatible` and `lib.selectDeviceProfileFromCompatible` — downstream device-profile helpers for explicit device targets and impure by-compatible selection.
 - `nixosConfigurations.rocknix-guest`
 - `nixosConfigurations.rocknix-guest-main-space` (backward-compatible alias to Thor)
 - `nixosConfigurations.rocknix-guest-main-space-thor`

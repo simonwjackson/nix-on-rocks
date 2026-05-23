@@ -100,6 +100,8 @@ grep -q 'rocknix-guest-main-space-by-compatible' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose rocknix-guest-main-space-by-compatible (host-promoter device-id dispatch entry point)"
 grep -q 'deviceProfileByCompatible' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must define deviceProfileByCompatible dispatch table for host-side device selection"
+grep -q 'inherit deviceProfileByCompatible selectDeviceProfileFromCompatible' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake lib must expose device profile selection helpers for downstream consumers"
 grep -q '"ayn,thor" = ./guest/profiles/devices/thor.nix' "$REPO_ROOT/flake.nix" \
   || fail "deviceProfileByCompatible must register Thor (ayn,thor) -> profiles/devices/thor.nix"
 grep -q '"ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix' "$REPO_ROOT/flake.nix" \

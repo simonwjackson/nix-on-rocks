@@ -240,6 +240,7 @@
       # duplicating the closure/tar plumbing.
       lib = {
         mkGuestRootfs = mkRootfs;
+        inherit deviceProfileByCompatible selectDeviceProfileFromCompatible;
       };
 
       nixosConfigurations.rocknix-guest = configuration;
