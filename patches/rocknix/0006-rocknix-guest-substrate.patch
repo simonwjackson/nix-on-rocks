@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,252 @@
+@@ -0,0 +1,255 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -31,15 +31,14 @@ index 0000000000..51ff27c47f
 +PKG_NIX_GUEST_SOURCE_SUBDIR="."
 +PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"
 +
-+# Bootable first-boot guest rootfs seed. During cutover this may remain the
-+# archived nix-on-rocks fallback seed, but cleanup is blocked until a prebuilt
-+# Korri korri-rocknix-rootfs-* tarball for the same product authority is
-+# verified and published. It is intentionally distinct from PKG_NIX_GUEST_URL:
-+# source can be promoted by a running guest, but fresh /storage needs a
-+# bootable rootfs seed before rocknix-guest.service can start. Leave these
-+# placeholders unset only while developing the substrate; post_install fails
-+# closed until a real URL and SHA256 are provided.
-+PKG_NIX_GUEST_ROOTFS_SEED_REV="${PKG_NIX_GUEST_REV}"
++# Bootable first-boot guest rootfs seed. This is intentionally distinct from
++# PKG_NIX_GUEST_URL: packaged Korri source can be promoted by a running guest,
++# but fresh /storage needs a prebuilt bootable rootfs seed before
++# rocknix-guest.service can start. Until Korri publishes canonical seed assets,
++# this lock records the archived fallback seed revision and SHA explicitly.
++# Leave placeholders unset only while developing the substrate; post_install
++# fails closed until a real URL and SHA256 are provided.
++PKG_NIX_GUEST_ROOTFS_SEED_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
 +PKG_NIX_GUEST_ROOTFS_SEED_DEVICE="thor"
 +PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE="ayn,thor"
 +PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
@@ -1180,7 +1179,7 @@ new file mode 100755
 index 0000000000..d741131510
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote
-@@ -0,0 +1,260 @@
+@@ -0,0 +1,266 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3520,7 +3519,7 @@ new file mode 100755
 index 0000000000..bd11769bb3
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1398 @@
+@@ -0,0 +1,1404 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
