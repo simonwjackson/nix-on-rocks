@@ -168,7 +168,7 @@ index 0000000000..51ff27c47f
 +  if { [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URL}" ] && [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URLS}" ]; } || \
 +     [ "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" = "REPLACE_WITH_BOOTABLE_ROOTFS_SEED_SHA256" ]; then
 +    echo "rocknix-guest-substrate: bootable guest rootfs seed URL/SHA256 are not configured" >&2
-+    echo "  Build and publish nix-on-rocks/guest .#rootfs-thor for ${PKG_NIX_GUEST_ROOTFS_SEED_REV}, then set:" >&2
++    echo "  Build and publish the Korri korri-rocknix-rootfs-* artifact for ${PKG_NIX_GUEST_ROOTFS_SEED_REV}, then set:" >&2
 +    echo "  PKG_NIX_GUEST_ROOTFS_SEED_URL or PKG_NIX_GUEST_ROOTFS_SEED_URLS, plus PKG_NIX_GUEST_ROOTFS_SEED_SHA256" >&2
 +    exit 1
 +  fi
@@ -741,9 +741,9 @@ index 0000000000..eae549ce48
 +Usage: ${LOG_TAG} --system /nix/store/<toplevel> [--nar /storage/nix-on-rock/staging/closure.nar] [--source REF]
 +
 +Imports/verifies an SM8550 guest generation while the current guest generation A
-+is running. Build B off-device with an explicit per-device proof output, e.g.:
-+  nix build .#nixosConfigurations.rocknix-guest-stage10-proof-thor.config.system.build.toplevel
-+  nix build .#nixosConfigurations.rocknix-guest-stage10-proof-odin2portal.config.system.build.toplevel
++is running. Build B off-device from the product authority flake, e.g.:
++  nix build github:simonwjackson/korri/<rev>#packages.aarch64-linux.korri-rocknix-kiosk-system-thor
++  nix build github:simonwjackson/korri/<rev>#packages.aarch64-linux.korri-rocknix-kiosk-system-odin2portal
 +EOF
 +}
 +
@@ -3856,8 +3856,8 @@ index 0000000000..bd11769bb3
 +grep -q 'ROCKNIX_GUEST_MANUAL_HOLD_FILE' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must honor manual generation hold override"
 +grep -q 'exit_if_manual_generation_hold_active' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must check manual generation hold"
 +grep -q 'manual generation selection hold is active' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must log manual generation hold"
-+grep -q 'rocknix-guest-stage10-proof-thor' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document explicit Thor proof output"
-+grep -q 'rocknix-guest-stage10-proof-odin2portal' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document explicit Odin 2 Portal proof output"
++grep -q 'korri-rocknix-kiosk-system-thor' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document explicit Korri Thor system output"
++grep -q 'korri-rocknix-kiosk-system-odin2portal' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document explicit Korri Odin 2 Portal system output"
 +grep -q 'thor|odin2portal' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must allow both Thor and Odin 2 Portal explicit targets"
 +grep -q 'live generation A is required for import' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must require live generation A"
 +grep -q 'rocknix-stage10-proof-marker' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must require B proof marker"
