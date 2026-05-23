@@ -22,9 +22,10 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Device lane: `SM8550`
 - Accepted device: `sobo` / Odin2Portal (`ayn,odin2portal`)
 - Upstream source pin: see `upstream.lock`
-- Guest source: `guest/` (`.#rootfs-thor`, `.#rootfs-odin2portal`)
-- Host-packaged guest source: pinned Nix-on-Rocks product tarball, extracting `guest/`
-- Accepted guest seed pin: see `guest.lock`
+- Canonical guest product candidate: Korri branch `feat/korri-rocknix-inversion` (`.#korri-rocknix-rootfs-odin2portal`)
+- Temporary fallback guest source: `guest/` (`.#rootfs-thor`, `.#rootfs-odin2portal`)
+- Host-packaged guest source during cutover: pinned Korri product tarball, extracting the flake root
+- Accepted guest seed pin: see `guest.lock`; old nix-on-rocks seed remains fallback until Korri rootfs is verified on native arm64
 - Patch queue: `patches/rocknix/series`
 - Latest accepted Phase 5 CI/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
 
@@ -71,6 +72,7 @@ Flake builds run from the repo root:
 
 ```sh
 guest/scripts/static-checks.sh
+scripts/verify-korri-promotion-proof
 nix build .#rootfs-thor
 nix build .#rootfs-odin2portal
 nix build .#cemu
@@ -93,8 +95,9 @@ scripts/build-sm8550
 3. apply `patches/rocknix/series`;
 4. run SM8550 contract checks;
 5. build SM8550 with the patched ROCKNIX tree;
-6. fetch the pinned Nix-on-Rocks product tarball inside `rocknix-guest-substrate` and package its `guest/` subtree;
-7. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, guest seed, and payload checksums.
+6. during cutover, fetch the pinned Korri product tarball inside `rocknix-guest-substrate` and package its flake root for `korri-rocknix-kiosk-by-compatible` promotion;
+7. keep the old Nix-on-Rocks rootfs seed workflow as fallback-only until the Korri rootfs artifact is verified and published;
+8. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, guest seed, and payload checksums.
 
 The product repo is public, but host packaging still pins the exact GitHub-generated tarball bytes by SHA256. If the fetch mode changes, verify the archive resolves to the same pinned commit before updating the checksum.
 

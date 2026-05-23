@@ -17,20 +17,24 @@ index 0000000000..51ff27c47f
 +PKG_TOOLCHAIN="manual"
 +
 +# Pinned source of the NixOS main-space guest. The host repo carries
-+# only the substrate plumbing for the guest; the guest itself lives in
-+# the Nix-on-Rocks product repo under guest/ and is fetched from a pinned
-+# product commit at build time. Bump PKG_NIX_GUEST_REV (and the accompanying
++# only the substrate plumbing for the guest; the product appliance source lives
++# in Korri and is fetched from a pinned product commit at build time.
++# Bump PKG_NIX_GUEST_REV (and the accompanying
 +# SHA256 of the GitHub-rendered tarball) to roll the host to a newer guest
 +# release. The closure layout dropped into /usr/lib/rocknix-guest-substrate/guest/
-+# remains the same; only the source of truth moved into nix-on-rocks/guest.
-+PKG_NIX_GUEST_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-+PKG_NIX_GUEST_SHA256="013b47b315843efc10bd81e4eb2f5e32672bc23b5ddc8a0b7dc0ada9d21549e9"
-+PKG_NIX_GUEST_URL="https://api.github.com/repos/simonwjackson/nix-on-rocks/tarball/${PKG_NIX_GUEST_REV}"
-+PKG_NIX_GUEST_SOURCE_SUBDIR="guest"
++# remains the same; only the product authority source moved to Korri.
++PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"
++PKG_NIX_GUEST_AUTHORITY_NAME="${PKG_NIX_GUEST_AUTHORITY_REPO##*/}"
++PKG_NIX_GUEST_REV="04b755a49695b5af00cf6fc9bb1f92527835c4c4"
++PKG_NIX_GUEST_SHA256="49c02d414a29e50a71620561f158b1773a376e4cb30dcc22c29ca962e561e632"
++PKG_NIX_GUEST_URL="https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}"
++PKG_NIX_GUEST_SOURCE_SUBDIR="."
++PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"
 +
-+# Bootable first-boot guest rootfs seed. This must be a prebuilt tarball
-+# produced from the nix-on-rocks/guest rootfs/rootfs-thor flake output for the
-+# same guest revision. It is intentionally distinct from PKG_NIX_GUEST_URL:
++# Bootable first-boot guest rootfs seed. During cutover this may remain the
++# archived nix-on-rocks fallback seed, but cleanup is blocked until a prebuilt
++# Korri korri-rocknix-rootfs-* tarball for the same product authority is
++# verified and published. It is intentionally distinct from PKG_NIX_GUEST_URL:
 +# source can be promoted by a running guest, but fresh /storage needs a
 +# bootable rootfs seed before rocknix-guest.service can start. Leave these
 +# placeholders unset only while developing the substrate; post_install fails
@@ -125,14 +129,14 @@ index 0000000000..51ff27c47f
 +  # under /usr/lib/rocknix-guest-substrate/guest/. Cached under ${SOURCES}/ so
 +  # repeat builds (and the fast-iter image-only workflow) hit the cache instead
 +  # of GitHub. SHA256 verification is mandatory.
-+  guest_tarball="${SOURCES}/nix-on-rocks/nix-on-rocks-${PKG_NIX_GUEST_REV}.tar.gz"
++  guest_tarball="${SOURCES}/nix-on-rocks/${PKG_NIX_GUEST_AUTHORITY_NAME}-${PKG_NIX_GUEST_REV}.tar.gz"
 +  if [ ! -f "${guest_tarball}" ]; then
 +    mkdir -p "$(dirname "${guest_tarball}")"
-+    echo "rocknix-guest-substrate: fetching nix-on-rocks guest ${PKG_NIX_GUEST_REV}"
++    echo "rocknix-guest-substrate: fetching ${PKG_NIX_GUEST_AUTHORITY_REPO} product source ${PKG_NIX_GUEST_REV}"
 +    curl_fetch "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"
 +    actual_sha="$(sha256sum "${guest_tarball}.tmp" | awk '{print $1}')"
 +    if [ "${actual_sha}" != "${PKG_NIX_GUEST_SHA256}" ]; then
-+      echo "rocknix-guest-substrate: nix-on-rocks guest tarball SHA256 mismatch" >&2
++      echo "rocknix-guest-substrate: product source tarball SHA256 mismatch" >&2
 +      echo "  expected: ${PKG_NIX_GUEST_SHA256}" >&2
 +      echo "  actual:   ${actual_sha}" >&2
 +      rm -f "${guest_tarball}.tmp"
@@ -143,7 +147,7 @@ index 0000000000..51ff27c47f
 +
 +  actual_sha="$(sha256sum "${guest_tarball}" | awk '{print $1}')"
 +  if [ "${actual_sha}" != "${PKG_NIX_GUEST_SHA256}" ]; then
-+    echo "rocknix-guest-substrate: cached nix-on-rocks guest tarball SHA256 mismatch" >&2
++    echo "rocknix-guest-substrate: cached product source tarball SHA256 mismatch" >&2
 +    echo "  expected: ${PKG_NIX_GUEST_SHA256}" >&2
 +    echo "  actual:   ${actual_sha}" >&2
 +    exit 1
@@ -154,7 +158,7 @@ index 0000000000..51ff27c47f
 +  mkdir -p "${guest_extract}"
 +  tar -xzf "${guest_tarball}" -C "${guest_extract}" --strip-components=1
 +  guest_source="${guest_extract}/${PKG_NIX_GUEST_SOURCE_SUBDIR}"
-+  [ -f "${guest_source}/flake.nix" ] || { echo "rocknix-guest-substrate: fetched nix-on-rocks tree lacks ${PKG_NIX_GUEST_SOURCE_SUBDIR}/flake.nix" >&2; exit 1; }
++  [ -f "${guest_source}/flake.nix" ] || { echo "rocknix-guest-substrate: fetched product tree lacks ${PKG_NIX_GUEST_SOURCE_SUBDIR}/flake.nix" >&2; exit 1; }
 +
 +  mkdir -p "${substrate_lib}/guest"
 +  cp -PR "${guest_source}/." "${substrate_lib}/guest/"
@@ -1227,6 +1231,7 @@ index 0000000000..d741131510
 +LEGACY_MANUAL_HOLD_FILE="${ROCKNIX_GUEST_LEGACY_MANUAL_HOLD_FILE:-/storage/.guest/rocknix-guest-manual-generation-hold}"
 +SELECTED_PROFILE_GUEST="${ROCKNIX_GUEST_SYSTEM_PROFILE:-/nix/var/nix/profiles/per-user/root/rocknix-guest-system}"
 +DEVICE_COMPATIBLE_FILE="${ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
++BUILD_TARGET="${ROCKNIX_GUEST_BUILD_TARGET:-.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel}"
 +LOG_TAG="rocknix-guest-promote"
 +
 +log() {
@@ -1330,6 +1335,13 @@ index 0000000000..d741131510
 +  /nix/*) : ;;
 +  *) fail "selected profile must live under guest /nix: ${SELECTED_PROFILE_GUEST}" ;;
 +esac
++case "${BUILD_TARGET}" in
++  .#nixosConfigurations.*.config.system.build.toplevel) : ;;
++  *) fail "unsupported guest build target: ${BUILD_TARGET}" ;;
++esac
++case "${BUILD_TARGET}" in
++  *rocknix-guest-main-space-by-compatible*) fail "refusing retired nix-on-rocks by-compatible product target: ${BUILD_TARGET}" ;;
++esac
 +
 +wanted_rev="$(sed -n '1p' "${GUEST_REV_FILE}" | tr -d '[:space:]')"
 +[ -n "${wanted_rev}" ] || fail "empty packaged guest revision"
@@ -1396,24 +1408,22 @@ index 0000000000..d741131510
 +  exit 1
 +' || fail "guest NetworkManager did not become active"
 +
-+# Build target: the by-compatible dispatch entry point in rocknix-nix-guest.
-+# It reads /proc/device-tree/compatible at eval time (visible inside the
-+# guest namespace because systemd-nspawn shares the host DT) and selects
-+# the matching profile from deviceProfileByCompatible. Requires --impure
-+# because the eval depends on a path outside the Nix store. See
-+# docs/contracts/layer14-main-space-contract.md in rocknix-nix-guest for
-+# the device-addition workflow; the host substrate must not maintain a
-+# parallel device list.
++# Build target: configurable by-compatible dispatch entry point in the product
++# authority flake. The default is Korri's RockNix kiosk appliance target. It
++# reads /proc/device-tree/compatible at eval time (visible inside the guest
++# namespace because systemd-nspawn shares the host DT) and selects the matching
++# profile from nix-on-rocks' deviceProfileByCompatible table through Korri.
++# Requires --impure because the eval depends on a path outside the Nix store.
 +device_compatible="$(first_device_compatible)"
 +[ -n "${device_compatible}" ] || fail "empty device compatible string from ${DEVICE_COMPATIBLE_FILE}"
-+log "building packaged guest inside running guest namespace for compatible ${device_compatible}"
++log "building packaged product target ${BUILD_TARGET} inside running guest namespace for compatible ${device_compatible}"
 +nsenter -t "${inner_pid}" -m -u -i -n -p sh -c "
 +  set -eu
 +  export PATH=/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/bin:/usr/bin
 +  export ROCKNIX_GUEST_DEVICE_COMPATIBLE='${device_compatible}'
 +  cd '${GUEST_STAGED_SOURCE}'
 +  /run/current-system/sw/bin/nix build --impure --extra-experimental-features \"nix-command flakes\" \
-+    .#nixosConfigurations.rocknix-guest-main-space-by-compatible.config.system.build.toplevel \
++    '${BUILD_TARGET}' \
 +    --print-out-paths
 +  system_path=\"\$(/run/current-system/sw/bin/readlink -f result)\"
 +  [ -n \"\${system_path}\" ]
@@ -3629,15 +3639,17 @@ index 0000000000..bd11769bb3
 +[ -f "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" ] || fail "missing runtime smoke test"
 +sh -n "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" || fail "runtime smoke syntax failed"
 +
-+# Guest source is fetched from nix-on-rocks/guest and verified by SHA256.
++# Product authority source is fetched and verified by SHA256.
++grep -q 'PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"' "${PKG_DIR}/package.mk" || fail "package.mk must record Korri as product authority during cutover"
 +grep -q 'PKG_NIX_GUEST_REV=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest rev pin"
 +grep -q 'PKG_NIX_GUEST_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest tarball sha256 pin"
-+grep -q 'api.github.com/repos/simonwjackson/nix-on-rocks/tarball' "${PKG_DIR}/package.mk" || fail "package.mk missing nix-on-rocks guest tarball URL"
-+grep -q 'PKG_NIX_GUEST_SOURCE_SUBDIR="guest"' "${PKG_DIR}/package.mk" || fail "package.mk must select guest/ from the product tarball"
++grep -q 'api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball' "${PKG_DIR}/package.mk" || fail "package.mk missing configurable product tarball URL"
++grep -q 'PKG_NIX_GUEST_SOURCE_SUBDIR="."' "${PKG_DIR}/package.mk" || fail "package.mk must select Korri flake root from the product tarball"
++grep -q 'PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"' "${PKG_DIR}/package.mk" || fail "package.mk must pin the Korri by-compatible appliance promotion target"
 +grep -q 'curl_fetch "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"' "${PKG_DIR}/package.mk" || fail "package.mk must use authenticated-capable fetch for product tarball"
 +grep -q 'sha256sum "${guest_tarball}.tmp"' "${PKG_DIR}/package.mk" || fail "package.mk must verify freshly downloaded guest tarball sha256"
 +grep -q 'sha256sum "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must verify cached guest tarball sha256 before extraction"
-+grep -q 'cached nix-on-rocks guest tarball SHA256 mismatch' "${PKG_DIR}/package.mk" || fail "package.mk must fail clearly on cached tarball sha256 mismatch"
++grep -q 'cached product source tarball SHA256 mismatch' "${PKG_DIR}/package.mk" || fail "package.mk must fail clearly on cached tarball sha256 mismatch"
 +assert_order "${PKG_DIR}/package.mk" 'sha256sum "${guest_tarball}.tmp"' 'mv "${guest_tarball}.tmp" "${guest_tarball}"' "package.mk must verify fresh guest tarball before caching it"
 +assert_order "${PKG_DIR}/package.mk" 'sha256sum "${guest_tarball}"' 'tar -xzf "${guest_tarball}"' "package.mk must verify cached guest tarball before extraction"
 +grep -q 'tar -xzf "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must extract fetched guest tarball"
@@ -3809,10 +3821,14 @@ index 0000000000..bd11769bb3
 +grep -q 'WantedBy=rocknix-main-space.target' "${promote_unit}" || fail "guest promotion must be wanted by main-space target"
 +grep -q 'TimeoutStartSec=60min' "${promote_unit}" || fail "guest promotion needs a long timeout for Nix builds"
 +grep -q 'nix build' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must build packaged guest configuration"
-+grep -q 'rocknix-guest-main-space-by-compatible' "${PKG_DIR}/scripts/rocknix-guest-promote" \
-+  || fail "guest promotion must build the by-compatible dispatch entry point so per-device profiles are picked from /proc/device-tree/compatible (rocknix-nix-guest)"
-+! grep -qE '\.#nixosConfigurations\.rocknix-guest-main-space\.' "${PKG_DIR}/scripts/rocknix-guest-promote" \
-+  || fail "guest promotion must not target the legacy Thor-aliased rocknix-guest-main-space attribute; use rocknix-guest-main-space-by-compatible"
++grep -q 'korri-rocknix-kiosk-by-compatible' "${PKG_DIR}/scripts/rocknix-guest-promote" \
++  || fail "guest promotion must default to Korri's by-compatible appliance dispatch target"
++grep -q 'ROCKNIX_GUEST_BUILD_TARGET' "${PKG_DIR}/scripts/rocknix-guest-promote" \
++  || fail "guest promotion must allow product target override for executable promotion proof"
++grep -q 'refusing retired nix-on-rocks by-compatible product target' "${PKG_DIR}/scripts/rocknix-guest-promote" \
++  || fail "guest promotion must fail closed for the retired nix-on-rocks by-compatible product target"
++! grep -q '.#nixosConfigurations.rocknix-guest-main-space-by-compatible.config.system.build.toplevel' "${PKG_DIR}/scripts/rocknix-guest-promote" \
++  || fail "guest promotion must not hard-code the retired nix-on-rocks by-compatible product target"
 +grep -q 'nix build --impure' "${PKG_DIR}/scripts/rocknix-guest-promote" \
 +  || fail "guest promotion must pass --impure (by-compatible dispatch reads /proc/device-tree/compatible at eval time)"
 +grep -q 'ROCKNIX_GUEST_SYSTEM_PROFILE' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must honor selected profile override"

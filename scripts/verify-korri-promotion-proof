@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)"
+patch_file="${repo_root}/patches/rocknix/0006-rocknix-guest-substrate.patch"
+
+product_ref="${KORRI_PROMOTION_PRODUCT_REF:-github:simonwjackson/korri/04b755a49695b5af00cf6fc9bb1f92527835c4c4}"
+build_target="${ROCKNIX_GUEST_BUILD_TARGET:-.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel}"
+compatible="${ROCKNIX_GUEST_DEVICE_COMPATIBLE:-ayn,odin2portal}"
+retired_target=".#nixosConfigurations.rocknix-guest-main-space-by-compatible.config.system.build.toplevel"
+
+case "${build_target}" in
+  .#nixosConfigurations.*.config.system.build.toplevel) ;;
+  *) echo "unsupported build target for promotion-proof: ${build_target}" >&2; exit 1 ;;
+esac
+case "${build_target}" in
+  *rocknix-guest-main-space-by-compatible*)
+    echo "promotion-proof refuses retired nix-on-rocks target: ${build_target}" >&2
+    exit 1
+    ;;
+esac
+
+promote_script_section="$({
+  sed -n '/diff --git a\/projects\/ROCKNIX\/packages\/tools\/rocknix-guest-substrate\/scripts\/rocknix-guest-promote /,/diff --git a\/projects\/ROCKNIX\/packages\/tools\/rocknix-guest-substrate\/scripts\/rocknix-guest-root-ensure /p' "${patch_file}" || true
+})"
+
+if printf '%s\n' "${promote_script_section}" | grep -Fq "${retired_target}"; then
+  echo "promotion-proof found retired hard-coded target in rocknix-guest-promote" >&2
+  exit 1
+fi
+
+if ! printf '%s\n' "${promote_script_section}" | grep -Fq "${build_target}"; then
+  echo "promotion-proof did not find Korri build target in rocknix-guest-promote" >&2
+  exit 1
+fi
+
+source_path="$(nix flake metadata --json "${product_ref}" | jq -r '.path')"
+[ -n "${source_path}" ] && [ "${source_path}" != "null" ] || {
+  echo "could not resolve product source path for ${product_ref}" >&2
+  exit 1
+}
+
+tmpdir="$(mktemp -d)"
+cleanup() { rm -rf "${tmpdir}"; }
+trap cleanup EXIT
+
+staged_source="${tmpdir}/rocknix-nix-guest-packaged"
+mkdir -p "${staged_source}"
+cp -R "${source_path}/." "${staged_source}/"
+chmod -R u+w "${staged_source}"
+printf '%s\n' "${product_ref}" > "${staged_source}/.rocknix-guest-revision"
+
+attr="${build_target#.\#}"
+old_attr="${retired_target#.\#}"
+
+env ROCKNIX_GUEST_DEVICE_COMPATIBLE="${compatible}" \
+  nix eval --impure --raw "path:${staged_source}#${attr}.drvPath" >/dev/null
+
+if env ROCKNIX_GUEST_DEVICE_COMPATIBLE="${compatible}" \
+  nix eval --impure --raw "path:${staged_source}#${old_attr}.drvPath" >/dev/null 2>&1; then
+  echo "promotion-proof unexpectedly evaluated retired target ${retired_target}" >&2
+  exit 1
+fi
+
+printf 'promotion-proof passed: %s from %s for %s\n' "${build_target}" "${product_ref}" "${compatible}"

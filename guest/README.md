@@ -79,7 +79,7 @@ The rootfs tarball is imported by ROCKNIX host tooling under the configured Laye
 
 ## Publishing first-boot rootfs seed artifacts
 
-The ROCKNIX host first-boot path consumes a pinned, immutable rootfs seed tarball rather than the guest source tree. The product repo workflow `.github/workflows/build-rootfs-seed.yml` runs from this `guest/` flake; `guest/.github/workflows/build-rootfs-seed.yml` is kept only for the guest tree's standalone structural checks.
+The ROCKNIX host first-boot path consumes a pinned, immutable rootfs seed tarball rather than the guest source tree. During dependency-inversion cutover, Korri's `korri-rocknix-rootfs-*` artifacts are the canonical candidates; this repo's rootfs seed workflow remains the temporary fallback publisher until Korri's Sobo rootfs artifact is verified on native arm64 and published with provenance. The product repo workflow `.github/workflows/build-rootfs-seed.yml` runs from this `guest/` flake; `guest/.github/workflows/build-rootfs-seed.yml` is kept only for the guest tree's standalone structural checks.
 
 - `workflow_dispatch` builds `.#rootfs-thor` or `.#rootfs-odin2portal` and always uploads a short-lived workflow artifact for inspection.
 - When run from a `rootfs-seed-*` tag, or when `publish_release=true` is selected manually, it publishes GitHub Release assets. Oversized seeds are split into `.part-*` assets so each release upload stays below GitHub's single-asset limit.
@@ -96,18 +96,18 @@ SM8550 update tarballs may carry the seed under `target/seed/` and hoist it to `
 
 Prefer release assets over workflow artifacts for host consumption: workflow artifacts expire and are API-oriented, while release URLs are stable enough for the host package fetch/verify step. Do not stage an Odin2Portal seed on Thor/Bandai or a Thor seed on Odin2Portal/sobo; the host manifest verifies the device compatible string before extraction.
 
-## Local Korri development
+## Local Korri development during coexistence
 
-The committed `korri` flake input in `flake.nix` is the source of truth. Do not replace it with a local path for development. The main-space profile imports `korri.nixosModules.korri-frontend`, enables `services.korri`, and selects Korri's `korri-desktop-odin` package variant until Korri publishes a stable device alias.
+The committed `korri` flake input in `flake.nix` is a temporary fallback source of truth for the legacy main-space outputs. Do not replace it with a local path in committed files. The main-space profile imports Korri modules only while the old nix-on-rocks-owned product outputs remain available as fallback. New RockNix appliance composition lives downstream in Korri, which imports `nix-on-rocks` instead.
 
-When iterating against a local Korri checkout, set `KORRI_INPUT` and use a recipe or pass the override to Nix directly:
+When iterating against a local Korri checkout for the legacy fallback target, set `KORRI_INPUT` and use a recipe or pass the override to Nix directly:
 
 ```sh
 KORRI_INPUT=path:../../korri just build rootfs-odin2portal
 nix build .#rootfs-odin2portal --override-input korri path:../../korri
 ```
 
-If `KORRI_INPUT` is unset, recipes use the committed, locked flake input.
+If `KORRI_INPUT` is unset, recipes use the committed, locked flake input. For the new direction, work from Korri and override its `nix-on-rocks` input locally instead of making nix-on-rocks point at a mutable Korri checkout.
 
 ## Runtime boundaries
 

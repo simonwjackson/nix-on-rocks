@@ -1,8 +1,8 @@
 # Korri dependency-direction violation (pre-existing, not introduced by monorepo merge)
 
-**Status:** active migration; tactical Korri pin bump landed before dependency inversion.
+**Status:** active migration; substrate contract and Korri candidate outputs are staged.
 **Surfaced during:** U5 aarch64 build attempt on fuji (2026-05-22).
-**Resolution branch:** `feat/korri-dependency-inversion`.
+**Resolution branches:** nix-on-rocks `feat/korri-dependency-inversion`; Korri `feat/korri-rocknix-inversion`.
 
 ## The rule
 
@@ -119,9 +119,12 @@ does not resolve the architectural dependency-direction violation.
 | 6 | korri | Separately fix the `korri-bun-deps` aarch64 hash drift (regenerate hash on aarch64 host, or restructure Bun vendoring to be platform-neutral) |
 
 Step 6 has landed first in Korri and is consumed here as a tactical unblock.
-The remaining resolution work is the dependency-direction inversion: expose a
-nix-on-rocks substrate contract, move Thor/Sobo kiosk appliance composition to
-Korri, cut over deploy authority, then remove `inputs.korri` from nix-on-rocks.
+The remaining resolution work is the dependency-direction inversion. The
+substrate contract now exists as `nixosModules.rocknix-guest-base`, and Korri
+has candidate Thor/Sobo kiosk appliance outputs on `feat/korri-rocknix-inversion`.
+Deploy authority is not fully cut over until the Korri Sobo system/rootfs builds
+pass native arm64 verification and the promotion proof is tied to that verified
+artifact. Only after that can `inputs.korri` be removed from nix-on-rocks.
 
 ## How monorepo-merge proceeds despite this
 
@@ -163,3 +166,25 @@ Pre-cutover fallback for Sobo deploy of the post-merge state:
 
 After cutover, deploy authority moves to Korri and the nix-on-rocks fallback
 outputs are removed.
+
+## Current cutover candidate
+
+Korri owns the candidate appliance/rootfs outputs:
+
+```bash
+nix build github:simonwjackson/korri/feat/korri-rocknix-inversion#packages.aarch64-linux.korri-rocknix-kiosk-system-odin2portal
+nix build github:simonwjackson/korri/feat/korri-rocknix-inversion#packages.aarch64-linux.korri-rocknix-rootfs-odin2portal
+```
+
+The ROCKNIX host promotion patch now defaults to the Korri by-compatible target
+rather than the retired nix-on-rocks product target:
+
+```bash
+scripts/verify-korri-promotion-proof
+```
+
+That proof evaluates a staged Korri source tree with
+`ROCKNIX_GUEST_DEVICE_COMPATIBLE=ayn,odin2portal`, verifies the Korri target
+exists, and verifies the retired `rocknix-guest-main-space-by-compatible` target
+is not accepted from the Korri source tree. Native arm64 rootfs artifact
+verification is still required before cleanup.

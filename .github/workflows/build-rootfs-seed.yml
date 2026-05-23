@@ -1,4 +1,4 @@
-name: Build rootfs seed
+name: Build legacy rootfs seed fallback
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ concurrency:
 
 jobs:
   build-rootfs-seed:
-    name: Build rootfs seed
+    name: Build legacy rootfs seed fallback
     runs-on: ubuntu-24.04-arm
     env:
       DEVICE: ${{ inputs.device || 'thor' }}
@@ -125,7 +125,9 @@ jobs:
           MANIFEST
           notes_file="dist/release-notes.md"
           {
-            echo "# Nix-on-Rocks guest rootfs seed ${DEVICE} ${{ steps.meta.outputs.short_sha }}"
+            echo "# Nix-on-Rocks guest rootfs seed fallback ${DEVICE} ${{ steps.meta.outputs.short_sha }}"
+            echo
+            echo "> Fallback-only during Korri dependency-inversion cutover. Canonical Thor/Sobo appliance rootfs artifacts move to Korri after native arm64 verification."
             echo
             echo "Source SHA: \`${GITHUB_SHA}\`"
             echo "Device: \`${DEVICE}\`"
@@ -169,7 +171,7 @@ jobs:
         with:
           tag_name: ${{ steps.meta.outputs.release_tag }}
           target_commitish: ${{ github.sha }}
-          name: Nix-on-Rocks guest rootfs seed ${{ steps.meta.outputs.device }} ${{ steps.meta.outputs.short_sha }}
+          name: Nix-on-Rocks fallback rootfs seed ${{ steps.meta.outputs.device }} ${{ steps.meta.outputs.short_sha }}
           body_path: dist/release-notes.md
           files: dist/*
           fail_on_unmatched_files: true

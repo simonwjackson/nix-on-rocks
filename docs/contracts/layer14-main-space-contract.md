@@ -28,25 +28,21 @@ In:
   marker.
 - `rocknix-guest-udev-stage` stages a scrubbed `/run/udev` copy so hidden
   InputPlumber devices do not poison guest libseat/wlroots startup.
-- `rocknix-guest-promote.service` applies the packaged guest revision to the
+- `rocknix-guest-promote.service` applies the packaged product revision to the
   persistent guest rootfs after the old guest boots: it stages
   `/usr/lib/rocknix-guest-substrate/guest` under
-  `/storage/nix-on-rock/staging/guest-exchange`, builds
-  `rocknix-guest-main-space-by-compatible` inside the guest namespace with
-  `--impure`, updates the selected guest system profile, records
-  `/etc/rocknix-guest-revision`, and restarts the guest once so PID 1 boots
-  the promoted generation.
-- The `rocknix-guest-main-space-by-compatible` flake attribute is the
-  host-promoter entry point. It reads `/proc/device-tree/compatible` from
-  the running device (visible inside the guest namespace) and selects the
-  matching profile from the `deviceProfileByCompatible` table in `flake.nix`.
-  Adding a new SM8550 device is a single-PR change in this repo: add
-  `profiles/devices/<device>.nix` and one entry mapping the device's first
-  device-tree `compatible` string to that profile. The host substrate must
-  not maintain a parallel device list. Off-device evaluation must use the
-  explicit `rocknix-guest-main-space-<device>` attributes; the by-compatible
-  attribute throws a clear error pointing at them when
-  `/proc/device-tree/compatible` is absent.
+  `/storage/nix-on-rock/staging/guest-exchange`, builds the configured product
+  target inside the guest namespace with `--impure`, updates the selected guest
+  system profile, records `/etc/rocknix-guest-revision`, and restarts the guest
+  once so PID 1 boots the promoted generation.
+- During dependency-inversion cutover, the default host-promoter entry point is
+  Korri's `korri-rocknix-kiosk-by-compatible` appliance target. It reads the
+  normalized `/proc/device-tree/compatible` value from the running device
+  through Korri's nix-on-rocks substrate input and selects the matching profile
+  from nix-on-rocks' `deviceProfileByCompatible` table. The host substrate must
+  not maintain a parallel device list. Off-device evaluation must use Korri's
+  explicit `korri-rocknix-kiosk-<device>` attributes; the by-compatible
+  attribute throws a clear error when the compatible string is absent.
 - `rocknix-recovery-toggle.service` is the explicit safety net: `/flash/rocknix.no-nspawn`
   or `rocknix.safe=1` routes boot to the legacy ROCKNIX target.
 - Guest NixOS modules own substrate behavior: display/Sway, audio/PipeWire,
@@ -117,13 +113,15 @@ If the markers match, promotion exits without changing the guest. If they differ
 2. Run guest repo static checks from the staged source.
 3. Enter the running guest namespace via the `systemd-nspawn` payload PID.
 4. Wait for guest `NetworkManager.service` so Nix can fetch/substitute.
-5. Build `.#nixosConfigurations.rocknix-guest-main-space-by-compatible.config.system.build.toplevel`.
+5. Build the configured product target, defaulting to `.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel`.
 6. Set `/nix/var/nix/profiles/per-user/root/rocknix-guest-system` to the built toplevel.
 7. Write applied revision and system-path markers under guest `/etc`.
 8. Restart `rocknix-guest.service` once so the new guest generation boots.
 
-This makes ROCKNIX image updates carry guest repo fixes into the persistent guest
-without manual `nixos-rebuild` steps on-device.
+This makes ROCKNIX image updates carry product guest fixes into the persistent
+guest without manual `nixos-rebuild` steps on-device. `ROCKNIX_GUEST_BUILD_TARGET`
+can override the target for proof runs, but the helper refuses the retired
+nix-on-rocks by-compatible product target.
 
 ## Recovery contract
 

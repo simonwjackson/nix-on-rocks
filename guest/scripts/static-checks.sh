@@ -45,7 +45,7 @@ grep -q 'KORRI_INPUT' "$ROOT/justfile" \
   || fail "justfile must preserve the local Korri override workflow"
 grep -q 'KORRI_INPUT' "$ROOT/README.md" \
   || fail "README must document local Korri override workflow"
-grep -q 'korri.nixosModules.korri-frontend' "$ROOT/README.md" \
+grep -q 'Korri module import' "$ROOT/README.md" \
   || fail "README must document Korri module consumption"
 grep -q 'Home then `k`' "$ROOT/README.md" \
   || fail "README must document the Korri launch chord"
@@ -126,6 +126,21 @@ grep -q 'root/etc/ssh/authorized_keys.d/root' "$REPO_ROOT/flake.nix" \
   || fail "rootfs must provide regular authorized_keys target for StrictModes"
 grep -q 'root/usr/bin/nix' "$REPO_ROOT/flake.nix" \
   || fail "rootfs must expose /usr/bin/nix for bridge/smoke contracts"
+
+ROCKNIX_SUBSTRATE_PATCH="$REPO_ROOT/patches/rocknix/0006-rocknix-guest-substrate.patch"
+grep -q 'PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"' "$ROCKNIX_SUBSTRATE_PATCH" \
+  || fail "ROCKNIX substrate patch must package Korri as product authority during cutover"
+grep -q 'PKG_NIX_GUEST_BUILD_TARGET=' "$ROCKNIX_SUBSTRATE_PATCH" \
+  || fail "ROCKNIX guest promotion must make the flake build target configurable"
+grep -q 'korri-rocknix-kiosk-by-compatible' "$ROCKNIX_SUBSTRATE_PATCH" \
+  || fail "ROCKNIX guest promotion must target Korri's by-compatible appliance output"
+promote_section="$(sed -n '/scripts\/rocknix-guest-promote /,/scripts\/rocknix-guest-root-ensure /p' "$ROCKNIX_SUBSTRATE_PATCH")"
+! printf '%s\n' "$promote_section" | grep -q '.#nixosConfigurations.rocknix-guest-main-space-by-compatible.config.system.build.toplevel' \
+  || fail "ROCKNIX guest promotion must not hard-code the retired nix-on-rocks by-compatible product target"
+[ -x "$REPO_ROOT/scripts/verify-korri-promotion-proof" ] \
+  || fail "missing executable Korri promotion proof script"
+grep -q 'promotion-proof passed' "$REPO_ROOT/scripts/verify-korri-promotion-proof" \
+  || fail "Korri promotion proof script must exercise the configured target"
 
 ROOTFS_SEED_WORKFLOW="$ROOT/.github/workflows/build-rootfs-seed.yml"
 grep -q 'nix build ".#${{ steps.meta.outputs.package }}"' "$ROOTFS_SEED_WORKFLOW" \
@@ -588,7 +603,7 @@ grep -q 'SM8550' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document SM8550-only scope (U10)"
 grep -q 'Korri frontend consumption' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document Korri frontend consumption"
-grep -q 'korri.nixosModules.korri-frontend' "${L14_CONTRACT}" \
+grep -q 'Korri-owned flake API' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document the Korri-owned NixOS module import"
 grep -q 'Home then `k`' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document the Korri launch chord"
