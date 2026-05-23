@@ -9,18 +9,29 @@ freedreno + Mesa).
 
 | Stage | State |
 |---|---|
-| Vanilla upstream v2.7.1 derivation | scaffolded |
-| `ffmpeg_drm` vendored from upstream PR #932 (V4L2 Request + KMS atomic) | not yet vendored |
-| `v4l2m2m` (this repo's new platform: hevc_v4l2m2m + EGL DMA-buf import) | not yet implemented |
+| Vanilla upstream v2.7.1 derivation | shipped |
+| `ffmpeg_drm` vendored from upstream PR #932 (V4L2 Request + KMS atomic) | shipped (patches `0001` + `0001a`) |
+| `v4l2m2m` (this repo's new platform: hevc_v4l2m2m + EGL DMA-buf import) | not yet implemented (patch `0002`, U4 of plan 003) |
 | Validated on Sobo via gamescope | not yet |
 
-The patches will land as files in `patches/`, listed in `manifest.nix`.
-Until they do, `nix build .#moonlight-embedded` ships an upstream binary with
-only the SDL software-decode platform.
+The patches live as files in `patches/`, listed in `manifest.nix`. Today
+`nix build .#moonlight-embedded` produces a binary advertising the `sdl`
+(software decode, always available) and `ffmpeg_drm` (PR #932 KMS atomic —
+not useful under gamescope, which already owns DRM master) platforms. The
+`v4l2m2m` SM8550 zero-copy platform ships once patch `0002` lands.
 
 ## Build
 
+This package does not yet have a flake entry in nix-on-rocks; the top-level
+`flake.nix` is introduced by U10 of
+`docs/plans/2026-05-22-001-refactor-monorepo-merge-layered-restructure-plan.md`.
+Until that lands, the build path is:
+
 ```sh
+# Manifest well-formedness check (works today, no flake required):
+nix eval --impure --expr '(import packages/moonlight-embedded/manifest.nix).version'
+
+# Full derivation build (post-flake-collapse):
 nix build .#moonlight-embedded --print-build-logs
 ```
 
@@ -110,8 +121,13 @@ any uncommitted edits first.
 
 ## Background
 
-This patch stack was scoped in a prior session and is documented in detail
-in the parent repo's session handoff. Key technical references:
+This patch stack was scoped in the sibling `nix-sm8550` repository and
+migrated here at the post-refactor target paths ahead of the monorepo merge
+(see `docs/plans/2026-05-22-001-refactor-monorepo-merge-layered-restructure-plan.md`).
+Full design context lives in
+`docs/plans/2026-05-22-002-feat-moonlight-embedded-v4l2m2m-zero-copy-plan.md`;
+research briefs are under `docs/thinking/2026-05-22-moonlight-embedded-*.md`.
+Key technical references:
 
 - Upstream PR #932: <https://github.com/moonlight-stream/moonlight-embedded/pull/932>
 - Upstream `src/video/rk.c` — the existing EGL/GLES rkmpp platform; the

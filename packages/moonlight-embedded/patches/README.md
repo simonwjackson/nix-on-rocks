@@ -17,7 +17,7 @@ later patches assume earlier patches have applied.
 
 0001 and 0001a are in `manifest.patches`; 0002 does not exist yet and is
 tracked as unit **U5** in
-`docs/plans/2026-05-22-001-feat-moonlight-embedded-v4l2m2m-zero-copy-plan.md`.
+`docs/plans/2026-05-22-002-feat-moonlight-embedded-v4l2m2m-zero-copy-plan.md`.
 
 ## Authoring workflow
 
