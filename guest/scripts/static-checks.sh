@@ -76,6 +76,14 @@ grep -A4 'services.korri.client = {' "$REPO_ROOT/flake.nix" | grep -q 'korri.pac
   || fail "main-space guest must use Korri's device desktop package variant"
 grep -q 'services.korri.inputd.enable = true;' "$REPO_ROOT/flake.nix" \
   || fail "main-space guest must enable Korri inputd for native controller signals"
+grep -q 'rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must expose rocknix-guest-base substrate module"
+[ -f "$ROOT/profiles/rocknix-guest-base.nix" ] \
+  || fail "missing rocknix-guest-base substrate profile"
+grep -q './rocknix-guest-base.nix' "$ROOT/profiles/main-space.nix" \
+  || fail "legacy main-space profile must build on rocknix-guest-base"
+! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base must not write or import Korri product surfaces"
 grep -q 'korriClientPath = lib.optionals' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service PATH must include the configured Korri client package"
 grep -q 'rocknix-guest-main-space-thor' "$REPO_ROOT/flake.nix" \
@@ -167,6 +175,7 @@ for f in \
   modules/steam.nix \
   profiles/minimal.nix \
   profiles/ssh.nix \
+  profiles/rocknix-guest-base.nix \
   profiles/main-space.nix \
   profiles/dev-env.nix \
   profiles/devices/thor.nix \
@@ -226,8 +235,8 @@ grep -q 'c /dev/uinput' "$ROOT/modules/input.nix" \
 grep -q '"korri-kiosk.service"' "$ROOT/modules/input.nix" \
   && grep -q '"main-space-sway-kiosk.service"' "$ROOT/modules/input.nix" \
   || fail "guest InputPlumber must order before Korri and fallback sway sessions"
-grep -q '../modules/input.nix' "$ROOT/profiles/main-space.nix" \
-  || fail "main-space profile must import the guest input module"
+grep -q '../modules/input.nix' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base profile must import the guest input module"
 grep -q 'ayn-odin2-ucm' "$REPO_ROOT/flake.nix" \
   || fail "root flake must expose the guest-owned AYN Odin2 UCM package"
 grep -q 'ALSA_CONFIG_UCM2' "$ROOT/modules/audio.nix" \
@@ -306,8 +315,8 @@ grep -q 'tailscale' "$ROOT/modules/network.nix" \
   || fail "network module must include the tailscale CLI package"
 grep -q 'iwd' "$ROOT/modules/network.nix" \
   || fail "network module must include guest iwd for Wi-Fi ownership"
-grep -q 'time.timeZone' "$ROOT/profiles/main-space.nix" \
-  || fail "main-space profile must set time.timeZone"
+grep -q 'time.timeZone' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base profile must set time.timeZone"
 grep -q 'systemd.services.main-space-sway-kiosk' "$ROOT/profiles/main-space.nix" \
   || fail "main-space profile must define the fallback sway kiosk service"
 grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/profiles/main-space.nix" \

@@ -49,9 +49,11 @@ In:
   `/proc/device-tree/compatible` is absent.
 - `rocknix-recovery-toggle.service` is the explicit safety net: `/flash/rocknix.no-nspawn`
   or `rocknix.safe=1` routes boot to the legacy ROCKNIX target.
-- Guest NixOS modules own main-space behavior: display/Sway, audio/PipeWire,
-  WirePlumber, NetworkManager, hardware buttons/lid, Korri frontend consumption,
-  Steam helpers, Cemu package and launchers.
+- Guest NixOS modules own substrate behavior: display/Sway, audio/PipeWire,
+  WirePlumber, NetworkManager, hardware buttons/lid, Steam helpers, Cemu package
+  and launchers. During coexistence, legacy main-space outputs still consume
+  Korri as a temporary fallback. New product/appliance composition imports the
+  substrate contract and owns product service selection downstream.
 
 Out:
 
@@ -149,10 +151,19 @@ legacy Sway/EmulationStation when the guest crashes.
 
 Logs live under `/var/log/rocknix-guest-soak*.log`.
 
-## Korri frontend consumption
+## Substrate contract and Korri frontend consumption
 
-Layer 14 consumes Korri through the Korri-owned flake API instead of carrying
-Korri packaging logic in the ROCKNIX guest repo:
+`nixosModules.rocknix-guest-base` is the product-blind downstream import
+contract. It imports the SM8550 guest modules, device/runtime plumbing, Steam
+runtime support, Moonlight support, and the root session D-Bus service without
+importing Korri modules or setting `services.korri.*` options. Runtime
+service-name references such as `korri-kiosk.service` are allowed where the
+substrate must order shared support services before whichever compositor owner a
+downstream product selects.
+
+During the coexistence window, legacy Layer 14 main-space outputs consume Korri
+through the Korri-owned flake API instead of carrying Korri packaging logic in
+the ROCKNIX guest repo:
 
 - `korri.nixosModules.korri-frontend` is imported into main-space.
 - `services.korri.enable = true` installs the configured package.
@@ -169,7 +180,9 @@ ROCKNIX owns the guest/session runtime environment that Korri needs to start:
 PipeWire/Pulse, display/input/audio/device binds, and Sway launch policy. Korri
 owns the frontend package, Electrobun wrapper, module API, and build-time
 frontend configuration. Do not add a ROCKNIX-owned Korri package or duplicate
-Korri's native bridge URL option here.
+Korri's native bridge URL option here. After deploy authority cuts over, Korri
+becomes the canonical owner of Thor/Sobo kiosk appliance composition and the
+legacy nix-on-rocks Korri-consuming outputs are removed.
 
 ## Cemu compatibility state
 

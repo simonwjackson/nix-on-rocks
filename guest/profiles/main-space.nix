@@ -18,12 +18,11 @@
 # for foot, Home then d for fuzzel, Home then g for games-launcher,
 # workspaces 1-9, focus/move/layout). The audio/Steam/Cemu module composition
 # is unchanged.
-{
-  config,
-  lib,
-  pkgs,
-  korriHasKiosk ? false,
-  ...
+{ config
+, lib
+, pkgs
+, korriHasKiosk ? false
+, ...
 }:
 
 let
@@ -191,60 +190,8 @@ in
   ];
 
   imports = [
-    ../modules/base.nix
-    ../modules/device.nix
-    ../modules/tools.nix
-    ../modules/ssh.nix
-    ../modules/display.nix
-    ../modules/audio.nix
-    ../modules/input.nix
-    ../modules/network.nix
-    ../modules/lid.nix
-    ../modules/steam.nix
-    ../modules/moonlight.nix
+    ./rocknix-guest-base.nix
   ];
-
-  # Layer 14 default hostname: distinguish from the Layer 10b minimal
-  # "rocknix-guest" while allowing device profiles to provide stable
-  # per-device names for SSH, Tailscale, and journals.
-  networking.hostName = lib.mkDefault "rocknix-nix";
-
-  # Tier E2 surfaced tz-data.service 203/EXEC on every switch because
-  # ROCKNIX's tz-data unit ExecStart=/bin/ln -sf /usr/share/zoneinfo/${TIMEZONE}
-  # and the variable was empty. Setting time.timeZone declaratively here
-  # avoids the noise (NixOS owns its own zoneinfo path).
-  time.timeZone = "America/New_York";
-
-  # Stop the rate-limited journal-flush noise that fires when the guest's
-  # /run is tmpfs and journald can't pre-allocate.
-  services.journald.extraConfig = ''
-    Storage=volatile
-    RuntimeMaxUse=64M
-  '';
-
-  # Stable root session bus for the kiosk session and FHS-wrapped generic
-  # Linux apps such as Steam.  sway's wrapper can create a private dbus socket
-  # under /tmp via dbus-run-session, but that breaks FHS private-tmp wrappers:
-  # /run/user/0/bus becomes a symlink into a different /tmp.  Owning the bus at
-  # /run/user/0/bus keeps it visible through the bind-mounted /run namespace.
-  systemd.services.main-space-session-dbus = {
-    description = "Main-space root session D-Bus";
-    wantedBy = [ "multi-user.target" ];
-    before = [
-      "main-space-sway-kiosk.service"
-      "korri-kiosk.service"
-    ];
-    serviceConfig = {
-      Type = "simple";
-      User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
-      ExecStart = "${pkgs.dbus}/bin/dbus-daemon --session --address=unix:path=/run/user/0/bus --nofork --nopidfile";
-      Restart = "on-failure";
-      RestartSec = 3;
-      StandardOutput = "journal";
-      StandardError = "journal";
-    };
-  };
 
   # Layer 14 first-light autostart wiring (Thor validation 2026-05-08).
   #

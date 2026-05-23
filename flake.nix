@@ -10,11 +10,11 @@
   };
 
   outputs =
-    {
-      self,
-      nixpkgs,
-      nixpkgs-sdl2-classic,
-      korri,
+    { self
+    , nixpkgs
+    , nixpkgs-sdl2-classic
+    , korri
+    ,
     }:
     let
       targetSystem = "aarch64-linux";
@@ -226,6 +226,7 @@
       # store path.
       nixosModules = {
         sm8550 = ./guest/modules/device.nix;
+        rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix;
         main-space = ./guest/profiles/main-space.nix;
         odin2portal = ./guest/profiles/devices/odin2portal.nix;
         thor = ./guest/profiles/devices/thor.nix;

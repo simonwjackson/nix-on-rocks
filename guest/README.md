@@ -13,10 +13,11 @@ ROCKNIX remains the base OS, boot/recovery plane, and host-side nspawn importer/
 
 ## Layout
 
-- `flake.nix` exposes aarch64 NixOS guest configurations, rootfs packages, emulator package outputs, and the consumed Korri flake input.
+- `flake.nix` exposes aarch64 NixOS guest configurations, rootfs packages, emulator package outputs, the consumed Korri flake input during coexistence, and the substrate module exported for downstream appliance composition.
 - `rocknix-guest.nix` is the stable default Layer 10b/12 SSH-capable guest import.
 - `modules/` contains reusable NixOS modules for the container baseline, SM8550 device policy, SSH, display, audio, network, tooling, Steam, and lid policy.
-- `profiles/` composes modules into `minimal`, `ssh`, `main-space`, and `dev-env` profiles; `profiles/devices/` holds small SM8550 per-device overrides.
+- `profiles/rocknix-guest-base.nix` is the product-blind SM8550 substrate contract for downstream flakes such as Korri.
+- `profiles/` composes modules into `minimal`, `ssh`, `rocknix-guest-base`, `main-space`, and `dev-env` profiles; `profiles/devices/` holds small SM8550 per-device overrides.
 - `packages/cemu/` contains the direct ROCKNIX-informed Cemu derivation, manifest, patches, and SM8550 default settings.
 - `packages/steam/` contains guest-native Steam ARM64 bootstrap/seed/launch helpers, resources, and source manifest.
 - `launchers/` contains guest/host helper scripts used by the Layer 14 main-space Cemu validation path.
@@ -31,8 +32,9 @@ Configurations:
 nix flake show --all-systems .
 ```
 
-Expected NixOS configurations:
+Expected NixOS configurations and module exports:
 
+- `nixosModules.rocknix-guest-base` — downstream substrate contract; imports SM8550 guest plumbing without configuring Korri product services.
 - `nixosConfigurations.rocknix-guest`
 - `nixosConfigurations.rocknix-guest-main-space` (backward-compatible alias to Thor)
 - `nixosConfigurations.rocknix-guest-main-space-thor`
@@ -116,7 +118,7 @@ The guest artifact must remain:
 - independent from ROCKNIX `/usr`, `/flash`, `/boot`, and host `/etc` mutation;
 - free of broad `/storage/.cache` binds.
 
-Layer 14 main-space intentionally adds Sway, Mesa/Freedreno, PipeWire, NetworkManager, Cemu, Steam helpers, Korri, and launch adapters. The minimal/SSH profile remains the small lifecycle/SSH validation baseline.
+Layer 14 main-space intentionally adds Sway, Mesa/Freedreno, PipeWire, NetworkManager, Cemu, Steam helpers, Korri, and launch adapters. During the coexistence window, those Korri-consuming main-space outputs remain temporary fallback targets. New product/appliance composition should import `nixosModules.rocknix-guest-base` plus an explicit device profile and configure its own product services downstream. The minimal/SSH profile remains the small lifecycle/SSH validation baseline.
 
 ## Package boundary
 
