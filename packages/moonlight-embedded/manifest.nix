@@ -45,6 +45,12 @@
       upstreamPath = "this repo";
       role = "Adds the SM8550-targeted v4l2m2m platform: selects hevc_v4l2m2m / h264_v4l2m2m by name, receives the iris VPU's NV12 output from FFmpeg, and presents it through SDL_UpdateNVTexture + SDL_RenderCopy so SDL owns Wayland sizing, live resize, aspect-fit, and display moves. True DRM PRIME zero-copy is deferred because FFmpeg 8.0's v4l2_m2m wrapper overwrites the requested DRM_PRIME pix_fmt with native NV12 after VIDIOC_G_FMT. Registered alongside ffmpeg_drm so this fork covers both the upstream KMS-overlay experiment (PR #932) and the SM8550 VPU decode path that cohabits with gamescope/Sway.";
     }
+    {
+      name = "0003-add-env-gated-v4l2m2m-pacing-experiments.patch";
+      file = ./patches/0003-add-env-gated-v4l2m2m-pacing-experiments.patch;
+      upstreamPath = "this repo";
+      role = "Adds runtime-only v4l2m2m pacing experiment gates. Defaults remain unchanged; MOONLIGHT_V4L2M2M_PACING=prefer-low-delay disables SDL present vsync for lower-delay measurement, while MOONLIGHT_V4L2M2M_TIGHT_THRESHOLDS=1 drops display frames that have waited longer than MOONLIGHT_V4L2M2M_TIGHT_LATE_US before presentation.";
+    }
   ];
 
   cmakeFlags = [

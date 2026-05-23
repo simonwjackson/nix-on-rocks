@@ -12,13 +12,15 @@ Mesa) and presents the iris VPU's NV12 output through SDL.
 | Vanilla upstream v2.7.1 derivation | shipped |
 | `ffmpeg_drm` vendored from upstream PR #932 (V4L2 Request + KMS atomic) | shipped (patches `0001` + `0001a`) |
 | `v4l2m2m` (this repo's new platform: hevc_v4l2m2m/h264_v4l2m2m + SDL NV12 presentation) | shipped in patch `0002` |
+| Env-gated `v4l2m2m` pacing experiments | shipped in patch `0003` (default behavior unchanged) |
 | Validated on Sobo via Sway/gamescope-adjacent kiosk session | yes — VPU decode, SDL presentation, resize/aspect-fit, 30s A/B benchmark |
 
 The patches live as files in `patches/`, listed in `manifest.nix`. Today
 `nix build .#moonlight-embedded` produces a binary advertising the `sdl`
 (software decode, always available) and `ffmpeg_drm` (PR #932 KMS atomic —
 not useful under gamescope, which already owns DRM master) platforms. The
-`v4l2m2m` SM8550 hardware-decode platform ships in patch `0002`. True
+`v4l2m2m` SM8550 hardware-decode platform ships in patch `0002`; patch
+`0003` adds runtime-only pacing experiment gates for measurement. True
 DRM PRIME zero-copy remains deferred because FFmpeg 8.0's v4l2_m2m wrapper
 emits native NV12 frames on iris even when DRM_PRIME is requested.
 
@@ -65,8 +67,10 @@ any other integration repo).
 
 ```
 patches/
-  0001-vendored-ffmpeg-drm-prime-pr932.patch   # PR #932 verbatim
-  0002-add-v4l2m2m-sdl-nv12-platform.patch          # our delta — SM8550-targeted
+  0001-vendored-ffmpeg-drm-prime-pr932.patch        # PR #932 verbatim
+  0001a-fix-libdrm-cmake-find-and-main-help.patch   # build/help fixup
+  0002-add-v4l2m2m-sdl-nv12-platform.patch          # SM8550 VPU decode + SDL NV12
+  0003-add-env-gated-v4l2m2m-pacing-experiments.patch # measurement-only pacing gates
 ```
 
 **0001** vendors upstream PR #932 (`praxis88/ffmpeg-drm-prime`,
@@ -91,6 +95,15 @@ expensive video decode, then presents the resulting NV12 frames through
 `SDL_UpdateNVTexture()` + `SDL_RenderCopy()`. That keeps SDL responsible
 for Wayland sizing, compositor scale, live resize, aspect-fit, and display
 moves — important for dual-screen devices like AYN Thor.
+
+**0003** adds measurement-only pacing gates while preserving the default
+shipping behavior:
+
+- `MOONLIGHT_V4L2M2M_PACING=prefer-low-delay` disables SDL present vsync
+  so Sobo can measure lower-delay presentation behavior.
+- `MOONLIGHT_V4L2M2M_TIGHT_THRESHOLDS=1` drops a decoded display frame if
+  it has waited longer than `MOONLIGHT_V4L2M2M_TIGHT_LATE_US` before the
+  display thread can present it.
 
 The original zero-copy idea (FFmpeg `AV_PIX_FMT_DRM_PRIME` → EGL dma-buf
 import) is deferred. On FFmpeg 8.0 the v4l2_m2m wrapper advertises

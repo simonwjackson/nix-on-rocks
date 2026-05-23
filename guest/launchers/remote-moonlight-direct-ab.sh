@@ -121,6 +121,21 @@ summarize_csv() {
     }' "$file"
 }
 
+find_swaysock() {
+  if [ -n "${SWAYSOCK:-}" ] && XDG_RUNTIME_DIR=/run/user/0 SWAYSOCK="$SWAYSOCK" timeout 2 swaymsg -t get_version >/dev/null 2>&1; then
+    printf '%s\n' "$SWAYSOCK"
+    return 0
+  fi
+  for sock in /run/user/0/sway-ipc.0.*.sock; do
+    [ -S "$sock" ] || continue
+    if XDG_RUNTIME_DIR=/run/user/0 SWAYSOCK="$sock" timeout 2 swaymsg -t get_version >/dev/null 2>&1; then
+      printf '%s\n' "$sock"
+      return 0
+    fi
+  done
+  return 1
+}
+
 signal_counts() {
   log="$1"
   for pat in \
@@ -187,7 +202,12 @@ exec /nix/store/nja3jimv61blss0mfgjqa68rfiwfxv39-coreutils-9.8/bin/stdbuf -oL -e
 EOF
   chmod +x "$rundir/launcher.sh"
 
-  XDG_RUNTIME_DIR=/run/user/0 SWAYSOCK="${SWAYSOCK:-/run/user/0/sway-ipc.0.263.sock}" setsid swaymsg exec "$rundir/launcher.sh" </dev/null >/dev/null 2>&1 || true
+  swaysock="$(find_swaysock || true)"
+  if [ -z "$swaysock" ]; then
+    echo "NO_RESPONSIVE_SWAYSOCK" > "$rundir/result.txt"
+    return 1
+  fi
+  XDG_RUNTIME_DIR=/run/user/0 SWAYSOCK="$swaysock" setsid swaymsg exec "$rundir/launcher.sh" </dev/null >/dev/null 2>&1 || true
   pid=""
   for _ in $(seq 1 25); do
     pid="$(pgrep -n -x moonlight 2>/dev/null || true)"

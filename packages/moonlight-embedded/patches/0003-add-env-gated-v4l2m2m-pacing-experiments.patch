@@ -1,0 +1,225 @@
+From 87b0c745577a4c85706349abc213cc5eda0ab4ac Mon Sep 17 00:00:00 2001
+From: "Simon W. Jackson" <simon@simonwjackson.io>
+Date: Sat, 23 May 2026 10:09:17 -0600
+Subject: [PATCH] Add env-gated v4l2m2m pacing experiments
+
+---
+ src/video/v4l2m2m.c | 101 +++++++++++++++++++++++++++++++++++++++-----
+ 1 file changed, 90 insertions(+), 11 deletions(-)
+
+diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
+index 64a6394..b7e32fd 100644
+--- a/src/video/v4l2m2m.c
++++ b/src/video/v4l2m2m.c
+@@ -35,6 +35,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++#include <strings.h>
+ #include <stdbool.h>
+ #include <stdint.h>
+ #include <errno.h>
+@@ -44,6 +45,7 @@
+ #include <sys/ioctl.h>
+ #include <sys/mman.h>
+ #include <poll.h>
++#include <time.h>
+ #include <linux/videodev2.h>
+ #include <inttypes.h>
+ 
+@@ -77,6 +79,9 @@ static size_t        nal_size   = 0;
+  * FFmpeg hevc_v4l2m2m -> SDL NV12 renderer pipeline. */
+ static bool direct_v4l2 = false;
+ static bool direct_dmabuf_present = false;
++static bool pacing_prefer_low_delay = false;
++static bool pacing_tight_thresholds = false;
++static int64_t pacing_tight_late_us = 25000;
+ 
+ #define DIRECT_OUT_BUFS 32
+ #define DIRECT_CAP_BUFS 12
+@@ -185,6 +190,7 @@ static pthread_t       disp_thread;
+ static pthread_mutex_t disp_mtx  = PTHREAD_MUTEX_INITIALIZER;
+ static pthread_cond_t  disp_cond = PTHREAD_COND_INITIALIZER;
+ static AVFrame        *disp_pending = NULL;   /* owned by display thread once dequeued */
++static uint64_t        disp_pending_queued_us = 0;
+ static bool            disp_eos     = false;
+ static bool            disp_ready   = false;  /* GL setup completed */
+ static int             disp_setup_rc = 0;     /* propagated to setup() return */
+@@ -195,6 +201,53 @@ static int             disp_setup_rc = 0;     /* propagated to setup() return */
+ #define LOG(fmt, ...) fprintf(stderr, "v4l2m2m: " fmt "\n", ##__VA_ARGS__)
+ 
+ 
++static uint64_t monotonic_us(void) {
++  struct timespec ts;
++  clock_gettime(CLOCK_MONOTONIC, &ts);
++  return (uint64_t) ts.tv_sec * 1000000ULL + (uint64_t) ts.tv_nsec / 1000ULL;
++}
++
++static bool env_enabled(const char *name) {
++  const char *value = getenv(name);
++  return value && *value && strcmp(value, "0") != 0 &&
++         strcasecmp(value, "false") != 0 && strcasecmp(value, "no") != 0;
++}
++
++static int64_t parse_i64_env(const char *name, int64_t fallback,
++                             int64_t min_value, int64_t max_value) {
++  const char *value = getenv(name);
++  if (!value || !*value)
++    return fallback;
++  char *endptr = NULL;
++  long long parsed = strtoll(value, &endptr, 10);
++  if (!endptr || *endptr != '\0' || parsed < min_value || parsed > max_value) {
++    LOG("ignoring invalid %s=%s (valid range %" PRId64 "..%" PRId64 ")",
++        name, value, min_value, max_value);
++    return fallback;
++  }
++  return (int64_t) parsed;
++}
++
++static void parse_pacing_env(void) {
++  const char *mode = getenv("MOONLIGHT_V4L2M2M_PACING");
++  pacing_prefer_low_delay = false;
++  if (mode && *mode) {
++    if (strcmp(mode, "prefer-low-delay") == 0 ||
++        strcmp(mode, "low-delay") == 0) {
++      pacing_prefer_low_delay = true;
++    } else if (strcmp(mode, "balanced") != 0) {
++      LOG("setup: ignoring unknown MOONLIGHT_V4L2M2M_PACING=%s (using balanced)", mode);
++    }
++  }
++  pacing_tight_thresholds = env_enabled("MOONLIGHT_V4L2M2M_TIGHT_THRESHOLDS");
++  pacing_tight_late_us = parse_i64_env("MOONLIGHT_V4L2M2M_TIGHT_LATE_US",
++                                       25000, 1000, 250000);
++  LOG("setup: pacing=%s tight_thresholds=%s tight_late_us=%" PRId64,
++      pacing_prefer_low_delay ? "prefer-low-delay" : "balanced",
++      pacing_tight_thresholds ? "yes" : "no",
++      pacing_tight_late_us);
++}
++
+ /* ------------------------------------------------------------------ */
+ /* Direct V4L2 Plan C experiment                                      */
+ /* ------------------------------------------------------------------ */
+@@ -294,6 +347,7 @@ static int direct_queue_display_frame(int index, size_t bytesused) {
+    * they do not need av_frame_clone(); the AVBufferRef attached above is
+    * enough to requeue the CAPTURE buffer when display frees the frame. */
+   disp_pending = f;
++  disp_pending_queued_us = monotonic_us();
+   pthread_cond_signal(&disp_cond);
+   pthread_mutex_unlock(&disp_mtx);
+   return 0;
+@@ -1469,7 +1523,7 @@ static void *display_loop(void *arg) {
+       pthread_mutex_unlock(&disp_mtx);
+       return NULL;
+     }
+-    SDL_GL_SetSwapInterval(1);
++    SDL_GL_SetSwapInterval(pacing_prefer_low_delay ? 0 : 1);
+     egl_dpy = eglGetCurrentDisplay();
+     SDL_GL_GetDrawableSize(window, &out_w, &out_h);
+     if (out_w <= 0 || out_h <= 0)
+@@ -1488,9 +1542,10 @@ static void *display_loop(void *arg) {
+         SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
+         (void *) egl_dpy);
+   } else {
+-    sdl_renderer = SDL_CreateRenderer(window, -1,
+-                                      SDL_RENDERER_ACCELERATED |
+-                                      SDL_RENDERER_PRESENTVSYNC);
++    Uint32 renderer_flags = SDL_RENDERER_ACCELERATED;
++    if (!pacing_prefer_low_delay)
++      renderer_flags |= SDL_RENDERER_PRESENTVSYNC;
++    sdl_renderer = SDL_CreateRenderer(window, -1, renderer_flags);
+     if (!sdl_renderer) {
+       LOG("SDL_CreateRenderer failed: %s", SDL_GetError());
+       pthread_mutex_lock(&disp_mtx);
+@@ -1505,9 +1560,10 @@ static void *display_loop(void *arg) {
+     SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
+     if (out_w <= 0 || out_h <= 0)
+       SDL_GetWindowSize(window, &out_w, &out_h);
+-    LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s",
++    LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s vsync=%s",
+         out_w, out_h, SDL_GetWindowDisplayIndex(window),
+-        SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown");
++        SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
++        pacing_prefer_low_delay ? "off" : "on");
+   }
+ 
+   pthread_mutex_lock(&disp_mtx);
+@@ -1518,6 +1574,7 @@ static void *display_loop(void *arg) {
+ 
+   for (;;) {
+     AVFrame *frame = NULL;
++    uint64_t queued_us = 0;
+ 
+     pthread_mutex_lock(&disp_mtx);
+     while (!disp_pending && !disp_eos)
+@@ -1526,14 +1583,29 @@ static void *display_loop(void *arg) {
+       if (disp_pending) {
+         av_frame_free(&disp_pending);
+         disp_pending = NULL;
++        disp_pending_queued_us = 0;
+       }
+       pthread_mutex_unlock(&disp_mtx);
+       break;
+     }
+     frame = disp_pending;
++    queued_us = disp_pending_queued_us;
+     disp_pending = NULL;
++    disp_pending_queued_us = 0;
+     pthread_mutex_unlock(&disp_mtx);
+ 
++    if (pacing_tight_thresholds && queued_us) {
++      uint64_t age_us = monotonic_us() - queued_us;
++      if (age_us > (uint64_t) pacing_tight_late_us) {
++        static int tight_drop_count = 0;
++        if (++tight_drop_count <= 5 || tight_drop_count % 120 == 0)
++          LOG("pacing: dropped stale display frame age_us=%" PRIu64 " threshold_us=%" PRId64 " count=%d",
++              age_us, pacing_tight_late_us, tight_drop_count);
++        av_frame_free(&frame);
++        continue;
++      }
++    }
++
+     draw_frame(frame);
+     av_frame_free(&frame);
+   }
+@@ -1549,10 +1621,9 @@ static int v4l2m2m_setup(int videoFormat, int width, int height,
+                          int redrawRate, void *context, int drFlags) {
+   (void) redrawRate; (void) context; (void) drFlags;
+ 
+-  direct_v4l2 = getenv("MOONLIGHT_V4L2M2M_DIRECT") &&
+-                strcmp(getenv("MOONLIGHT_V4L2M2M_DIRECT"), "0") != 0;
+-  direct_dmabuf_present = direct_v4l2 && getenv("MOONLIGHT_V4L2M2M_DMABUF") &&
+-                          strcmp(getenv("MOONLIGHT_V4L2M2M_DMABUF"), "0") != 0;
++  parse_pacing_env();
++  direct_v4l2 = env_enabled("MOONLIGHT_V4L2M2M_DIRECT");
++  direct_dmabuf_present = direct_v4l2 && env_enabled("MOONLIGHT_V4L2M2M_DMABUF");
+   if (direct_dmabuf_present) {
+     LOG("setup: using experimental direct V4L2 dma-buf GL presentation path");
+     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+@@ -1753,6 +1824,8 @@ static int v4l2m2m_submit(PDECODE_UNIT du) {
+   }
+   pkt->data = (uint8_t *) nal_buf;
+   pkt->size = len;
++  pkt->pts = (int64_t) du->presentationTimeUs;
++  pkt->dts = (int64_t) du->presentationTimeUs;
+ 
+   if (avcodec_send_packet(codec_ctx, pkt) < 0)
+     return DR_NEED_IDR;
+@@ -1784,8 +1857,14 @@ static int v4l2m2m_submit(PDECODE_UNIT du) {
+       AVFrame *clone = av_frame_clone(f);
+       if (clone) {
+         pthread_mutex_lock(&disp_mtx);
+-        if (disp_pending) av_frame_free(&disp_pending);  /* drop if display lagging */
++        if (disp_pending) {
++          static int pending_drop_count = 0;
++          if (++pending_drop_count <= 5 || pending_drop_count % 120 == 0)
++            LOG("pacing: replaced pending display frame count=%d", pending_drop_count);
++          av_frame_free(&disp_pending);  /* drop if display lagging */
++        }
+         disp_pending = clone;
++        disp_pending_queued_us = monotonic_us();
+         pthread_cond_signal(&disp_cond);
+         pthread_mutex_unlock(&disp_mtx);
+       }
+-- 
+2.53.0
+
