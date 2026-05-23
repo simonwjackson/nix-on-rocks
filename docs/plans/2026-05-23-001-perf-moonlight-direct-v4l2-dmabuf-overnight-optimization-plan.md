@@ -1,7 +1,7 @@
 ---
 title: 'perf: Drive Moonlight direct V4L2 dma-buf CPU as low as practical overnight'
 type: perf
-status: active
+status: completed
 date: 2026-05-23
 origin: direct user request after Stage 2 color-correct dma-buf proof
 verify_command: "guest/scripts/static-checks.sh"
