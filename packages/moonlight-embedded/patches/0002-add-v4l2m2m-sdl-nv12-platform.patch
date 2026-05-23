@@ -1,17 +1,17 @@
-From 9ec3d92046c1f7d3b8ccbe4bdbd2dda2b3f76bf3 Mon Sep 17 00:00:00 2001
+From 4c1cba0007e5ccfd34790c4493913d03ad3fb888 Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
  presentation
 
 ---
- CMakeLists.txt      |  17 +-
- src/main.c          |   2 +-
- src/platform.c      |  20 +
- src/platform.h      |   2 +-
- src/video/v4l2m2m.c | 935 ++++++++++++++++++++++++++++++++++++++++++++
- src/video/video.h   |   3 +
- 6 files changed, 976 insertions(+), 3 deletions(-)
+ CMakeLists.txt      |   17 +-
+ src/main.c          |    2 +-
+ src/platform.c      |   20 +
+ src/platform.h      |    2 +-
+ src/video/v4l2m2m.c | 1435 +++++++++++++++++++++++++++++++++++++++++++
+ src/video/video.h   |    3 +
+ 6 files changed, 1476 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -143,10 +143,10 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..7264a2c
+index 0000000..2d49395
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,935 @@
+@@ -0,0 +1,1435 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
@@ -190,6 +190,10 @@ index 0000000..7264a2c
 +#include <fcntl.h>
 +#include <unistd.h>
 +#include <pthread.h>
++#include <sys/ioctl.h>
++#include <sys/mman.h>
++#include <poll.h>
++#include <linux/videodev2.h>
 +#include <inttypes.h>
 +
 +#include <libavcodec/avcodec.h>
@@ -215,6 +219,35 @@ index 0000000..7264a2c
 +static AVPacket      *pkt       = NULL;
 +static void          *nal_buf   = NULL;
 +static size_t        nal_size   = 0;
++
++/* Experimental Plan C path: bypass FFmpeg's v4l2_m2m wrapper and own
++ * the stateful V4L2 decoder directly. Enabled only when
++ * MOONLIGHT_V4L2M2M_DIRECT=1 so the accepted shipping path remains the
++ * FFmpeg hevc_v4l2m2m -> SDL NV12 renderer pipeline. */
++static bool direct_v4l2 = false;
++
++#define DIRECT_OUT_BUFS 32
++#define DIRECT_CAP_BUFS 12
++
++typedef struct DirectBuf {
++  void *addr;
++  size_t length;
++  bool queued;
++  int dma_fd;
++} DirectBuf;
++
++static int direct_fd = -1;
++static DirectBuf direct_out[DIRECT_OUT_BUFS];
++static DirectBuf direct_cap[DIRECT_CAP_BUFS];
++static int direct_out_count = 0;
++static int direct_cap_count = 0;
++static bool direct_capture_configured = false;
++static int direct_stream_w = 0;
++static int direct_stream_h = 0;
++static int direct_cap_w = 0;
++static int direct_cap_h = 0;
++static int direct_stride = 0;
++static pthread_mutex_t direct_mtx = PTHREAD_MUTEX_INITIALIZER;
 +
 +static SDL_Window    *window    = NULL;
 +static SDL_GLContext  gl_ctx    = NULL;   /* DRM_PRIME path only (inactive on iris/FFmpeg v4l2m2m) */
@@ -288,6 +321,461 @@ index 0000000..7264a2c
 + * across launch.log surfaces both platforms in chronological order
 + * during an A/B (see guest/launchers/remote-moonlight-runtime-ab.sh). */
 +#define LOG(fmt, ...) fprintf(stderr, "v4l2m2m: " fmt "\n", ##__VA_ARGS__)
++
++
++/* ------------------------------------------------------------------ */
++/* Direct V4L2 Plan C experiment                                      */
++/* ------------------------------------------------------------------ */
++
++static const char *fourcc_str(uint32_t f) {
++  static char s[5];
++  s[0] = f & 0xff;
++  s[1] = (f >> 8) & 0xff;
++  s[2] = (f >> 16) & 0xff;
++  s[3] = (f >> 24) & 0xff;
++  s[4] = 0;
++  return s;
++}
++
++static int v4l2_ioctl(int fd, unsigned long req, void *arg, const char *name) {
++  int rc;
++  do {
++    rc = ioctl(fd, req, arg);
++  } while (rc < 0 && errno == EINTR);
++  if (rc < 0)
++    LOG("direct: %s failed errno=%d (%s)", name, errno, strerror(errno));
++  return rc;
++}
++
++static void direct_requeue_capture_index(int index);
++static int direct_query_mmap_bufs(enum v4l2_buf_type type, DirectBuf *bufs, int count, const char *label);
++
++typedef struct DirectFrameRef {
++  int index;
++} DirectFrameRef;
++
++static void direct_frame_unref(void *opaque, uint8_t *data) {
++  (void) data;
++  DirectFrameRef *ref = (DirectFrameRef *) opaque;
++  if (ref) {
++    direct_requeue_capture_index(ref->index);
++    free(ref);
++  }
++}
++
++static int direct_queue_display_frame(int index, size_t bytesused) {
++  if (index < 0 || index >= direct_cap_count)
++    return -1;
++
++  AVFrame *f = av_frame_alloc();
++  if (!f)
++    return -1;
++
++  uint8_t *base = (uint8_t *) direct_cap[index].addr;
++  int visible_h = direct_stream_h > 0 ? direct_stream_h : direct_cap_h;
++  int visible_w = direct_stream_w > 0 ? direct_stream_w : direct_cap_w;
++  int uv_offset = direct_stride * direct_cap_h;
++
++  DirectFrameRef *ref = calloc(1, sizeof(*ref));
++  if (!ref) {
++    av_frame_free(&f);
++    return -1;
++  }
++  ref->index = index;
++
++  f->format = AV_PIX_FMT_NV12;
++  f->width = visible_w;
++  f->height = visible_h;
++  f->data[0] = base;
++  f->data[1] = base + uv_offset;
++  f->linesize[0] = direct_stride;
++  f->linesize[1] = direct_stride;
++  f->buf[0] = av_buffer_create(base, direct_cap[index].length,
++                               direct_frame_unref, ref, 0);
++  if (!f->buf[0]) {
++    free(ref);
++    av_frame_free(&f);
++    return -1;
++  }
++
++  static bool logged = false;
++  if (!logged) {
++    LOG("direct: first capture frame index=%d visible=%dx%d cap=%dx%d stride=%d bytesused=%zu uv_offset=%d dma_fd=%d",
++        index, visible_w, visible_h, direct_cap_w, direct_cap_h,
++        direct_stride, bytesused, uv_offset, direct_cap[index].dma_fd);
++    logged = true;
++  }
++
++  AVFrame *clone = av_frame_clone(f);
++  av_frame_free(&f);
++  if (!clone)
++    return -1;
++
++  pthread_mutex_lock(&disp_mtx);
++  if (disp_pending) {
++    /* Direct V4L2 capture buffers are requeued by the AVFrame free
++     * callback. Never drop/overwrite a pending frame while the direct
++     * mutex is held; the callback would need the same mutex and can
++     * deadlock the decoder. direct_drain_capture_locked() also limits
++     * itself to one pending display frame at a time. */
++    pthread_mutex_unlock(&disp_mtx);
++    av_frame_free(&clone);
++    return 1;
++  }
++  disp_pending = clone;
++  pthread_cond_signal(&disp_cond);
++  pthread_mutex_unlock(&disp_mtx);
++  return 0;
++}
++
++static void direct_requeue_capture_index(int index) {
++  if (direct_fd < 0 || index < 0 || index >= direct_cap_count)
++    return;
++
++  pthread_mutex_lock(&direct_mtx);
++  if (!direct_cap[index].queued) {
++    struct v4l2_buffer buf;
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++    memset(&buf, 0, sizeof(buf));
++    memset(planes, 0, sizeof(planes));
++    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++    buf.memory = V4L2_MEMORY_MMAP;
++    buf.index = index;
++    buf.length = 1;
++    buf.m.planes = planes;
++    if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF CAPTURE(requeue)") == 0)
++      direct_cap[index].queued = true;
++  }
++  pthread_mutex_unlock(&direct_mtx);
++}
++
++static void direct_drain_output_locked(void) {
++  for (;;) {
++    struct v4l2_buffer buf;
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++    memset(&buf, 0, sizeof(buf));
++    memset(planes, 0, sizeof(planes));
++    buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++    buf.memory = V4L2_MEMORY_MMAP;
++    buf.length = 1;
++    buf.m.planes = planes;
++    if (ioctl(direct_fd, VIDIOC_DQBUF, &buf) < 0) {
++      if (errno != EAGAIN)
++        LOG("direct: DQBUF OUTPUT errno=%d (%s)", errno, strerror(errno));
++      break;
++    }
++    if ((int)buf.index < direct_out_count)
++      direct_out[buf.index].queued = false;
++  }
++}
++
++
++static int direct_configure_capture_locked(void) {
++  if (direct_capture_configured)
++    return 0;
++
++  struct v4l2_format capfmt;
++  memset(&capfmt, 0, sizeof(capfmt));
++  capfmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++  if (v4l2_ioctl(direct_fd, VIDIOC_G_FMT, &capfmt, "G_FMT CAPTURE(after headers)") < 0)
++    return -1;
++
++  /* Prefer linear NV12 for the first direct-V4L2 milestone. The driver
++   * may report a coded/aligned height (Sobo: 736 for 720p). */
++  if (capfmt.fmt.pix_mp.pixelformat != V4L2_PIX_FMT_NV12) {
++    capfmt.fmt.pix_mp.pixelformat = V4L2_PIX_FMT_NV12;
++    capfmt.fmt.pix_mp.width = direct_stream_w;
++    capfmt.fmt.pix_mp.height = direct_stream_h;
++    capfmt.fmt.pix_mp.field = V4L2_FIELD_NONE;
++    if (v4l2_ioctl(direct_fd, VIDIOC_S_FMT, &capfmt, "S_FMT CAPTURE(after headers)") < 0)
++      return -1;
++  }
++
++  direct_cap_w = capfmt.fmt.pix_mp.width;
++  direct_cap_h = capfmt.fmt.pix_mp.height;
++  direct_stride = capfmt.fmt.pix_mp.plane_fmt[0].bytesperline;
++  LOG("direct: configure capture=%s %dx%d stride=%d size=%u",
++      fourcc_str(capfmt.fmt.pix_mp.pixelformat), direct_cap_w, direct_cap_h,
++      direct_stride, capfmt.fmt.pix_mp.plane_fmt[0].sizeimage);
++
++  struct v4l2_requestbuffers req;
++  memset(&req, 0, sizeof(req));
++  req.count = DIRECT_CAP_BUFS;
++  req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++  req.memory = V4L2_MEMORY_MMAP;
++  if (v4l2_ioctl(direct_fd, VIDIOC_REQBUFS, &req, "REQBUFS CAPTURE") < 0)
++    return -1;
++  direct_cap_count = req.count < DIRECT_CAP_BUFS ? req.count : DIRECT_CAP_BUFS;
++  if (direct_query_mmap_bufs(V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE, direct_cap,
++                             direct_cap_count, "QUERYBUF CAPTURE") < 0)
++    return -1;
++
++  for (int i = 0; i < direct_cap_count; i++) {
++    struct v4l2_exportbuffer exp;
++    memset(&exp, 0, sizeof(exp));
++    exp.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++    exp.index = i;
++    exp.plane = 0;
++    exp.flags = O_CLOEXEC;
++    if (ioctl(direct_fd, VIDIOC_EXPBUF, &exp) == 0)
++      direct_cap[i].dma_fd = exp.fd;
++
++    struct v4l2_buffer buf;
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++    memset(&buf, 0, sizeof(buf));
++    memset(planes, 0, sizeof(planes));
++    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++    buf.memory = V4L2_MEMORY_MMAP;
++    buf.index = i;
++    buf.length = 1;
++    buf.m.planes = planes;
++    if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF CAPTURE") < 0)
++      return -1;
++    direct_cap[i].queued = true;
++  }
++
++  enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++  if (v4l2_ioctl(direct_fd, VIDIOC_STREAMON, &type, "STREAMON CAPTURE") < 0)
++    return -1;
++
++  direct_capture_configured = true;
++  LOG("direct: capture configured cap_bufs=%d exported_dma_bufs=%s",
++      direct_cap_count, direct_cap[0].dma_fd >= 0 ? "yes" : "no");
++  return 0;
++}
++
++static void direct_drain_events_locked(void) {
++  for (;;) {
++    struct v4l2_event ev;
++    memset(&ev, 0, sizeof(ev));
++    if (ioctl(direct_fd, VIDIOC_DQEVENT, &ev) < 0) {
++      if (errno != EAGAIN && errno != ENOENT)
++        LOG("direct: DQEVENT errno=%d (%s)", errno, strerror(errno));
++      break;
++    }
++    LOG("direct: event type=0x%x changes=0x%x", ev.type, ev.u.src_change.changes);
++    if (ev.type == V4L2_EVENT_SOURCE_CHANGE)
++      direct_configure_capture_locked();
++  }
++}
++
++static void direct_drain_capture_locked(void) {
++  if (!direct_capture_configured)
++    return;
++  pthread_mutex_lock(&disp_mtx);
++  bool display_busy = disp_pending != NULL;
++  pthread_mutex_unlock(&disp_mtx);
++  if (display_busy)
++    return;
++  for (;;) {
++    struct v4l2_buffer buf;
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++    memset(&buf, 0, sizeof(buf));
++    memset(planes, 0, sizeof(planes));
++    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++    buf.memory = V4L2_MEMORY_MMAP;
++    buf.length = 1;
++    buf.m.planes = planes;
++    if (ioctl(direct_fd, VIDIOC_DQBUF, &buf) < 0) {
++      if (errno != EAGAIN)
++        LOG("direct: DQBUF CAPTURE errno=%d (%s)", errno, strerror(errno));
++      break;
++    }
++    if ((int)buf.index < direct_cap_count) {
++      direct_cap[buf.index].queued = false;
++      size_t bytesused = planes[0].bytesused;
++      /* Do not requeue here. The AVFrame buffer free callback requeues
++       * when SDL presentation has released the frame. */
++      direct_queue_display_frame(buf.index, bytesused);
++      break;
++    }
++  }
++}
++
++static int direct_query_mmap_bufs(enum v4l2_buf_type type, DirectBuf *bufs,
++                                  int count, const char *label) {
++  for (int i = 0; i < count; i++) {
++    struct v4l2_buffer buf;
++    struct v4l2_plane planes[VIDEO_MAX_PLANES];
++    memset(&buf, 0, sizeof(buf));
++    memset(planes, 0, sizeof(planes));
++    buf.type = type;
++    buf.memory = V4L2_MEMORY_MMAP;
++    buf.index = i;
++    buf.length = 1;
++    buf.m.planes = planes;
++    if (v4l2_ioctl(direct_fd, VIDIOC_QUERYBUF, &buf, label) < 0)
++      return -1;
++    bufs[i].length = planes[0].length;
++    bufs[i].addr = mmap(NULL, bufs[i].length, PROT_READ | PROT_WRITE,
++                        MAP_SHARED, direct_fd, planes[0].m.mem_offset);
++    if (bufs[i].addr == MAP_FAILED) {
++      LOG("direct: mmap %s[%d] failed errno=%d (%s)", label, i, errno, strerror(errno));
++      bufs[i].addr = NULL;
++      return -1;
++    }
++    bufs[i].queued = false;
++    bufs[i].dma_fd = -1;
++  }
++  return 0;
++}
++
++static int direct_v4l2_setup(int videoFormat, int width, int height) {
++  uint32_t coded_fmt = (videoFormat & VIDEO_FORMAT_MASK_H265) ?
++    V4L2_PIX_FMT_HEVC : V4L2_PIX_FMT_H264;
++
++  direct_stream_w = width;
++  direct_stream_h = height;
++  direct_fd = open("/dev/video0", O_RDWR | O_NONBLOCK | O_CLOEXEC);
++  if (direct_fd < 0) {
++    LOG("direct: open /dev/video0 failed errno=%d (%s)", errno, strerror(errno));
++    return -1;
++  }
++
++  struct v4l2_capability cap;
++  memset(&cap, 0, sizeof(cap));
++  if (v4l2_ioctl(direct_fd, VIDIOC_QUERYCAP, &cap, "QUERYCAP") == 0)
++    LOG("direct: driver=%s card=%s caps=0x%08x dev_caps=0x%08x",
++        cap.driver, cap.card, cap.capabilities, cap.device_caps);
++
++  struct v4l2_format out;
++  memset(&out, 0, sizeof(out));
++  out.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++  out.fmt.pix_mp.width = width;
++  out.fmt.pix_mp.height = height;
++  out.fmt.pix_mp.pixelformat = coded_fmt;
++  out.fmt.pix_mp.field = V4L2_FIELD_NONE;
++  if (v4l2_ioctl(direct_fd, VIDIOC_S_FMT, &out, "S_FMT OUTPUT") < 0)
++    return -1;
++
++  LOG("direct: output=%s %ux%u (capture deferred until source-change)",
++      fourcc_str(out.fmt.pix_mp.pixelformat), out.fmt.pix_mp.width,
++      out.fmt.pix_mp.height);
++
++  struct v4l2_requestbuffers req;
++  memset(&req, 0, sizeof(req));
++  req.count = DIRECT_OUT_BUFS;
++  req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++  req.memory = V4L2_MEMORY_MMAP;
++  if (v4l2_ioctl(direct_fd, VIDIOC_REQBUFS, &req, "REQBUFS OUTPUT") < 0)
++    return -1;
++  direct_out_count = req.count < DIRECT_OUT_BUFS ? req.count : DIRECT_OUT_BUFS;
++  if (direct_query_mmap_bufs(V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE, direct_out,
++                             direct_out_count, "QUERYBUF OUTPUT") < 0)
++    return -1;
++
++  struct v4l2_event_subscription sub;
++  memset(&sub, 0, sizeof(sub));
++  sub.type = V4L2_EVENT_SOURCE_CHANGE;
++  if (v4l2_ioctl(direct_fd, VIDIOC_SUBSCRIBE_EVENT, &sub,
++                 "SUBSCRIBE SOURCE_CHANGE") < 0)
++    LOG("direct: SOURCE_CHANGE subscription unavailable; will poll G_FMT");
++  memset(&sub, 0, sizeof(sub));
++  sub.type = V4L2_EVENT_EOS;
++  ioctl(direct_fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
++
++  enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++  if (v4l2_ioctl(direct_fd, VIDIOC_STREAMON, &type, "STREAMON OUTPUT") < 0)
++    return -1;
++
++  LOG("direct: setup complete out_bufs=%d capture=deferred", direct_out_count);
++  return 0;
++}
++
++static void direct_v4l2_cleanup(void) {
++  if (direct_fd >= 0) {
++    enum v4l2_buf_type type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++    ioctl(direct_fd, VIDIOC_STREAMOFF, &type);
++    type = V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE;
++    ioctl(direct_fd, VIDIOC_STREAMOFF, &type);
++  }
++  for (int i = 0; i < direct_out_count; i++) {
++    if (direct_out[i].addr) munmap(direct_out[i].addr, direct_out[i].length);
++    direct_out[i].addr = NULL;
++  }
++  for (int i = 0; i < direct_cap_count; i++) {
++    if (direct_cap[i].dma_fd >= 0) close(direct_cap[i].dma_fd);
++    if (direct_cap[i].addr) munmap(direct_cap[i].addr, direct_cap[i].length);
++    direct_cap[i].addr = NULL;
++    direct_cap[i].dma_fd = -1;
++  }
++  if (direct_fd >= 0) close(direct_fd);
++  direct_fd = -1;
++  direct_out_count = direct_cap_count = 0;
++  direct_capture_configured = false;
++}
++
++static int direct_v4l2_submit(PDECODE_UNIT du) {
++  ensure_buf_size(&nal_buf, &nal_size, du->fullLength + AV_INPUT_BUFFER_PADDING_SIZE);
++  int len = 0;
++  for (PLENTRY e = du->bufferList; e; e = e->next) {
++    memcpy((uint8_t *) nal_buf + len, e->data, e->length);
++    len += e->length;
++  }
++
++  pthread_mutex_lock(&direct_mtx);
++  direct_drain_output_locked();
++  direct_drain_events_locked();
++  direct_drain_capture_locked();
++
++  int out_index = -1;
++  for (int i = 0; i < direct_out_count; i++) {
++    if (!direct_out[i].queued) { out_index = i; break; }
++  }
++  if (out_index < 0) {
++    /* Give the stateful decoder a tiny chance to return compressed-input
++     * buffers. This is still a submit-thread-driven prototype; a shipping
++     * direct-V4L2 implementation should use a dedicated poll/dequeue thread
++     * for OUTPUT/CAPTURE rather than relying on decode-unit submissions to
++     * service both queues. */
++    struct pollfd pfd = { .fd = direct_fd, .events = POLLIN | POLLOUT | POLLPRI };
++    poll(&pfd, 1, 2);
++    direct_drain_output_locked();
++    direct_drain_events_locked();
++    direct_drain_capture_locked();
++    for (int i = 0; i < direct_out_count; i++) {
++      if (!direct_out[i].queued) { out_index = i; break; }
++    }
++  }
++  if (out_index < 0) {
++    static int no_free_count = 0;
++    if (++no_free_count <= 5 || no_free_count % 120 == 0)
++      LOG("direct: no free OUTPUT buffer (count=%d)", no_free_count);
++    pthread_mutex_unlock(&direct_mtx);
++    return DR_OK;
++  }
++  if ((size_t) len > direct_out[out_index].length) {
++    pthread_mutex_unlock(&direct_mtx);
++    LOG("direct: decode unit too large len=%d out_len=%zu", len, direct_out[out_index].length);
++    return DR_NEED_IDR;
++  }
++
++  memcpy(direct_out[out_index].addr, nal_buf, len);
++  struct v4l2_buffer buf;
++  struct v4l2_plane planes[VIDEO_MAX_PLANES];
++  memset(&buf, 0, sizeof(buf));
++  memset(planes, 0, sizeof(planes));
++  buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE;
++  buf.memory = V4L2_MEMORY_MMAP;
++  buf.index = out_index;
++  buf.length = 1;
++  buf.m.planes = planes;
++  planes[0].bytesused = len;
++  planes[0].length = direct_out[out_index].length;
++  if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF OUTPUT") < 0) {
++    pthread_mutex_unlock(&direct_mtx);
++    return DR_NEED_IDR;
++  }
++  direct_out[out_index].queued = true;
++
++  struct pollfd pfd = { .fd = direct_fd, .events = POLLIN | POLLOUT | POLLPRI };
++  poll(&pfd, 1, 0);
++  direct_drain_output_locked();
++  direct_drain_events_locked();
++  direct_drain_capture_locked();
++  pthread_mutex_unlock(&direct_mtx);
++  return DR_OK;
++}
 +
 +/* ------------------------------------------------------------------ */
 +/* FFmpeg integration                                                 */
@@ -857,6 +1345,13 @@ index 0000000..7264a2c
 +                         int redrawRate, void *context, int drFlags) {
 +  (void) redrawRate; (void) context; (void) drFlags;
 +
++  direct_v4l2 = getenv("MOONLIGHT_V4L2M2M_DIRECT") &&
++                strcmp(getenv("MOONLIGHT_V4L2M2M_DIRECT"), "0") != 0;
++  if (direct_v4l2) {
++    LOG("setup: using experimental direct V4L2 decoder path");
++    if (direct_v4l2_setup(videoFormat, width, height) != 0)
++      return -1;
++  } else {
 +  codec = (AVCodec *) find_v4l2m2m_decoder(videoFormat);
 +  if (!codec)
 +    return -1;
@@ -911,6 +1406,7 @@ index 0000000..7264a2c
 +  if (!pkt) {
 +    avcodec_free_context(&codec_ctx);
 +    return -1;
++  }
 +  }
 +
 +  /* SDL2 GL window. The stream size and the compositor-visible window
@@ -985,7 +1481,7 @@ index 0000000..7264a2c
 +    return -1;
 +  }
 +
-+  LOG("setup: decoder=%s %dx%d", codec->name, width, height);
++  LOG("setup: decoder=%s %dx%d", direct_v4l2 ? "direct_v4l2" : codec->name, width, height);
 +  return 0;
 +}
 +
@@ -1013,12 +1509,16 @@ index 0000000..7264a2c
 +  if (window)  { SDL_DestroyWindow(window); window = NULL; }
 +  SDL_QuitSubSystem(SDL_INIT_VIDEO);
 +
++  if (direct_v4l2) direct_v4l2_cleanup();
 +  if (pkt)        av_packet_free(&pkt);
 +  if (codec_ctx)  avcodec_free_context(&codec_ctx);
 +  if (nal_buf)    { free(nal_buf); nal_buf = NULL; nal_size = 0; }
 +}
 +
 +static int v4l2m2m_submit(PDECODE_UNIT du) {
++  if (direct_v4l2)
++    return direct_v4l2_submit(du);
++
 +  /* Coalesce the linked-list of bufferList entries into a single
 +   * contiguous packet, plus the AV_INPUT_BUFFER_PADDING_SIZE FFmpeg
 +   * requires after the payload. Same shape PR #932's ffmpeg_drm uses. */

@@ -13,7 +13,7 @@ later patches assume earlier patches have applied.
 |---|---|---|---|
 | 0001 | `0001-vendored-ffmpeg-drm-prime-pr932.patch` | [moonlight-embedded PR #932](https://github.com/moonlight-stream/moonlight-embedded/pull/932) (`praxis88/moonlight-embedded@4ecbed5`) | Adds the `ffmpeg_drm` platform: FFmpeg `AV_PIX_FMT_DRM_PRIME` consumer + KMS atomic display. Provides the CMake / `src/platform.[ch]` / `src/video/video.h` registration plumbing that patch 0002 builds on. Vendored verbatim. |
 | 0001a | `0001a-fix-libdrm-cmake-find-and-main-help.patch` | This repo | Fixes two defects in PR #932 that prevented it from actually working: the CMake build-gate references `DRM_LIBRARY` / `DRM_INCLUDE_DIR` but never runs a probe to set them (gate silently false), and `src/main.c`'s `-platform` usage banner never gained the new platform name. Adds `pkg_check_modules(DRM libdrm)` and updates the help string. Kept as a separate patch so 0001 remains exact-byte-equal to PR #932. |
-| 0002 | `0002-add-v4l2m2m-sdl-nv12-platform.patch` | This repo | Adds the `v4l2m2m` platform: selects `hevc_v4l2m2m` / `h264_v4l2m2m` decoders by name, receives the iris VPU's NV12 output from FFmpeg, and presents it through an SDL NV12 texture/renderer. This keeps hardware decode while letting SDL own Wayland sizing, live resize, aspect-fit, and display moves. True DRM PRIME zero-copy is deferred because FFmpeg 8.0's v4l2_m2m wrapper overwrites the requested DRM_PRIME pix_fmt with native NV12 after `VIDIOC_G_FMT`. |
+| 0002 | `0002-add-v4l2m2m-sdl-nv12-platform.patch` | This repo | Adds the `v4l2m2m` platform: selects `hevc_v4l2m2m` / `h264_v4l2m2m` decoders by name, receives the iris VPU's NV12 output from FFmpeg, and presents it through an SDL NV12 texture/renderer. This keeps hardware decode while letting SDL own Wayland sizing, live resize, aspect-fit, and display moves. True DRM PRIME zero-copy is deferred because FFmpeg 8.0's v4l2_m2m wrapper overwrites the requested DRM_PRIME pix_fmt with native NV12 after `VIDIOC_G_FMT`. Also carries an experimental `MOONLIGHT_V4L2M2M_DIRECT=1` Plan C Stage 1 path that owns `/dev/video0` directly, exports CAPTURE dma-bufs, and still presents through SDL NV12; this is research scaffolding, not the default shipping path. |
 
 All three patches are in `manifest.patches`. 0002 was authored on Fuji in
 a scratch tree (compile-clean against FFmpeg 8.0 + libdrm 2.4.131 +
@@ -21,6 +21,8 @@ EGL 1.5 + GLES 3.2 + SDL2 2.32.64 on aarch64). Sobo hardware iteration
 (V4L2 negotiation, FFmpeg DRM_PRIME limitation, SDL presentation, frame-pacing stability) is
 tracked as units **U4 G1–G5a** in
 `docs/plans/2026-05-22-003-feat-moonlight-embedded-sobo-zero-copy-shipping-plan.md`.
+Direct-V4L2 Stage 1 validation is recorded in
+`docs/acceptance/moonlight-embedded-direct-v4l2-stage1-sobo-2026-05-23.md`.
 
 ## Authoring workflow
 
