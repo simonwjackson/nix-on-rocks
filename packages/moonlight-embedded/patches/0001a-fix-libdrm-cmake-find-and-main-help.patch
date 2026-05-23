@@ -1,0 +1,58 @@
+From 08bd91808945cf1f7e72050c1b38c600715cf7dc Mon Sep 17 00:00:00 2001
+From: "Simon W. Jackson" <simon@simonwjackson.io>
+Date: Fri, 22 May 2026 18:10:18 -0600
+Subject: [PATCH] Add libdrm pkg-config probe and advertise ffmpeg_drm in CLI
+ help
+
+PR #932 introduces the ENABLE_FFMPEG_DRM CMake option and a build-gate
+that checks DRM_LIBRARY, but never runs a probe to populate it. The
+gate is therefore silently false and the new platform never compiles in.
+
+Add a standard pkg_check_modules(DRM libdrm) probe inside the existing
+ENABLE_FFMPEG block and alias the plural pkg-config variables to the
+singular names PR #932 expects.
+
+Also extend src/main.c's -platform usage string to advertise ffmpeg_drm
+alongside the existing platforms, since PR #932 only wires the platform
+into platform_check / platform_get_video and forgets the usage banner.
+---
+ CMakeLists.txt | 9 +++++++++
+ src/main.c     | 2 +-
+ 2 files changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9bda2e1..ecbf3e9 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -43,6 +43,15 @@ if (ENABLE_FFMPEG)
+   pkg_check_modules(EGL egl)
+   pkg_check_modules(GLES glesv2)
+ 
++  # libdrm probe: PR #932 introduces ENABLE_FFMPEG_DRM but never sets the
++  # DRM_LIBRARY / DRM_INCLUDE_DIR variables its conditional needs.
++  # Run the standard pkg-config probe here and alias to the singular names.
++  pkg_check_modules(DRM libdrm)
++  if (DRM_FOUND)
++    set(DRM_LIBRARY ${DRM_LIBRARIES})
++    set(DRM_INCLUDE_DIR ${DRM_INCLUDE_DIRS})
++  endif()
++
+   if (ENABLE_X11)
+     pkg_check_modules(XLIB x11)
+     pkg_check_modules(LIBVA_X11 libva-x11)
+diff --git a/src/main.c b/src/main.c
+index 8e9570d..d4d443b 100644
+--- a/src/main.c
++++ b/src/main.c
+@@ -210,7 +210,7 @@ static void help() {
+   printf("\t-surround <5.1/7.1>\t\tStream 5.1 or 7.1 surround sound\n");
+   printf("\t-keydir <directory>\tLoad encryption keys from directory\n");
+   printf("\t-mapping <file>\t\tUse <file> as gamepad mappings configuration file\n");
+-  printf("\t-platform <system>\tSpecify system used for audio, video and input: pi/imx/aml/rk/x11/x11_vdpau/sdl/fake (default auto)\n");
++  printf("\t-platform <system>\tSpecify system used for audio, video and input: pi/imx/aml/rk/ffmpeg_drm/x11/x11_vdpau/sdl/fake (default auto)\n");
+   printf("\t-nounsupported\t\tDon't stream if resolution is not officially supported by the server\n");
+   printf("\t-quitappafter\t\tSend quit app request to remote after quitting session\n");
+   printf("\t-viewonly\t\tDisable all input processing (view-only mode)\n");
+-- 
+2.53.0
+
