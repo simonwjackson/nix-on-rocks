@@ -1,4 +1,4 @@
-From f09c4658f6c7dcd3717ec61fe36f9032eb3d9b3f Mon Sep 17 00:00:00 2001
+From f59bf078a7e3557509c906350de880f576da03c7 Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
@@ -9,9 +9,9 @@ Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
  src/main.c          |    2 +-
  src/platform.c      |   20 +
  src/platform.h      |    2 +-
- src/video/v4l2m2m.c | 1750 +++++++++++++++++++++++++++++++++++++++++++
+ src/video/v4l2m2m.c | 1786 +++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |    3 +
- 6 files changed, 1791 insertions(+), 3 deletions(-)
+ 6 files changed, 1827 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -143,10 +143,10 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..6d1889e
+index 0000000..5d0bb33
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,1750 @@
+@@ -0,0 +1,1786 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
@@ -259,6 +259,14 @@ index 0000000..6d1889e
 +static int direct_stride = 0;
 +static pthread_mutex_t direct_mtx = PTHREAD_MUTEX_INITIALIZER;
 +static bool direct_dmabuf_import_logged = false;
++static int direct_quad_view_w = 0;
++static int direct_quad_view_h = 0;
++static int direct_quad_dst_x = 0;
++static int direct_quad_dst_y = 0;
++static int direct_quad_dst_w = 0;
++static int direct_quad_dst_h = 0;
++static int direct_quad_import_h = 0;
++static int direct_quad_visible_h = 0;
 +
 +static SDL_Window    *window    = NULL;
 +static SDL_GLContext  gl_ctx    = NULL;   /* DRM_PRIME path only (inactive on iris/FFmpeg v4l2m2m) */
@@ -1396,6 +1404,44 @@ index 0000000..6d1889e
 +  return 0;
 +}
 +
++
++static void direct_update_dmabuf_quad_if_needed(AVFrame *frame, int import_h) {
++  if (direct_quad_view_w == gl_viewport_w &&
++      direct_quad_view_h == gl_viewport_h &&
++      direct_quad_dst_x == sdl_dst_rect.x &&
++      direct_quad_dst_y == sdl_dst_rect.y &&
++      direct_quad_dst_w == sdl_dst_rect.w &&
++      direct_quad_dst_h == sdl_dst_rect.h &&
++      direct_quad_import_h == import_h &&
++      direct_quad_visible_h == frame->height)
++    return;
++
++  float uv_vmax = import_h > 0 ? (float) frame->height / (float) import_h : 1.0f;
++  if (uv_vmax > 1.0f) uv_vmax = 1.0f;
++  float left   = ((float) sdl_dst_rect.x / (float) gl_viewport_w) * 2.0f - 1.0f;
++  float right  = ((float) (sdl_dst_rect.x + sdl_dst_rect.w) / (float) gl_viewport_w) * 2.0f - 1.0f;
++  float top    = 1.0f - ((float) sdl_dst_rect.y / (float) gl_viewport_h) * 2.0f;
++  float bottom = 1.0f - ((float) (sdl_dst_rect.y + sdl_dst_rect.h) / (float) gl_viewport_h) * 2.0f;
++  GLfloat quad[] = {
++    left,  bottom, 0.0f, uv_vmax,
++    right, bottom, 1.0f, uv_vmax,
++    left,  top,    0.0f, 0.0f,
++    right, top,    1.0f, 0.0f,
++  };
++
++  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
++  glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_DYNAMIC_DRAW);
++
++  direct_quad_view_w = gl_viewport_w;
++  direct_quad_view_h = gl_viewport_h;
++  direct_quad_dst_x = sdl_dst_rect.x;
++  direct_quad_dst_y = sdl_dst_rect.y;
++  direct_quad_dst_w = sdl_dst_rect.w;
++  direct_quad_dst_h = sdl_dst_rect.h;
++  direct_quad_import_h = import_h;
++  direct_quad_visible_h = frame->height;
++}
++
 +static void draw_frame_direct_dmabuf(AVFrame *frame) {
 +  if (!gl_ctx || !egl_create_image || !egl_destroy_image || !gl_image_target_texture)
 +    return;
@@ -1426,18 +1472,7 @@ index 0000000..6d1889e
 +
 +  DirectBuf *cache = &direct_cap[ref->index];
 +
-+  float uv_vmax = import_h > 0 ? (float) frame->height / (float) import_h : 1.0f;
-+  if (uv_vmax > 1.0f) uv_vmax = 1.0f;
-+  float left   = ((float) sdl_dst_rect.x / (float) gl_viewport_w) * 2.0f - 1.0f;
-+  float right  = ((float) (sdl_dst_rect.x + sdl_dst_rect.w) / (float) gl_viewport_w) * 2.0f - 1.0f;
-+  float top    = 1.0f - ((float) sdl_dst_rect.y / (float) gl_viewport_h) * 2.0f;
-+  float bottom = 1.0f - ((float) (sdl_dst_rect.y + sdl_dst_rect.h) / (float) gl_viewport_h) * 2.0f;
-+  GLfloat quad[] = {
-+    left,  bottom, 0.0f, uv_vmax,
-+    right, bottom, 1.0f, uv_vmax,
-+    left,  top,    0.0f, 0.0f,
-+    right, top,    1.0f, 0.0f,
-+  };
++  direct_update_dmabuf_quad_if_needed(frame, import_h);
 +
 +  glViewport(0, 0, gl_viewport_w, gl_viewport_h);
 +  glClear(GL_COLOR_BUFFER_BIT);
@@ -1450,7 +1485,6 @@ index 0000000..6d1889e
 +  glUniform1i(gl_uloc_uv_nv12, 1);
 +
 +  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
-+  glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_DYNAMIC_DRAW);
 +  glEnableVertexAttribArray(0);
 +  glEnableVertexAttribArray(1);
 +  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)0);
@@ -1816,6 +1850,8 @@ index 0000000..6d1889e
 +  if (gl_texture_uv)   { glDeleteTextures(1, &gl_texture_uv); gl_texture_uv = 0; }
 +  gl_nv12_inited = false;
 +  gl_viewport_w = gl_viewport_h = gl_video_w = gl_video_h = 0;
++  direct_quad_view_w = direct_quad_view_h = direct_quad_dst_x = direct_quad_dst_y = 0;
++  direct_quad_dst_w = direct_quad_dst_h = direct_quad_import_h = direct_quad_visible_h = 0;
 +  if (gl_vbo)          { glDeleteBuffers(1, &gl_vbo); gl_vbo = 0; }
 +
 +  if (gl_ctx)  { SDL_GL_DeleteContext(gl_ctx); gl_ctx = NULL; }
