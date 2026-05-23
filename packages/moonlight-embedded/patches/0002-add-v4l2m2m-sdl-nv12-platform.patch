@@ -1,4 +1,4 @@
-From 10bf4bee25d1799dc700e197331e018e9c15c43c Mon Sep 17 00:00:00 2001
+From f09c4658f6c7dcd3717ec61fe36f9032eb3d9b3f Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
@@ -9,9 +9,9 @@ Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
  src/main.c          |    2 +-
  src/platform.c      |   20 +
  src/platform.h      |    2 +-
- src/video/v4l2m2m.c | 1740 +++++++++++++++++++++++++++++++++++++++++++
+ src/video/v4l2m2m.c | 1750 +++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |    3 +
- 6 files changed, 1781 insertions(+), 3 deletions(-)
+ 6 files changed, 1791 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -143,10 +143,10 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..a2f8541
+index 0000000..6d1889e
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,1740 @@
+@@ -0,0 +1,1750 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
@@ -728,12 +728,7 @@ index 0000000..a2f8541
 +}
 +
 +static int direct_v4l2_submit(PDECODE_UNIT du) {
-+  ensure_buf_size(&nal_buf, &nal_size, du->fullLength + AV_INPUT_BUFFER_PADDING_SIZE);
-+  int len = 0;
-+  for (PLENTRY e = du->bufferList; e; e = e->next) {
-+    memcpy((uint8_t *) nal_buf + len, e->data, e->length);
-+    len += e->length;
-+  }
++  size_t len = du->fullLength;
 +
 +  pthread_mutex_lock(&direct_mtx);
 +  direct_drain_output_locked();
@@ -766,13 +761,28 @@ index 0000000..a2f8541
 +    pthread_mutex_unlock(&direct_mtx);
 +    return DR_OK;
 +  }
-+  if ((size_t) len > direct_out[out_index].length) {
++  if (len > direct_out[out_index].length) {
 +    pthread_mutex_unlock(&direct_mtx);
-+    LOG("direct: decode unit too large len=%d out_len=%zu", len, direct_out[out_index].length);
++    LOG("direct: decode unit too large len=%zu out_len=%zu", len, direct_out[out_index].length);
 +    return DR_NEED_IDR;
 +  }
 +
-+  memcpy(direct_out[out_index].addr, nal_buf, len);
++  size_t copied = 0;
++  uint8_t *dst = (uint8_t *) direct_out[out_index].addr;
++  for (PLENTRY e = du->bufferList; e; e = e->next) {
++    if (copied + e->length > direct_out[out_index].length) {
++      pthread_mutex_unlock(&direct_mtx);
++      LOG("direct: decode unit fragments exceed output buffer copied=%zu next=%d out_len=%zu",
++          copied, e->length, direct_out[out_index].length);
++      return DR_NEED_IDR;
++    }
++    memcpy(dst + copied, e->data, e->length);
++    copied += e->length;
++  }
++  if (copied != len) {
++    LOG("direct: decode unit length mismatch fullLength=%zu copied=%zu", len, copied);
++    len = copied;
++  }
 +  struct v4l2_buffer buf;
 +  struct v4l2_plane planes[VIDEO_MAX_PLANES];
 +  memset(&buf, 0, sizeof(buf));
@@ -782,7 +792,7 @@ index 0000000..a2f8541
 +  buf.index = out_index;
 +  buf.length = 1;
 +  buf.m.planes = planes;
-+  planes[0].bytesused = len;
++  planes[0].bytesused = (uint32_t) len;
 +  planes[0].length = direct_out[out_index].length;
 +  if (v4l2_ioctl(direct_fd, VIDIOC_QBUF, &buf, "QBUF OUTPUT") < 0) {
 +    pthread_mutex_unlock(&direct_mtx);
