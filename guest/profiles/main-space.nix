@@ -201,6 +201,7 @@ in
     ../modules/network.nix
     ../modules/lid.nix
     ../modules/steam.nix
+    ../modules/moonlight.nix
   ];
 
   # Layer 14 default hostname: distinguish from the Layer 10b minimal

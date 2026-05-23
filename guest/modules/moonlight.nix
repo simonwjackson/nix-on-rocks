@@ -2,26 +2,24 @@
 #
 # Wires the moonlight-embedded CLI client into the SM8550 main-space guest:
 # installs the binary, declares the persistent keydir under /storage, and
-# exposes the launcher script. Stays narrow on purpose — Sunshine pairing,
-# host selection, and portal demote/restore policy live in the launcher and
-# the kiosk session, not here.
+# exposes the package option for profile-level override. Stays narrow on
+# purpose — Sunshine pairing, host selection, and portal demote/restore
+# policy live in the launcher and the kiosk session, not here.
 #
 # ---------------------------------------------------------------------------
-# Refactor staging note (2026-05-22)
+# Wired into main-space (2026-05-23)
 #
-# This module is currently inert: no profile in guest/profiles/ imports it.
-# It is staged at the post-refactor target path called out by
-# docs/plans/2026-05-22-001-refactor-monorepo-merge-layered-restructure-plan.md
-# (U9), so when the monorepo merge collapses guest/flake.nix into a
-# top-level flake the wiring step is just a profile import and a default
-# override on the `package` option below.
+# guest/profiles/main-space.nix imports this module. flake.nix's
+# mainSpaceConfigurationFor sets rocknix.sm8550.moonlight.enable = true
+# and overrides the package with packages.moonlight-embedded from this
+# flake (the SM8550 v4l2m2m + SDL NV12 build defined in
+# packages/moonlight-embedded/manifest.nix + patches/).
 #
-# Today `rocknix.sm8550.moonlight.package` defaults to `pkgs.moonlight-embedded`
-# from nixpkgs — the upstream binary, software-decode-only, no v4l2m2m HW
-# decode. Once the refactor exposes `packages.moonlight-embedded` from the
-# top-level flake (carrying the SM8550 patch stack defined in
-# packages/moonlight-embedded/manifest.nix + patches/), the main-space
-# profile should override the default with that patched derivation.
+# The `enable` option defaults to `false` so the module remains importable
+# from non-main-space profiles (dev-env, minimal) without auto-installing
+# the client. The `package` option defaults to `pkgs.moonlight-embedded`
+# from nixpkgs (upstream, software-decode-only) for the same reason; the
+# main-space profile overrides it explicitly.
 # ---------------------------------------------------------------------------
 { config, lib, pkgs, ... }:
 
@@ -47,10 +45,9 @@ in
       defaultText = lib.literalExpression "pkgs.moonlight-embedded";
       description = ''
         moonlight-embedded derivation to install. Defaults to the upstream
-        nixpkgs build (software decode only). Override with the SM8550
-        zero-copy v4l2m2m derivation from packages/moonlight-embedded/ once
-        the monorepo merge restructure exposes it as a flake package
-        (see docs/plans/2026-05-22-002-feat-moonlight-embedded-v4l2m2m-zero-copy-plan.md).
+        nixpkgs build (software decode only). The main-space profile
+        overrides this with the in-repo SM8550 v4l2m2m + SDL NV12 build
+        from packages/moonlight-embedded/.
       '';
     };
 

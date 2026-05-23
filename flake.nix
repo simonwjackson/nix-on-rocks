@@ -89,6 +89,16 @@
                   (packageSetFor targetSystem).steam
                   (packageSetFor targetSystem).ayn-odin2-ucm
                 ];
+
+                # Wire moonlight-embedded into the main-space profile. The
+                # module installs the binary, stages /storage/.cache/moonlight
+                # for persistent pair keys, and exposes the package option so
+                # the inline package override below picks up the in-repo SM8550
+                # v4l2m2m + SDL NV12 build instead of nixpkgs' upstream.
+                rocknix.sm8550.moonlight = {
+                  enable = true;
+                  package = (packageSetFor targetSystem).moonlight-embedded;
+                };
               }
             )
           ] ++ extraModules;
