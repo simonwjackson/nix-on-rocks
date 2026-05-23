@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: steam-arm64-bootstrap [--dry-run|--apply]
+
+Prepare package-owned Steam ARM64 metadata in caller-provided mutable paths.
+This is not a Steam launcher and does not start Steam, FEX, Gamescope, Sway, or
+system services.
+
+Required environment:
+  STEAM_HOME        Steam client home to prepare
+  STEAM_GAMES_ROOT  Steam library root to create
+  STEAM_DOT         Steam dot-directory for registry metadata
+
+Optional environment:
+  STEAM_BETA        Steam client beta channel to write (default: steamdeck_stable)
+
+Modes:
+  --dry-run         Print intended actions without writing anything (default)
+  --apply           Perform metadata/resource writes
+EOF
+}
+
+mode=dry-run
+case "${1:-}" in
+  ""|--dry-run) mode=dry-run ;;
+  --apply) mode=apply ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+require_env() {
+  local name="$1"
+  local value="${!name:-}"
+  if [ -z "$value" ]; then
+    echo "error: $name must be set explicitly" >&2
+    exit 2
+  fi
+}
+
+for name in STEAM_HOME STEAM_GAMES_ROOT STEAM_DOT; do
+  require_env "$name"
+done
+
+STEAM_BETA="${STEAM_BETA:-steamdeck_stable}"
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+prefix=$(CDPATH='' cd -- "$script_dir/.." && pwd)
+resource_dir="$prefix/share/steam-rocknix-bootstrap/resources"
+
+for resource in compatibilitytool.vdf registry.vdf toolmanifest.vdf; do
+  if [ ! -f "$resource_dir/$resource" ]; then
+    echo "error: missing package resource: $resource_dir/$resource" >&2
+    exit 1
+  fi
+done
+
+say() { printf '%s\n' "$*"; }
+run() {
+  if [ "$mode" = dry-run ]; then
+    printf 'would: %s\n' "$*"
+  else
+    "$@"
+  fi
+}
+
+atomic_copy() {
+  local src="$1" dest="$2" tmp
+  tmp="$dest.tmp.$$"
+  if [ "$mode" = dry-run ]; then
+    printf 'would: install %s -> %s\n' "$src" "$dest"
+  else
+    mkdir -p "$(dirname -- "$dest")"
+    cp "$src" "$tmp"
+    mv -f "$tmp" "$dest"
+  fi
+}
+
+atomic_write() {
+  local dest="$1" tmp
+  tmp="$dest.tmp.$$"
+  if [ "$mode" = dry-run ]; then
+    printf 'would: write %s\n' "$dest"
+    cat
+  else
+    mkdir -p "$(dirname -- "$dest")"
+    cat > "$tmp"
+    mv -f "$tmp" "$dest"
+  fi
+}
+
+say "steam-arm64-bootstrap mode=$mode"
+say "STEAM_HOME=$STEAM_HOME"
+say "STEAM_GAMES_ROOT=$STEAM_GAMES_ROOT"
+say "STEAM_DOT=$STEAM_DOT"
+say "STEAM_BETA=$STEAM_BETA"
+say "runtime-url=https://repo.steampowered.com/steamrt3c/images/latest-public-beta/steam-runtime-steamrt-arm64.tar.xz"
+say "client-manifest-url=https://client-update.fastly.steamstatic.com/steam_client_publicbeta_linuxarm64"
+say "client-cdn-base=https://client-update.steamstatic.com"
+
+run mkdir -p \
+  "$STEAM_HOME/package" \
+  "$STEAM_HOME/compatibilitytools.d" \
+  "$STEAM_HOME/steamapps/common/Proton 11.0 (ARM64)" \
+  "$STEAM_GAMES_ROOT" \
+  "$STEAM_DOT"
+
+printf '%s\n' "$STEAM_BETA" | atomic_write "$STEAM_HOME/package/beta"
+atomic_copy "$resource_dir/compatibilitytool.vdf" "$STEAM_HOME/compatibilitytools.d/compatibilitytool.vdf"
+atomic_copy "$resource_dir/toolmanifest.vdf" "$STEAM_HOME/steamapps/common/Proton 11.0 (ARM64)/toolmanifest.vdf"
+atomic_copy "$resource_dir/registry.vdf" "$STEAM_DOT/registry.vdf"
+
+installed_file="$STEAM_HOME/package/steam_client_steamdeck_stable_linuxarm64.installed"
+manifest_file="$STEAM_HOME/package/steam_client_steamdeck_stable_linuxarm64.manifest"
+client_version=""
+if [ -f "$installed_file" ]; then
+  client_version=$(awk -F'[,;]' 'NR == 1 && $3 ~ /^[0-9]+$/ { print $3; exit }' "$installed_file" 2>/dev/null || true)
+fi
+if [ -n "$client_version" ]; then
+  cat <<EOF | atomic_write "$manifest_file"
+"linuxarm64"
+{
+	"version"		"$client_version"
+}
+EOF
+else
+  say "notice: no ARM64 installed-file version found; client manifest repair skipped"
+fi
+
+say "done"
