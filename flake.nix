@@ -30,17 +30,29 @@
           pkgsSdl2Classic = nixpkgs-sdl2-classic.legacyPackages.${system};
           cemu = pkgs.callPackage ./packages/cemu/package.nix {
             SDL2_classic = pkgsSdl2Classic.SDL2;
+            # SoC-bound defaults injected from devices/sm8550/. Keeps the
+            # cemu package generic; when Retroid (sm8250) work starts the
+            # same package accepts socSettings = ./devices/sm8250/cemu/...;
+            # socName = "SM8250";
+            socSettings = ./devices/sm8550/cemu/settings.xml;
+            socName = "SM8550";
           };
           steam = pkgs.callPackage ./packages/steam/package.nix { };
-          ayn-odin2-ucm = pkgs.callPackage ./packages/audio/ayn-odin2-ucm { };
+          ayn-odin2-ucm = pkgs.callPackage ./devices/sm8550/audio/ayn-odin2-ucm { };
           inputplumber = pkgs.callPackage ./packages/inputplumber { };
+          moonlight-embedded = pkgs.callPackage ./packages/moonlight-embedded/package.nix { };
         in
         {
           default = cemu;
           cemu = cemu;
           steam = steam;
           ayn-odin2-ucm = ayn-odin2-ucm;
+          # Forward-looking alias: when a second SoC lands, sm8250-<codec>-ucm
+          # naturally sits beside this. The unprefixed ayn-odin2-ucm name is
+          # preserved for backward compat with existing consumers.
+          sm8550-ayn-odin2-ucm = ayn-odin2-ucm;
           inputplumber = inputplumber;
+          moonlight-embedded = moonlight-embedded;
           # Compatibility alias for existing ROCKNIX Layer 14 scripts/docs.
           cemu-rocknix-package = cemu;
         };

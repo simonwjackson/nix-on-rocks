@@ -178,12 +178,12 @@ done
 for f in \
   packages/cemu/package.nix \
   packages/cemu/manifest.nix \
-  packages/cemu/settings.SM8550.xml \
+  devices/sm8550/cemu/settings.xml \
   packages/steam/package.nix \
   packages/steam/manifest.nix \
   packages/inputplumber/default.nix \
-  packages/inputplumber/sm8550/devices/02-ayn-controller.yaml \
-  packages/inputplumber/sm8550/capability_maps/ayn_mcu.yaml; do
+  packages/inputplumber/maps/devices/02-ayn-controller.yaml \
+  packages/inputplumber/maps/capability_maps/ayn_mcu.yaml; do
   [ -f "$REPO_ROOT/$f" ] || fail "missing package file: $f"
 done
 
@@ -217,9 +217,9 @@ grep -q 'services.inputplumber' "$ROOT/modules/input.nix" \
   || fail "input module must enable guest-owned InputPlumber"
 grep -q '0.75.2' "$REPO_ROOT/packages/inputplumber/default.nix" \
   || fail "guest InputPlumber package must match the validated ROCKNIX host version"
-grep -q 'name: AYN Layout' "$REPO_ROOT/packages/inputplumber/sm8550/devices/02-ayn-controller.yaml" \
+grep -q 'name: AYN Layout' "$REPO_ROOT/packages/inputplumber/maps/devices/02-ayn-controller.yaml" \
   || fail "guest InputPlumber package must include ROCKNIX SM8550 AYN controller map"
-grep -q 'ayn_mcu' "$REPO_ROOT/packages/inputplumber/sm8550/capability_maps/ayn_mcu.yaml" \
+grep -q 'ayn_mcu' "$REPO_ROOT/packages/inputplumber/maps/capability_maps/ayn_mcu.yaml" \
   || fail "guest InputPlumber package must include ROCKNIX SM8550 AYN capability map"
 grep -q 'c /dev/uinput' "$ROOT/modules/input.nix" \
   || fail "input module must create /dev/uinput for guest-owned virtual devices"
@@ -232,19 +232,19 @@ grep -q 'ayn-odin2-ucm' "$REPO_ROOT/flake.nix" \
   || fail "root flake must expose the guest-owned AYN Odin2 UCM package"
 grep -q 'ALSA_CONFIG_UCM2' "$ROOT/modules/audio.nix" \
   || fail "audio module must route ALSA UCM lookup to the guest-owned UCM package"
-grep -q 'packages/audio/ayn-odin2-ucm' "$ROOT/modules/device.nix" \
+grep -q 'devices/sm8550/audio/ayn-odin2-ucm' "$ROOT/modules/device.nix" \
   || fail "SM8550 device defaults must consume the in-repo AYN Odin2 UCM package"
-grep -q 'Use case configuration for AYN Odin2' "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/AYN-Odin2.conf" \
+grep -q 'Use case configuration for AYN Odin2' "$REPO_ROOT/devices/sm8550/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/AYN-Odin2.conf" \
   || fail "AYN Odin2 UCM package must include the card use-case file"
-grep -q 'PlaybackPCM "hw:${CardId},0"' "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/HiFi.conf" \
+grep -q 'PlaybackPCM "hw:${CardId},0"' "$REPO_ROOT/devices/sm8550/audio/ayn-odin2-ucm/ucm2/AYN/Odin2/HiFi.conf" \
   || fail "AYN Odin2 UCM package must expose the speaker playback PCM"
-[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Odin2.conf" ] \
+[ -L "$REPO_ROOT/devices/sm8550/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Odin2.conf" ] \
   || fail "AYN Odin2 UCM package must include the SM8550 card-name symlink"
-[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/ayn-AYNOdin2-.conf" ] \
+[ -L "$REPO_ROOT/devices/sm8550/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/ayn-AYNOdin2-.conf" ] \
   || fail "AYN Odin2 UCM package must include the EFI-compatible card-name symlink"
-[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Thor.conf" ] \
+[ -L "$REPO_ROOT/devices/sm8550/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYN-Thor.conf" ] \
   || fail "AYN Odin2 UCM package must include Thor long-name card symlink"
-[ -L "$REPO_ROOT/packages/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYNThor.conf" ] \
+[ -L "$REPO_ROOT/devices/sm8550/audio/ayn-odin2-ucm/ucm2/conf.d/sm8550/AYNThor.conf" ] \
   || fail "AYN Odin2 UCM package must include Thor card-id symlink"
 ! grep -q 'module-alsa-sink\|sink_name=thor_hw0\|rocknix-audio-alsa-sink' "$ROOT/modules/audio.nix" "$ROOT/modules/lid.nix" \
   || fail "audio path must not depend on the diagnostic thor_hw0 module-alsa-sink workaround"

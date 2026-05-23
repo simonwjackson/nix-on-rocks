@@ -16,7 +16,8 @@
 , libva
 , libvdpau
 , libxcb
-, opus
+# nixpkgs nixos-25.11 renamed the base 'opus' attr to 'libopus'.
+, libopus
 , SDL2
 , systemdMinimal
 , util-linux
@@ -66,7 +67,7 @@ stdenv.mkDerivation rec {
     libva
     libvdpau
     libxcb
-    opus
+    libopus
     SDL2
     systemdMinimal
     util-linux

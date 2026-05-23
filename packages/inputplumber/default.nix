@@ -12,8 +12,10 @@
 let
   # ROCKNIX host packages InputPlumber v0.75.2. The guest flake's pinned
   # nixpkgs can lag behind, so keep this narrow package until the flake pin
-  # naturally catches up. The SM8550 maps copied below were validated against
-  # v0.75.2 on the host.
+  # naturally catches up. The controller maps copied below (Ayn MCU,
+  # Ayaneo MCU) are per-product/per-MCU, not per-SoC — inputplumber
+  # selects them at runtime via hardware detection. They were validated
+  # against v0.75.2 on the host.
   inputplumber_0_75_2 = rustPlatform.buildRustPackage (finalAttrs: {
     pname = "inputplumber";
     version = "0.75.2";
@@ -61,10 +63,10 @@ symlinkJoin {
     mkdir -p "$out/share"
     cp -a ${inputplumber_0_75_2}/share/inputplumber "$out/share/"
     chmod -R u+w "$out/share/inputplumber"
-    cp -a ${./sm8550}/. "$out/share/inputplumber/"
+    cp -a ${./maps}/. "$out/share/inputplumber/"
   '';
 
   meta = inputplumber_0_75_2.meta // {
-    description = "InputPlumber with ROCKNIX SM8550 controller maps";
+    description = "InputPlumber with ROCKNIX controller maps (Ayn MCU, Ayaneo MCU; per-product, not per-SoC)";
   };
 }
