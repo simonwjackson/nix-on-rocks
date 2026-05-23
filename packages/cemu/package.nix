@@ -32,6 +32,12 @@
 , bluez
 , libpulseaudio
 , alsa-lib
+# SoC-specific Cemu defaults injected by the flake. When set, the
+# postInstall step bundles socSettings at $out/share/Cemu/config/<socName>/
+# and the wrapper manifest records the path. When null, the package builds
+# generically with no SoC defaults baked in.
+, socSettings ? null
+, socName ? null
 }:
 
 let
@@ -176,8 +182,10 @@ exec "\$cemu_wrapper_dir/Cemu" "\$@"
 EOF
     chmod 755 "$out/bin/cemu"
 
-    mkdir -p "$out/share/Cemu/config/SM8550"
-    cp ${./settings.SM8550.xml} "$out/share/Cemu/config/SM8550/settings.xml"
+    ${lib.optionalString (socSettings != null && socName != null) ''
+      mkdir -p "$out/share/Cemu/config/${socName}"
+      cp ${socSettings} "$out/share/Cemu/config/${socName}/settings.xml"
+    ''}
 
     for dataDirName in gameProfiles resources; do
       dataDir=""
@@ -212,10 +220,12 @@ EOF
       echo "error: CafeCn.ttf shared font missing from direct ROCKNIX Cemu output" >&2
       exit 1
     }
-    test -f "$out/share/Cemu/config/SM8550/settings.xml" || {
-      echo "error: SM8550 default settings.xml missing from direct ROCKNIX Cemu output" >&2
-      exit 1
-    }
+    ${lib.optionalString (socSettings != null && socName != null) ''
+      test -f "$out/share/Cemu/config/${socName}/settings.xml" || {
+        echo "error: ${socName} default settings.xml missing from direct ROCKNIX Cemu output" >&2
+        exit 1
+      }
+    ''}
 
     mkdir -p "$out/nix-support/rocknix-cemu-build"
     ${binutils}/bin/readelf -h "$out/bin/Cemu" > "$out/nix-support/rocknix-cemu-build/readelf-header.txt"
@@ -274,7 +284,8 @@ EOF
       printf '%s\n' 'fetch-submodules=true'
       printf '%s\n' 'patches=${lib.concatMapStringsSep " " (patch: patch.name) manifest.patches}'
       printf '%s\n' 'expected-runtime-data=${lib.concatStringsSep " " manifest.runtimeData}'
-      printf '%s\n' 'default-settings=share/Cemu/config/SM8550/settings.xml'
+      ${lib.optionalString (socSettings != null && socName != null)
+        "printf '%s\\n' 'default-settings=share/Cemu/config/${socName}/settings.xml'"}
       printf '%s\n' 'package-entry-point=bin/cemu'
       printf '%s\n' 'real-binary=bin/Cemu'
       printf '%s\n' 'wrapper-vulkan-loader=true'

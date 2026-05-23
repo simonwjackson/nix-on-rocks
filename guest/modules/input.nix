@@ -13,7 +13,7 @@
 }:
 
 let
-  rocknixInputplumber = pkgs.callPackage ../packages/inputplumber { };
+  rocknixInputplumber = pkgs.callPackage ../../packages/inputplumber { };
   hasKorriKiosk = options.services ? korri && options.services.korri ? kiosk;
 in
 {

@@ -30,23 +30,35 @@
           pkgsSdl2Classic = nixpkgs-sdl2-classic.legacyPackages.${system};
           cemu = pkgs.callPackage ./packages/cemu/package.nix {
             SDL2_classic = pkgsSdl2Classic.SDL2;
+            # SoC-bound defaults injected from devices/sm8550/. Keeps the
+            # cemu package generic; when Retroid (sm8250) work starts the
+            # same package accepts socSettings = ./devices/sm8250/cemu/...;
+            # socName = "SM8250";
+            socSettings = ./devices/sm8550/cemu/settings.xml;
+            socName = "SM8550";
           };
           steam = pkgs.callPackage ./packages/steam/package.nix { };
-          ayn-odin2-ucm = pkgs.callPackage ./packages/audio/ayn-odin2-ucm { };
+          ayn-odin2-ucm = pkgs.callPackage ./devices/sm8550/audio/ayn-odin2-ucm { };
           inputplumber = pkgs.callPackage ./packages/inputplumber { };
+          moonlight-embedded = pkgs.callPackage ./packages/moonlight-embedded/package.nix { };
         in
         {
           default = cemu;
           cemu = cemu;
           steam = steam;
           ayn-odin2-ucm = ayn-odin2-ucm;
+          # Forward-looking alias: when a second SoC lands, sm8250-<codec>-ucm
+          # naturally sits beside this. The unprefixed ayn-odin2-ucm name is
+          # preserved for backward compat with existing consumers.
+          sm8550-ayn-odin2-ucm = ayn-odin2-ucm;
           inputplumber = inputplumber;
+          moonlight-embedded = moonlight-embedded;
           # Compatibility alias for existing ROCKNIX Layer 14 scripts/docs.
           cemu-rocknix-package = cemu;
         };
       configuration = nixpkgs.lib.nixosSystem {
         system = targetSystem;
-        modules = [ ./rocknix-guest.nix ];
+        modules = [ ./guest/rocknix-guest.nix ];
       };
       mainSpaceConfigurationFor =
         deviceProfile: extraModules:
@@ -57,7 +69,7 @@
           };
           modules = [
             korri.nixosModules.korri
-            ./profiles/main-space.nix
+            ./guest/profiles/main-space.nix
             deviceProfile
             (
               { ... }:
@@ -90,10 +102,10 @@
             target=explicit-sm8550-proof
           '';
         };
-      mainSpaceThorConfiguration = mainSpaceConfigurationFor ./profiles/devices/thor.nix [ ];
-      mainSpaceOdin2PortalConfiguration = mainSpaceConfigurationFor ./profiles/devices/odin2portal.nix [ ];
-      stage10ProofThorConfiguration = mainSpaceConfigurationFor ./profiles/devices/thor.nix [ stage10ProofModule ];
-      stage10ProofOdin2PortalConfiguration = mainSpaceConfigurationFor ./profiles/devices/odin2portal.nix [ stage10ProofModule ];
+      mainSpaceThorConfiguration = mainSpaceConfigurationFor ./guest/profiles/devices/thor.nix [ ];
+      mainSpaceOdin2PortalConfiguration = mainSpaceConfigurationFor ./guest/profiles/devices/odin2portal.nix [ ];
+      stage10ProofThorConfiguration = mainSpaceConfigurationFor ./guest/profiles/devices/thor.nix [ stage10ProofModule ];
+      stage10ProofOdin2PortalConfiguration = mainSpaceConfigurationFor ./guest/profiles/devices/odin2portal.nix [ stage10ProofModule ];
       # Backward-compatible alias: the production packaged rootfs remains the
       # hardware-validated Thor profile until host packaging selects a
       # device-specific rootfs explicitly.
@@ -105,8 +117,8 @@
       # parallel device list; it asks for rocknix-guest-main-space-by-compatible
       # below and this table picks the right profile from /proc/device-tree.
       deviceProfileByCompatible = {
-        "ayn,thor" = ./profiles/devices/thor.nix;
-        "ayn,odin2portal" = ./profiles/devices/odin2portal.nix;
+        "ayn,thor" = ./guest/profiles/devices/thor.nix;
+        "ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix;
       };
 
       # Impure: reads the target device-compatible string from the host
@@ -142,7 +154,7 @@
         mainSpaceConfigurationFor selectDeviceProfileFromCompatible [ ];
       devEnvConfiguration = nixpkgs.lib.nixosSystem {
         system = targetSystem;
-        modules = [ ./profiles/dev-env.nix ];
+        modules = [ ./guest/profiles/dev-env.nix ];
       };
       # The rootfs artifact is the production main-space guest: Sway,
       # guest-owned audio/input/display, and guest-native packages. The
@@ -203,11 +215,11 @@
       # main-space.nix and the device profiles still resolve relative to this
       # store path.
       nixosModules = {
-        sm8550 = ./modules/device.nix;
-        main-space = ./profiles/main-space.nix;
-        odin2portal = ./profiles/devices/odin2portal.nix;
-        thor = ./profiles/devices/thor.nix;
-        default = ./profiles/main-space.nix;
+        sm8550 = ./guest/modules/device.nix;
+        main-space = ./guest/profiles/main-space.nix;
+        odin2portal = ./guest/profiles/devices/odin2portal.nix;
+        thor = ./guest/profiles/devices/thor.nix;
+        default = ./guest/profiles/main-space.nix;
       };
 
       # Library helpers exposed to external flake consumers. mkGuestRootfs is
@@ -259,7 +271,7 @@
               }
               ''
                 cd ${self}
-                ${pkgs.bash}/bin/bash scripts/static-checks.sh
+                ${pkgs.bash}/bin/bash guest/scripts/static-checks.sh
                 touch $out
               '';
         }

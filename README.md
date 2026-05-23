@@ -28,6 +28,37 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Patch queue: `patches/rocknix/series`
 - Latest accepted Phase 5 CI/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
 
+## Repository layout
+
+After the monorepo merge (2026-05-22), the previously-separate `nix-sm8550`
+package repo is absorbed into this one. See
+[`docs/migration/2026-05-22-monorepo-merge-notes.md`](docs/migration/2026-05-22-monorepo-merge-notes.md)
+for the migration story.
+
+```
+flake.nix              # single top-level flake (was guest/flake.nix)
+packages/              # all reusable derivations (was guest/packages/)
+  cemu/
+  steam/
+  inputplumber/
+  moonlight-embedded/  # absorbed from nix-sm8550
+devices/               # SoC-bound data (new layer; slot for sm8250/Retroid)
+  sm8550/
+    audio/ayn-odin2-ucm/
+    cemu/settings.xml  # injected into packages/cemu via socSettings arg
+guest/                 # NixOS integration (modules, profiles, launchers)
+  modules/
+  profiles/
+  launchers/
+  scripts/static-checks.sh
+patches/rocknix/       # ROCKNIX patch queue (unchanged)
+scripts/               # build/CI helpers (unchanged location)
+```
+
+Dependency direction is one-way: `flake → packages` and `flake → devices`.
+Packages never `import` from `devices/`; SoC-bound data is injected via
+callPackage arguments (e.g., cemu accepts `socSettings` and `socName`).
+
 ## Local quickstart
 
 ```sh
@@ -36,13 +67,15 @@ scripts/apply-rocknix-patches
 scripts/verify-sm8550-contract
 ```
 
-Guest rootfs builds run from the in-repo guest flake:
+Flake builds run from the repo root:
 
 ```sh
-cd guest
-./scripts/static-checks.sh
+guest/scripts/static-checks.sh
 nix build .#rootfs-thor
 nix build .#rootfs-odin2portal
+nix build .#cemu
+nix build .#moonlight-embedded
+nix build .#sm8550-ayn-odin2-ucm
 ```
 
 A full local host build needs Docker and enough disk for a ROCKNIX build:
