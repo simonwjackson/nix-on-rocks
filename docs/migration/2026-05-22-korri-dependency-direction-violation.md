@@ -1,8 +1,8 @@
 # Korri dependency-direction violation (pre-existing, not introduced by monorepo merge)
 
-**Status:** known issue, scoped out of monorepo-merge plan 001.
+**Status:** active migration; tactical Korri pin bump landed before dependency inversion.
 **Surfaced during:** U5 aarch64 build attempt on fuji (2026-05-22).
-**Resolution branch:** `refactor/invert-korri-direction` (not yet opened).
+**Resolution branch:** `feat/korri-dependency-inversion`.
 
 ## The rule
 
@@ -71,16 +71,24 @@ error: hash mismatch in fixed-output derivation
             got:    sha256-Tsg7HM8JYpi2T0vRLUy7cOMP/ubKFe+4AvhIcDFY6O8=
 ```
 
-Korri's `korri-bun-deps` derivation vendors `node_modules` via Bun. Bun
-installs platform-conditional packages (e.g. `@rollup/rollup-linux-arm64-gnu`
+Korri's old `korri-bun-deps` derivation vendored `node_modules` via Bun.
+Bun installed platform-conditional packages (e.g. `@rollup/rollup-linux-arm64-gnu`
 on aarch64 vs `@rollup/rollup-linux-x64-gnu` on x86_64), and the resulting
-`node_modules` tree differs by host platform. The pinned SRI hash matches
+`node_modules` tree differed by host platform. The pinned SRI hash matched
 whichever platform last regenerated it (presumably x86_64), so a fresh
-aarch64 build cannot reproduce it.
+aarch64 build could not reproduce it.
 
-Sobo's currently-running production rootfs predates this drift, or was
-built on a host where the corresponding output was already cached. The
-production rootfs continues to work; only fresh aarch64 builds fail.
+Korri revision `b0f39a0a31b736b8e057a087ee381215b0744e50` resolves the hash
+mismatch by using the bun2nix migration in Korri. Nix-on-rocks is temporarily
+pinned to that pre-inversion Korri revision so the old Sobo target remains a
+fallback while the ownership boundary is inverted. Do not advance this pin to a
+Korri revision that imports nix-on-rocks; that would create a flake cycle during
+the coexistence window.
+
+Sobo's currently-running production rootfs predates this drift, or was built on
+a host where the corresponding output was already cached. The production rootfs
+continues to work. The tactical pin bump restores old-target buildability; it
+does not resolve the architectural dependency-direction violation.
 
 ## Why not fix in monorepo-merge?
 
@@ -110,13 +118,15 @@ production rootfs continues to work; only fresh aarch64 builds fail.
 | 5 | sobo | Switch deploy source from `nix-on-rocks#rocknix-guest-main-space-odin2portal` to `korri#korri-rocknix-rootfs-odin2portal` |
 | 6 | korri | Separately fix the `korri-bun-deps` aarch64 hash drift (regenerate hash on aarch64 host, or restructure Bun vendoring to be platform-neutral) |
 
-Step 6 is independent of the inversion and can land first as a tactical
-unblock for any aarch64 build of korri.
+Step 6 has landed first in Korri and is consumed here as a tactical unblock.
+The remaining resolution work is the dependency-direction inversion: expose a
+nix-on-rocks substrate contract, move Thor/Sobo kiosk appliance composition to
+Korri, cut over deploy authority, then remove `inputs.korri` from nix-on-rocks.
 
 ## How monorepo-merge proceeds despite this
 
-For U5 verification of the monorepo-merge refactor on aarch64, we build
-korri-free targets only:
+Before the tactical pin bump, U5 verification of the monorepo-merge refactor on
+aarch64 built korri-free targets only:
 
 ```bash
 # Packages (no korri needed)
@@ -130,25 +140,26 @@ nix build .#packages.aarch64-linux.sm8550-ayn-odin2-ucm
 nix build .#nixosConfigurations.rocknix-guest.config.system.build.toplevel
 ```
 
-These prove the refactor preserves package and guest-base behavior. The
-korri-composing main-space variants are deferred to the inversion branch.
+These prove the refactor preserves package and guest-base behavior. After the
+tactical pin bump, the korri-composing main-space variants are valid temporary
+fallback targets until the inversion branch removes them.
 
 ## Sobo deploy strategy under this constraint
 
-Three options for Sobo deploy of the post-merge state:
+Pre-cutover fallback for Sobo deploy of the post-merge state:
 
-1. **Don't redeploy Sobo now.** The current production rootfs predates the
-   merge and continues to work; nothing requires redeploying it just
-   because the source layout changed. Wait for the korri inversion to land,
-   then deploy from korri's flake going forward.
+1. **Preferred until cutover:** use the existing nix-on-rocks Sobo target as the
+   temporary fallback:
+   `nix build .#nixosConfigurations.rocknix-guest-main-space-odin2portal.config.system.build.toplevel`
+   or the matching `rootfs-odin2portal` artifact.
 
-2. **Build with explicit korri override.** On a host where Bun has been
-   run for aarch64 and the deps tree captured:
-   `nix build .#nixosConfigurations.rocknix-guest-main-space-odin2portal.config.system.build.toplevel --override-input korri path:/local/korri-with-correct-hash`
+2. **Do not redeploy Sobo only because this fallback was restored.** The current
+   production rootfs continues to work; production redeploy waits for Korri to
+   own and verify `korri-rocknix-rootfs-odin2portal`.
 
-3. **Deploy bare `rocknix-guest`** as a temporary regression (no kiosk,
-   no main-space) just to prove the refactor live on hardware. Not
-   recommended unless the rest of Sobo's functionality needs verifying
-   independently.
+3. **Deploy bare `rocknix-guest`** only as a temporary regression (no kiosk, no
+   main-space) to prove substrate behavior independently. This is not a Sobo
+   kiosk appliance deploy path.
 
-Option 1 is the cleanest and most aligned with the architectural intent.
+After cutover, deploy authority moves to Korri and the nix-on-rocks fallback
+outputs are removed.
