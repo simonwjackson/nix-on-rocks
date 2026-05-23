@@ -1,4 +1,4 @@
-From 85523f0bef41051aabe1637d5d72936de214bb97 Mon Sep 17 00:00:00 2001
+From 10bf4bee25d1799dc700e197331e018e9c15c43c Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
@@ -9,9 +9,9 @@ Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
  src/main.c          |    2 +-
  src/platform.c      |   20 +
  src/platform.h      |    2 +-
- src/video/v4l2m2m.c | 1661 +++++++++++++++++++++++++++++++++++++++++++
+ src/video/v4l2m2m.c | 1740 +++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |    3 +
- 6 files changed, 1702 insertions(+), 3 deletions(-)
+ 6 files changed, 1781 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -143,10 +143,10 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..f5794ad
+index 0000000..a2f8541
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,1661 @@
+@@ -0,0 +1,1740 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
@@ -235,6 +235,15 @@ index 0000000..f5794ad
 +  size_t length;
 +  bool queued;
 +  int dma_fd;
++  EGLImageKHR img_y;
++  EGLImageKHR img_uv;
++  GLuint tex_y;
++  GLuint tex_uv;
++  bool dmabuf_cached;
++  int cache_w;
++  int cache_h;
++  int cache_stride;
++  int cache_uv_offset;
 +} DirectBuf;
 +
 +static int direct_fd = -1;
@@ -619,6 +628,12 @@ index 0000000..f5794ad
 +    }
 +    bufs[i].queued = false;
 +    bufs[i].dma_fd = -1;
++    bufs[i].img_y = EGL_NO_IMAGE_KHR;
++    bufs[i].img_uv = EGL_NO_IMAGE_KHR;
++    bufs[i].tex_y = 0;
++    bufs[i].tex_uv = 0;
++    bufs[i].dmabuf_cached = false;
++    bufs[i].cache_w = bufs[i].cache_h = bufs[i].cache_stride = bufs[i].cache_uv_offset = 0;
 +  }
 +  return 0;
 +}
@@ -701,6 +716,10 @@ index 0000000..f5794ad
 +    if (direct_cap[i].addr) munmap(direct_cap[i].addr, direct_cap[i].length);
 +    direct_cap[i].addr = NULL;
 +    direct_cap[i].dma_fd = -1;
++    direct_cap[i].img_y = EGL_NO_IMAGE_KHR;
++    direct_cap[i].img_uv = EGL_NO_IMAGE_KHR;
++    direct_cap[i].tex_y = direct_cap[i].tex_uv = 0;
++    direct_cap[i].dmabuf_cached = false;
 +  }
 +  if (direct_fd >= 0) close(direct_fd);
 +  direct_fd = -1;
@@ -1278,6 +1297,95 @@ index 0000000..f5794ad
 +  return img;
 +}
 +
++
++static void direct_destroy_dmabuf_cache_index(int index) {
++  if (index < 0 || index >= direct_cap_count)
++    return;
++  DirectBuf *b = &direct_cap[index];
++  if (b->tex_y) { glDeleteTextures(1, &b->tex_y); b->tex_y = 0; }
++  if (b->tex_uv) { glDeleteTextures(1, &b->tex_uv); b->tex_uv = 0; }
++  if (b->img_y != EGL_NO_IMAGE_KHR) { egl_destroy_image(egl_dpy, b->img_y); b->img_y = EGL_NO_IMAGE_KHR; }
++  if (b->img_uv != EGL_NO_IMAGE_KHR) { egl_destroy_image(egl_dpy, b->img_uv); b->img_uv = EGL_NO_IMAGE_KHR; }
++  b->dmabuf_cached = false;
++  b->cache_w = b->cache_h = b->cache_stride = b->cache_uv_offset = 0;
++}
++
++static void direct_destroy_all_dmabuf_caches(void) {
++  if (!direct_dmabuf_present || !egl_destroy_image)
++    return;
++  for (int i = 0; i < direct_cap_count; i++)
++    direct_destroy_dmabuf_cache_index(i);
++}
++
++static int direct_ensure_dmabuf_cache(AVFrame *frame, DirectFrameRef *ref,
++                                      int import_w, int import_h, int uv_offset) {
++  if (!ref || ref->index < 0 || ref->index >= direct_cap_count)
++    return -1;
++  DirectBuf *b = &direct_cap[ref->index];
++  if (b->dmabuf_cached && b->cache_w == import_w && b->cache_h == import_h &&
++      b->cache_stride == direct_stride && b->cache_uv_offset == uv_offset &&
++      b->tex_y && b->tex_uv)
++    return 0;
++
++  direct_destroy_dmabuf_cache_index(ref->index);
++
++  EGLImageKHR img_y = import_direct_plane_dmabuf(frame, ref, DRM_FORMAT_R8,
++                                                 import_w, import_h,
++                                                 0, direct_stride, "Y/R8");
++  EGLImageKHR img_uv = import_direct_plane_dmabuf(frame, ref, DRM_FORMAT_GR88,
++                                                  import_w / 2, import_h / 2,
++                                                  uv_offset, direct_stride,
++                                                  "UV/GR88");
++  if (img_y == EGL_NO_IMAGE_KHR || img_uv == EGL_NO_IMAGE_KHR) {
++    if (img_y != EGL_NO_IMAGE_KHR) egl_destroy_image(egl_dpy, img_y);
++    if (img_uv != EGL_NO_IMAGE_KHR) egl_destroy_image(egl_dpy, img_uv);
++    return -1;
++  }
++
++  GLuint tex_y = 0, tex_uv = 0;
++  glGenTextures(1, &tex_y);
++  glBindTexture(GL_TEXTURE_2D, tex_y);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++  gl_image_target_texture(GL_TEXTURE_2D, img_y);
++
++  glGenTextures(1, &tex_uv);
++  glBindTexture(GL_TEXTURE_2D, tex_uv);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++  gl_image_target_texture(GL_TEXTURE_2D, img_uv);
++
++  GLenum glerr = glGetError();
++  if (glerr != GL_NO_ERROR) {
++    LOG("direct-dmabuf: cache glEGLImageTargetTexture2DOES error=0x%04x index=%d", glerr, ref->index);
++    if (tex_y) glDeleteTextures(1, &tex_y);
++    if (tex_uv) glDeleteTextures(1, &tex_uv);
++    egl_destroy_image(egl_dpy, img_y);
++    egl_destroy_image(egl_dpy, img_uv);
++    return -1;
++  }
++
++  b->img_y = img_y;
++  b->img_uv = img_uv;
++  b->tex_y = tex_y;
++  b->tex_uv = tex_uv;
++  b->dmabuf_cached = true;
++  b->cache_w = import_w;
++  b->cache_h = import_h;
++  b->cache_stride = direct_stride;
++  b->cache_uv_offset = uv_offset;
++
++  static int cache_count = 0;
++  if (++cache_count <= 3 || cache_count == direct_cap_count)
++    LOG("direct-dmabuf: cached plane EGLImages index=%d count=%d import=%dx%d stride=%d uv_offset=%d",
++        ref->index, cache_count, import_w, import_h, direct_stride, uv_offset);
++  return 0;
++}
++
 +static void draw_frame_direct_dmabuf(AVFrame *frame) {
 +  if (!gl_ctx || !egl_create_image || !egl_destroy_image || !gl_image_target_texture)
 +    return;
@@ -1287,26 +1395,18 @@ index 0000000..f5794ad
 +  int import_h = direct_cap_h > 0 ? direct_cap_h : frame->height;
 +  int uv_offset = direct_stride * import_h;
 +
-+  /* Import the NV12 CAPTURE dma-buf as two single-plane EGLImages and do
-+   * YUV->RGB explicitly in the same BT.709 shader as the SDL-upload path.
-+   * Importing the whole NV12 image as GL_TEXTURE_2D rendered on freedreno,
-+   * but color conversion was driver-defined and visibly wrong. */
-+  EGLImageKHR img_y = import_direct_plane_dmabuf(frame, ref, DRM_FORMAT_R8,
-+                                                 import_w, import_h,
-+                                                 0, direct_stride, "Y/R8");
-+  EGLImageKHR img_uv = import_direct_plane_dmabuf(frame, ref, DRM_FORMAT_GR88,
-+                                                  import_w / 2, import_h / 2,
-+                                                  uv_offset, direct_stride,
-+                                                  "UV/GR88");
-+  if (img_y == EGL_NO_IMAGE_KHR || img_uv == EGL_NO_IMAGE_KHR) {
++  /* Import/bind each CAPTURE buffer once. The per-frame hot path then
++   * binds cached GL textures and draws, avoiding eglCreateImageKHR /
++   * eglDestroyImageKHR churn. */
++  if (gl_init_nv12(import_w, import_h) != 0)
++    return;
++  if (direct_ensure_dmabuf_cache(frame, ref, import_w, import_h, uv_offset) != 0) {
 +    direct_dmabuf_import_logged = true;
-+    if (img_y != EGL_NO_IMAGE_KHR) egl_destroy_image(egl_dpy, img_y);
-+    if (img_uv != EGL_NO_IMAGE_KHR) egl_destroy_image(egl_dpy, img_uv);
 +    return;
 +  }
 +
 +  if (!direct_dmabuf_import_logged) {
-+    LOG("direct-dmabuf: first plane EGL import succeeded index=%d fd=%d visible=%dx%d import=%dx%d cap=%dx%d stride=%d uv_offset=%d",
++    LOG("direct-dmabuf: first cached plane EGL import succeeded index=%d fd=%d visible=%dx%d import=%dx%d cap=%dx%d stride=%d uv_offset=%d",
 +        ref ? ref->index : -1,
 +        (ref && ref->index >= 0 && ref->index < direct_cap_count) ? direct_cap[ref->index].dma_fd : -1,
 +        frame->width, frame->height, import_w, import_h, direct_cap_w, direct_cap_h,
@@ -1314,27 +1414,7 @@ index 0000000..f5794ad
 +    direct_dmabuf_import_logged = true;
 +  }
 +
-+  if (gl_init_nv12(import_w, import_h) != 0) {
-+    egl_destroy_image(egl_dpy, img_y);
-+    egl_destroy_image(egl_dpy, img_uv);
-+    return;
-+  }
-+
-+  while (glGetError() != GL_NO_ERROR) { }
-+  glActiveTexture(GL_TEXTURE0);
-+  glBindTexture(GL_TEXTURE_2D, gl_texture_y);
-+  gl_image_target_texture(GL_TEXTURE_2D, img_y);
-+  glActiveTexture(GL_TEXTURE1);
-+  glBindTexture(GL_TEXTURE_2D, gl_texture_uv);
-+  gl_image_target_texture(GL_TEXTURE_2D, img_uv);
-+  GLenum glerr = glGetError();
-+  if (glerr != GL_NO_ERROR) {
-+    static bool logged_target_error = false;
-+    if (!logged_target_error) {
-+      LOG("direct-dmabuf: plane glEGLImageTargetTexture2DOES error=0x%04x", glerr);
-+      logged_target_error = true;
-+    }
-+  }
++  DirectBuf *cache = &direct_cap[ref->index];
 +
 +  float uv_vmax = import_h > 0 ? (float) frame->height / (float) import_h : 1.0f;
 +  if (uv_vmax > 1.0f) uv_vmax = 1.0f;
@@ -1353,10 +1433,10 @@ index 0000000..f5794ad
 +  glClear(GL_COLOR_BUFFER_BIT);
 +  glUseProgram(gl_program_nv12);
 +  glActiveTexture(GL_TEXTURE0);
-+  glBindTexture(GL_TEXTURE_2D, gl_texture_y);
++  glBindTexture(GL_TEXTURE_2D, cache->tex_y);
 +  glUniform1i(gl_uloc_y_nv12, 0);
 +  glActiveTexture(GL_TEXTURE1);
-+  glBindTexture(GL_TEXTURE_2D, gl_texture_uv);
++  glBindTexture(GL_TEXTURE_2D, cache->tex_uv);
 +  glUniform1i(gl_uloc_uv_nv12, 1);
 +
 +  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
@@ -1366,7 +1446,7 @@ index 0000000..f5794ad
 +  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)0);
 +  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)(2 * sizeof(GLfloat)));
 +  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
-+  glerr = glGetError();
++  GLenum glerr = glGetError();
 +  if (glerr != GL_NO_ERROR) {
 +    static bool logged_draw_error = false;
 +    if (!logged_draw_error) {
@@ -1378,8 +1458,6 @@ index 0000000..f5794ad
 +  glDisableVertexAttribArray(1);
 +
 +  SDL_GL_SwapWindow(window);
-+  egl_destroy_image(egl_dpy, img_y);
-+  egl_destroy_image(egl_dpy, img_uv);
 +}
 +/* Forward decls for the dispatching draw_frame(). */
 +static void draw_frame_drm_prime(AVFrame *frame);
@@ -1545,6 +1623,7 @@ index 0000000..f5794ad
 +    draw_frame(frame);
 +    av_frame_free(&frame);
 +  }
++  direct_destroy_all_dmabuf_caches();
 +  return NULL;
 +}
 +
