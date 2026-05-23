@@ -44,6 +44,7 @@ in
     ../modules/base.nix
     ../modules/tools.nix
     ../modules/ssh.nix
+    ../modules/device.nix
     ../modules/display.nix
     ../modules/audio.nix
     ../modules/network.nix

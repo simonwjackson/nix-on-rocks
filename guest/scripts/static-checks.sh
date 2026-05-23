@@ -37,18 +37,14 @@ grep -q 'x86_64-linux' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose x86_64 host build package"
 grep -q 'nixos-25.11' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must pin the nixpkgs release input"
-grep -q 'korri.url = "github:' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must keep Korri as a remote flake input"
-! grep -q 'korri.url = "path:' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must not commit a local Korri path input"
-grep -q 'KORRI_INPUT' "$ROOT/justfile" \
-  || fail "justfile must preserve the local Korri override workflow"
-grep -q 'KORRI_INPUT' "$ROOT/README.md" \
-  || fail "README must document local Korri override workflow"
-grep -q 'Korri module import' "$ROOT/README.md" \
-  || fail "README must document Korri module consumption"
-grep -q 'Home then `k`' "$ROOT/README.md" \
-  || fail "README must document the Korri launch chord"
+! grep -q 'korri.url' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must not keep Korri as an input after dependency inversion"
+! grep -q 'korri.nixosModules\|korri.packages\|services.korri' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must not compose Korri product modules or packages after cleanup"
+! grep -q 'KORRI_INPUT' "$ROOT/justfile" "$ROOT/README.md" \
+  || fail "local Korri override workflow must be removed from nix-on-rocks after cleanup"
+grep -q 'Korri consumes nix-on-rocks' "$ROOT/README.md" \
+  || fail "README must document Korri as downstream consumer"
 ! grep -R 'services\.korri\.nativeBridgeUrl\|nativeBridgeUrl = ' "$REPO_ROOT/flake.nix" "$ROOT/profiles" "$ROOT/modules" "$ROOT/README.md" >/tmp/rocknix-nix-guest-korri-bridge-grep.$$ \
   || { cat /tmp/rocknix-nix-guest-korri-bridge-grep.$$ >&2; rm -f /tmp/rocknix-nix-guest-korri-bridge-grep.$$; fail "ROCKNIX must not own Korri nativeBridgeUrl configuration"; }
 rm -f /tmp/rocknix-nix-guest-korri-bridge-grep.$$
@@ -62,20 +58,10 @@ grep -q 'default = cemu' "$REPO_ROOT/flake.nix" \
   || fail "default package must alias cemu"
 grep -q 'cemu-rocknix-package = cemu' "$REPO_ROOT/flake.nix" \
   || fail "compatibility alias must remain available for current consumers"
-grep -q '(packageSetFor targetSystem).cemu' "$REPO_ROOT/flake.nix" \
-  || fail "main-space guest must install in-repo Cemu package"
-grep -q '(packageSetFor targetSystem).steam' "$REPO_ROOT/flake.nix" \
-  || fail "main-space guest must install in-repo Steam package helpers"
-grep -q 'korri.nixosModules.korri' "$REPO_ROOT/flake.nix" \
-  || fail "main-space guest must import Korri-owned NixOS modules"
-grep -q 'services.korri.client = {' "$REPO_ROOT/flake.nix" \
-  || fail "main-space guest must configure the Korri client module"
-grep -A4 'services.korri.client = {' "$REPO_ROOT/flake.nix" | grep -q 'enable = true;' \
-  || fail "main-space guest must enable Korri through services.korri.client"
-grep -A4 'services.korri.client = {' "$REPO_ROOT/flake.nix" | grep -q 'korri.packages.${targetSystem}.korri-desktop-device' \
-  || fail "main-space guest must use Korri's device desktop package variant"
-grep -q 'services.korri.inputd.enable = true;' "$REPO_ROOT/flake.nix" \
-  || fail "main-space guest must enable Korri inputd for native controller signals"
+grep -q 'cemu = cemu;' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must retain the in-repo Cemu package output"
+grep -q 'steam = steam;' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must retain the in-repo Steam package output"
 grep -q 'rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose rocknix-guest-base substrate module"
 [ -f "$ROOT/profiles/rocknix-guest-base.nix" ] \
@@ -84,20 +70,10 @@ grep -q './rocknix-guest-base.nix' "$ROOT/profiles/main-space.nix" \
   || fail "legacy main-space profile must build on rocknix-guest-base"
 ! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$ROOT/profiles/rocknix-guest-base.nix" \
   || fail "rocknix-guest-base must not write or import Korri product surfaces"
-grep -q 'korriClientPath = lib.optionals' "$ROOT/profiles/main-space.nix" \
-  || fail "sway kiosk service PATH must include the configured Korri client package"
-grep -q 'rocknix-guest-main-space-thor' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must expose a Thor main-space configuration"
-grep -q 'rocknix-guest-main-space-odin2portal' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must expose an Odin 2 Portal main-space configuration"
-grep -q 'rocknix-guest-stage10-proof-thor' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must expose a Thor Stage 10 proof configuration"
-grep -q 'rocknix-guest-stage10-proof-odin2portal' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must expose an Odin 2 Portal Stage 10 proof configuration"
-grep -q 'rocknix-stage10-proof-marker' "$REPO_ROOT/flake.nix" \
-  || fail "Stage 10 proof configurations must include the guest-owned proof marker"
-grep -q 'rocknix-guest-main-space-by-compatible' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must expose rocknix-guest-main-space-by-compatible (host-promoter device-id dispatch entry point)"
+! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$ROOT/profiles/main-space.nix" \
+  || fail "legacy main-space profile must not compose Korri product surfaces after cleanup"
+! grep -q 'rocknix-guest-main-space\|rocknix-guest-stage10-proof\|rocknix-stage10-proof-marker' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must remove Korri-era main-space and stage10 product outputs"
 grep -q 'deviceProfileByCompatible' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must define deviceProfileByCompatible dispatch table for host-side device selection"
 grep -q 'inherit deviceProfileByCompatible selectDeviceProfileFromCompatible' "$REPO_ROOT/flake.nix" \
@@ -108,11 +84,10 @@ grep -q '"ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix' "$REPO_RO
   || fail "deviceProfileByCompatible must register Odin 2 Portal (ayn,odin2portal) -> profiles/devices/odin2portal.nix"
 grep -q '/proc/device-tree/compatible' "$REPO_ROOT/flake.nix" \
   || fail "by-compatible dispatch must read /proc/device-tree/compatible"
-tr -s '[:space:]' ' ' < "$REPO_ROOT/flake.nix" \
-  | grep -q 'mainSpaceByCompatibleConfiguration = mainSpaceConfigurationFor selectDeviceProfileFromCompatible' \
-  || fail "by-compatible NixOS configuration must be built from selectDeviceProfileFromCompatible"
-grep -q '"rootfs-odin2portal"' "$REPO_ROOT/flake.nix" \
-  || fail "guest flake must expose an Odin 2 Portal rootfs package"
+! grep -q 'mainSpaceByCompatibleConfiguration\|mainSpaceConfigurationFor selectDeviceProfileFromCompatible' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must remove the retired by-compatible product NixOS configuration"
+! grep -q '"rootfs-odin2portal"\|"rootfs-thor"\|rootfs = rootfsThor' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must remove product rootfs aliases after Korri cutover"
 grep -q 'output DSI-1 transform 270' "$ROOT/profiles/devices/odin2portal.nix" \
   || fail "Odin 2 Portal profile must keep its upright DSI-1 orientation"
 grep -q 'input type:touch map_to_output DSI-1' "$ROOT/profiles/devices/odin2portal.nix" \
@@ -143,30 +118,16 @@ grep -q 'promotion-proof passed' "$REPO_ROOT/scripts/verify-korri-promotion-proo
   || fail "Korri promotion proof script must exercise the configured target"
 
 ROOTFS_SEED_WORKFLOW="$ROOT/.github/workflows/build-rootfs-seed.yml"
-grep -q 'nix build ".#${{ steps.meta.outputs.package }}"' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must build the selected flake rootfs package"
-grep -q 'rootfs-thor' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must support Thor rootfs seed builds"
-grep -q 'rootfs-odin2portal' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must support Odin 2 Portal rootfs seed builds"
-grep -q 'sha256sum' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must publish SHA256 material for host pinning"
-grep -q 'split -b 1900m' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must split release assets below GitHub's 2GB asset limit"
-grep -q '.manifest.json' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must publish a manifest"
-grep -q 'softprops/action-gh-release' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must publish GitHub Release assets"
-grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_URLS' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow release notes must print host package seed part URLs"
-grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_SHA256' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow release notes must print host package seed SHA"
-grep -q 'runs-on: ubuntu-24.04-arm' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must use a native arm64 runner for rootfs builds"
-grep -q 'actions/upload-artifact' "$ROOTFS_SEED_WORKFLOW" \
-  || fail "rootfs seed workflow must upload inspection artifacts even when not publishing a release"
-grep -q 'Publishing first-boot rootfs seed artifacts' "$ROOT/README.md" \
-  || fail "README must document rootfs seed publishing workflow"
+grep -q 'Retired legacy rootfs seed fallback' "$ROOTFS_SEED_WORKFLOW" \
+  || fail "rootfs seed workflow must be retired after Korri cutover"
+! grep -q 'nix build ".#${{ steps.meta.outputs.package }}"\|rootfs-thor\|rootfs-odin2portal' "$ROOTFS_SEED_WORKFLOW" \
+  || fail "retired rootfs seed workflow must not build removed product rootfs aliases"
+! grep -q 'sha256sum\|split -b 1900m\|softprops/action-gh-release\|actions/upload-artifact' "$ROOTFS_SEED_WORKFLOW" \
+  || fail "retired rootfs seed workflow must not publish nix-on-rocks product rootfs artifacts"
+grep -q 'nix-on-rocks no longer publishes Korri product/appliance rootfs' "$ROOTFS_SEED_WORKFLOW" \
+  || fail "retired rootfs seed workflow must direct operators to Korri artifacts"
+grep -q 'Retired legacy rootfs seed fallback' "$ROOT/README.md" \
+  || fail "README must document retired rootfs seed publishing workflow"
 
 # Guest baseline.
 grep -R -q 'boot.isContainer = true' "$ROOT" \
@@ -347,8 +308,8 @@ grep -q 'CEMU_BIOS_ROOT = "/storage/roms/bios/cemu"' "$ROOT/profiles/main-space.
   || fail "main-space session must own temporary Cemu BIOS compatibility root"
 grep -q 'CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask' "$ROOT/profiles/main-space.nix" \
   || fail "main-space session must consume the SM8550 device Cemu affinity default"
-grep -q 'bindsym k exec korri-desktop-device' "$ROOT/profiles/main-space.nix" \
-  || fail "main-space Home chord must expose Korri launch"
+! grep -q 'korri-desktop-device' "$ROOT/profiles/main-space.nix" \
+  || fail "legacy main-space profile must not bind Korri launch after cleanup"
 grep -q 'default = "0xF8"' "$ROOT/modules/device.nix" \
   || fail "SM8550 device defaults must retain measured Odin2 Cemu affinity default"
 for profile in main-space dev-env; do
@@ -601,14 +562,14 @@ grep -q 'rocknix-guest-revision' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document guest revision markers (U10)"
 grep -q 'SM8550' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document SM8550-only scope (U10)"
-grep -q 'Korri frontend consumption' "${L14_CONTRACT}" \
-  || fail "Layer 14 contract must document Korri frontend consumption"
-grep -q 'Korri-owned flake API' "${L14_CONTRACT}" \
-  || fail "Layer 14 contract must document the Korri-owned NixOS module import"
-grep -q 'Home then `k`' "${L14_CONTRACT}" \
-  || fail "Layer 14 contract must document the Korri launch chord"
-grep -q 'Do not add a ROCKNIX-owned Korri package' "${L14_CONTRACT}" \
+grep -q 'downstream product consumption' "${L14_CONTRACT}" \
+  || fail "Layer 14 contract must document downstream product consumption"
+grep -q 'Korri consumes nix-on-rocks' "${L14_CONTRACT}" \
+  || fail "Layer 14 contract must document Korri as downstream consumer"
+grep -q 'Do not add a ROCKNIX-owned Korri package, Korri flake input' "${L14_CONTRACT}" \
   || fail "Layer 14 contract must document the Korri ownership boundary"
+! grep -q 'korri.nixosModules\|services.korri.package\|Home then `k`' "${L14_CONTRACT}" \
+  || fail "Layer 14 contract must not document removed nix-on-rocks Korri composition"
 else
   printf 'skipping product doc assertions: docs root is outside this flake source\n'
 fi

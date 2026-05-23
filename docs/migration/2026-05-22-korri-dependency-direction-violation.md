@@ -1,6 +1,6 @@
 # Korri dependency-direction violation (pre-existing, not introduced by monorepo merge)
 
-**Status:** active migration; substrate contract and Korri candidate outputs are staged.
+**Status:** inversion implemented on branch; Korri is downstream and nix-on-rocks no longer imports Korri.
 **Surfaced during:** U5 aarch64 build attempt on fuji (2026-05-22).
 **Resolution branches:** nix-on-rocks `feat/korri-dependency-inversion`; Korri `feat/korri-rocknix-inversion`.
 
@@ -13,10 +13,11 @@ patch queue). Korri is downstream composition (kiosk session, frontends,
 input daemon, native packages). The flake dependency graph must reflect
 that: `korri --inputs--> nix-on-rocks`, never the reverse.
 
-## Current violation
+## Original violation
 
-`flake.nix` declares `inputs.korri` and the `mainSpaceConfigurationFor`
-helper composes korri's modules and packages directly:
+Before the inversion cleanup, `flake.nix` declared `inputs.korri` and the
+`mainSpaceConfigurationFor` helper composed korri's modules and packages
+directly:
 
 ```nix
 # flake.nix (line 6)
@@ -119,12 +120,12 @@ does not resolve the architectural dependency-direction violation.
 | 6 | korri | Separately fix the `korri-bun-deps` aarch64 hash drift (regenerate hash on aarch64 host, or restructure Bun vendoring to be platform-neutral) |
 
 Step 6 has landed first in Korri and is consumed here as a tactical unblock.
-The remaining resolution work is the dependency-direction inversion. The
-substrate contract now exists as `nixosModules.rocknix-guest-base`, and Korri
-has candidate Thor/Sobo kiosk appliance outputs on `feat/korri-rocknix-inversion`.
-Deploy authority is not fully cut over until the Korri Sobo system/rootfs builds
-pass native arm64 verification and the promotion proof is tied to that verified
-artifact. Only after that can `inputs.korri` be removed from nix-on-rocks.
+The dependency-direction inversion has now landed on the branch. The substrate
+contract exists as `nixosModules.rocknix-guest-base`, Korri owns Thor/Sobo kiosk
+appliance outputs on `feat/korri-rocknix-inversion`, Fuji/native arm64 verified
+the Sobo system/rootfs outputs, and the executable promotion proof targets the
+Korri by-compatible appliance output. `inputs.korri` and the old nix-on-rocks
+product outputs have been removed.
 
 ## How monorepo-merge proceeds despite this
 
@@ -143,29 +144,20 @@ nix build .#packages.aarch64-linux.sm8550-ayn-odin2-ucm
 nix build .#nixosConfigurations.rocknix-guest.config.system.build.toplevel
 ```
 
-These prove the refactor preserves package and guest-base behavior. After the
-tactical pin bump, the korri-composing main-space variants are valid temporary
-fallback targets until the inversion branch removes them.
+These prove the refactor preserves package and guest-base behavior. After the tactical pin bump, the korri-composing main-space variants were valid
+temporary fallback targets. They have now been removed from nix-on-rocks; Korri
+owns the appliance/rootfs targets.
 
-## Sobo deploy strategy under this constraint
+## Sobo deploy strategy after cutover
 
-Pre-cutover fallback for Sobo deploy of the post-merge state:
+Sobo deploy authority is Korri-owned. Build or publish Sobo appliance artifacts
+from Korri outputs such as `korri-rocknix-kiosk-system-odin2portal` and
+`korri-rocknix-rootfs-odin2portal`.
 
-1. **Preferred until cutover:** use the existing nix-on-rocks Sobo target as the
-   temporary fallback:
-   `nix build .#nixosConfigurations.rocknix-guest-main-space-odin2portal.config.system.build.toplevel`
-   or the matching `rootfs-odin2portal` artifact.
-
-2. **Do not redeploy Sobo only because this fallback was restored.** The current
-   production rootfs continues to work; production redeploy waits for Korri to
-   own and verify `korri-rocknix-rootfs-odin2portal`.
-
-3. **Deploy bare `rocknix-guest`** only as a temporary regression (no kiosk, no
-   main-space) to prove substrate behavior independently. This is not a Sobo
-   kiosk appliance deploy path.
-
-After cutover, deploy authority moves to Korri and the nix-on-rocks fallback
-outputs are removed.
+The nix-on-rocks `rocknix-guest` target is substrate-only (no kiosk appliance)
+and is not a Sobo production deploy path. Historical nix-on-rocks rootfs seeds
+remain archived fallback evidence only; the active rootfs seed workflow is a
+fail-closed retirement notice.
 
 ## Current cutover candidate
 
@@ -187,4 +179,4 @@ That proof evaluates a staged Korri source tree with
 `ROCKNIX_GUEST_DEVICE_COMPATIBLE=ayn,odin2portal`, verifies the Korri target
 exists, and verifies the retired `rocknix-guest-main-space-by-compatible` target
 is not accepted from the Korri source tree. Native arm64 rootfs artifact
-verification is still required before cleanup.
+verification passed on Fuji before cleanup.

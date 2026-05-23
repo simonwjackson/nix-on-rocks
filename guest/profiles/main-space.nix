@@ -9,8 +9,8 @@
 #   - input (guest-owned InputPlumber + SM8550 maps)
 #   - network (NetworkManager + nftables firewall, no resolvconf)
 #
-# Used by THIN_HOST=yes builds via nixosConfigurations.rocknix-guest-main-space
-# in flake.nix.
+# Kept as a substrate-local fallback profile only. Korri-owned appliance
+# systems now live in the downstream Korri flake and import rocknix-guest-base.
 #
 # Combined-profile note (2026-05-11): main-space now bakes the interactive
 # bits formerly only available in profiles/dev-env.nix -- a bottom swaybar
@@ -19,9 +19,7 @@
 # workspaces 1-9, focus/move/layout). The audio/Steam/Cemu module composition
 # is unchanged.
 { config
-, lib
 , pkgs
-, korriHasKiosk ? false
 , ...
 }:
 
@@ -33,11 +31,6 @@ let
   # output, it survives sway parsing untouched and runs under the same
   # bash the kiosk unit adds to its PATH.
   sm8550 = config.rocknix.sm8550;
-  hasKorriKiosk = korriHasKiosk;
-  korriClientPath = lib.optionals (config.services.korri.client.enable or false) [
-    config.services.korri.client.package
-  ];
-
   swayBarStatus = pkgs.writeShellScript "sway-bar-status" ''
     while true; do
       cap=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null \
@@ -71,10 +64,8 @@ let
       >/dev/null 2>&1 || true
   '';
 
-  # Device-aware Sway config shared by the legacy main-space service and the
-  # Korri-owned kiosk service. The generated Korri config owns client autostart;
-  # this fragment stays platform-owned: display routing, portal bootstrap,
-  # key chords, and the status bar.
+  # Device-aware Sway config for the substrate-local fallback service. Korri
+  # owns product client autostart and product launch chords downstream.
   mainSpaceSwayConfig = ''
     # ROCKNIX Layer 14 sway config (${sm8550.deviceId} / SM8550).
     seat * hide_cursor 1000
@@ -102,7 +93,7 @@ let
       bindsym Return exec foot, mode "default"
       bindsym d exec fuzzel, mode "default"
       bindsym g exec /storage/.guest/games-launcher.sh, mode "default"
-      bindsym k exec korri-desktop-device, mode "default"
+      # Product launch chords are downstream-owned.
       bindsym Shift+q kill, mode "default"
       bindsym Shift+e exec swaymsg exit, mode "default"
 
@@ -177,18 +168,7 @@ let
   '';
 in
 
-({
-  assertions = [
-    {
-      assertion = hasKorriKiosk || !(config.services.korri.kiosk.enable or false);
-      message = ''
-        main-space is composing services.korri.kiosk, but korriHasKiosk is false.
-        Set specialArgs.korriHasKiosk = true when importing the Korri kiosk module
-        with nix-on-rocks main-space so only one Sway compositor owns the session.
-      '';
-    }
-  ];
-
+{
   imports = [
     ./rocknix-guest-base.nix
   ];
@@ -213,7 +193,7 @@ in
   # own VT directly from /dev/tty0 / /dev/tty1 (which the host nspawn
   # unit binds in) when sway initialises the DRM session, so there is no
   # need to hand the unit a TTY explicitly.
-  systemd.services.main-space-sway-kiosk = lib.mkIf (!hasKorriKiosk) {
+  systemd.services.main-space-sway-kiosk = {
     description = "Main-space sway kiosk session";
     wantedBy = [ "multi-user.target" ];
     # Do not order After=multi-user.target here. This service is WantedBy
@@ -253,7 +233,7 @@ in
     #     via execlp("swaybar", ...), same PATH-lookup mechanism as the
     #     exec fix above. Without sway's bin/ on PATH the bar block
     #     never spawns and only swaybg is visible.
-    path = korriClientPath ++ (with pkgs; [
+    path = with pkgs; [
       dbus
       foot
       swaybg
@@ -263,7 +243,7 @@ in
       git
       coreutils
       sway
-    ]);
+    ];
 
     serviceConfig = {
       Type = "simple";
@@ -323,59 +303,6 @@ in
     btop
   ];
 
-  # Keep /etc/sway/config for fallback compositions that import main-space
-  # without Korri's kiosk module. When Korri is present, the same fragment is
-  # appended to services.korri.kiosk.sway.extraConfig instead.
-  environment.etc."sway/config".text = lib.mkIf (!hasKorriKiosk) mainSpaceSwayConfig;
-} // lib.optionalAttrs hasKorriKiosk {
-  services.korri.kiosk = {
-    enable = lib.mkDefault true;
-    user = lib.mkDefault "root";
-    createUser = lib.mkDefault false;
-    home = lib.mkDefault "/storage";
-    runtimeDir = lib.mkDefault "/run/user/0";
-
-    sessionBus = {
-      mode = lib.mkDefault "existing";
-      address = lib.mkDefault "unix:path=/run/user/0/bus";
-      services = lib.mkDefault [ "main-space-session-dbus.service" ];
-    };
-
-    input = {
-      required = lib.mkDefault true;
-      provider = {
-        enable = lib.mkDefault true;
-        name = lib.mkDefault "inputplumber";
-        services = lib.mkDefault [ "inputplumber.service" ];
-      };
-    };
-
-    # Sway exec/keybind commands inherit this PATH from the product-owned
-    # Korri kiosk service. Keep shell, launcher, bar, and interactive tools
-    # available without baking absolute paths into platform fragments.
-    path = korriClientPath ++ (with pkgs; [
-      coreutils
-      dbus
-      foot
-      swaybg
-      swaylock
-      bashInteractive
-      fuzzel
-      git
-      sway
-    ]);
-
-    environment = {
-      XDG_CURRENT_DESKTOP = "sway";
-      SDL_AUDIODRIVER = "pulseaudio";
-      XDG_CACHE_HOME = "/storage/.cache";
-      CEMU_BIOS_ROOT = "/storage/roms/bios/cemu";
-      CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask;
-      WLR_NO_HARDWARE_CURSORS = "1";
-      WLR_LIBINPUT_NO_DEVICES = "1";
-      USER = "root";
-    };
-
-    sway.extraConfig = mainSpaceSwayConfig;
-  };
-})
+  # Keep /etc/sway/config for fallback compositions that import main-space.
+  environment.etc."sway/config".text = mainSpaceSwayConfig;
+}

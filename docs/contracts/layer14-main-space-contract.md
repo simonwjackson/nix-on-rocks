@@ -149,7 +149,7 @@ legacy Sway/EmulationStation when the guest crashes.
 
 Logs live under `/var/log/rocknix-guest-soak*.log`.
 
-## Substrate contract and Korri frontend consumption
+## Substrate contract and downstream product consumption
 
 `nixosModules.rocknix-guest-base` is the product-blind downstream import
 contract. It imports the SM8550 guest modules, device/runtime plumbing, Steam
@@ -159,28 +159,19 @@ service-name references such as `korri-kiosk.service` are allowed where the
 substrate must order shared support services before whichever compositor owner a
 downstream product selects.
 
-During the coexistence window, legacy Layer 14 main-space outputs consume Korri
-through the Korri-owned flake API instead of carrying Korri packaging logic in
-the ROCKNIX guest repo:
+Korri consumes nix-on-rocks by importing `nixosModules.rocknix-guest-base`, a
+specific SM8550 device profile, and substrate package outputs from the Korri
+flake. Korri owns Thor/Sobo kiosk appliance composition, product launch chords,
+Electrobun packaging, native bridge configuration, and rootfs artifact
+publication.
 
-- `korri.nixosModules.korri-frontend` is imported into main-space.
-- `services.korri.enable = true` installs the configured package.
-- `services.korri.package = korri.packages.${targetSystem}.korri-desktop-odin`
-  selects the available Odin desktop package variant that owns Korri's
-  build-time frontend configuration, including the native bridge URL. Keep this
-  explicit until Korri publishes a stable device alias.
-- The Sway kiosk service PATH includes `config.services.korri.package` so Sway
-  keybinds can launch the configured package binary.
-- The main-space Sway Home chord launches Korri with Home then `k`.
-
-ROCKNIX owns the guest/session runtime environment that Korri needs to start:
-`HOME=/storage`, `XDG_RUNTIME_DIR=/run/user/0`, the root session D-Bus socket,
-PipeWire/Pulse, display/input/audio/device binds, and Sway launch policy. Korri
-owns the frontend package, Electrobun wrapper, module API, and build-time
-frontend configuration. Do not add a ROCKNIX-owned Korri package or duplicate
-Korri's native bridge URL option here. After deploy authority cuts over, Korri
-becomes the canonical owner of Thor/Sobo kiosk appliance composition and the
-legacy nix-on-rocks Korri-consuming outputs are removed.
+ROCKNIX owns only the guest/session runtime environment a downstream product
+needs to start: `HOME=/storage`, `XDG_RUNTIME_DIR=/run/user/0`, the root session
+D-Bus socket, PipeWire/Pulse, display/input/audio/device binds, and Sway launch
+policy. Do not add a ROCKNIX-owned Korri package, Korri flake input, or duplicate
+Korri's native bridge URL option here. Legacy nix-on-rocks Korri-consuming
+outputs have been removed after native arm64 Korri rootfs verification and the
+executable promotion proof.
 
 ## Cemu compatibility state
 
