@@ -1,4 +1,4 @@
-From 4c1cba0007e5ccfd34790c4493913d03ad3fb888 Mon Sep 17 00:00:00 2001
+From 4a3f9359c1ff9ffba083e3e8e0884358256ed7b9 Mon Sep 17 00:00:00 2001
 From: "Simon W. Jackson" <simon@simonwjackson.io>
 Date: Sat, 23 May 2026 03:31:53 +0000
 Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
@@ -9,9 +9,9 @@ Subject: [PATCH] Add v4l2m2m platform: iris VPU decode with SDL NV12
  src/main.c          |    2 +-
  src/platform.c      |   20 +
  src/platform.h      |    2 +-
- src/video/v4l2m2m.c | 1435 +++++++++++++++++++++++++++++++++++++++++++
+ src/video/v4l2m2m.c | 1645 +++++++++++++++++++++++++++++++++++++++++++
  src/video/video.h   |    3 +
- 6 files changed, 1476 insertions(+), 3 deletions(-)
+ 6 files changed, 1686 insertions(+), 3 deletions(-)
  create mode 100644 src/video/v4l2m2m.c
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
@@ -143,10 +143,10 @@ index e9df112..dbd8faa 100644
  enum platform platform_check(char*);
 diff --git a/src/video/v4l2m2m.c b/src/video/v4l2m2m.c
 new file mode 100644
-index 0000000..2d49395
+index 0000000..e8a5070
 --- /dev/null
 +++ b/src/video/v4l2m2m.c
-@@ -0,0 +1,1435 @@
+@@ -0,0 +1,1645 @@
 +/*
 + * This file is part of Moonlight Embedded.
 + *
@@ -225,6 +225,7 @@ index 0000000..2d49395
 + * MOONLIGHT_V4L2M2M_DIRECT=1 so the accepted shipping path remains the
 + * FFmpeg hevc_v4l2m2m -> SDL NV12 renderer pipeline. */
 +static bool direct_v4l2 = false;
++static bool direct_dmabuf_present = false;
 +
 +#define DIRECT_OUT_BUFS 32
 +#define DIRECT_CAP_BUFS 12
@@ -248,6 +249,7 @@ index 0000000..2d49395
 +static int direct_cap_h = 0;
 +static int direct_stride = 0;
 +static pthread_mutex_t direct_mtx = PTHREAD_MUTEX_INITIALIZER;
++static bool direct_dmabuf_import_logged = false;
 +
 +static SDL_Window    *window    = NULL;
 +static SDL_GLContext  gl_ctx    = NULL;   /* DRM_PRIME path only (inactive on iris/FFmpeg v4l2m2m) */
@@ -383,6 +385,7 @@ index 0000000..2d49395
 +  }
 +  ref->index = index;
 +
++  f->opaque = ref;
 +  f->format = AV_PIX_FMT_NV12;
 +  f->width = visible_w;
 +  f->height = visible_h;
@@ -847,6 +850,16 @@ index 0000000..2d49395
 +  "  fragColor = texture(u_tex, v_uv);\n"
 +  "}\n";
 +
++static const char *fragment_shader_src_2d =
++  "#version 300 es\n"
++  "precision mediump float;\n"
++  "uniform sampler2D u_tex;\n"
++  "in vec2 v_uv;\n"
++  "out vec4 fragColor;\n"
++  "void main() {\n"
++  "  fragColor = texture(u_tex, v_uv);\n"
++  "}\n";
++
 +/* NV12 path shaders. Vertex shader is identical to the DRM_PRIME one
 + * (just outputs uv), but inlined separately so each path stays
 + * self-contained for grep-ability. */
@@ -929,7 +942,8 @@ index 0000000..2d49395
 +  }
 +
 +  GLuint vs = compile_shader(GL_VERTEX_SHADER, vertex_shader_src);
-+  GLuint fs = compile_shader(GL_FRAGMENT_SHADER, fragment_shader_src);
++  GLuint fs = compile_shader(GL_FRAGMENT_SHADER,
++                             direct_dmabuf_present ? fragment_shader_src_2d : fragment_shader_src);
 +  if (!vs || !fs) {
 +    if (vs) glDeleteShader(vs);
 +    if (fs) glDeleteShader(fs);
@@ -968,12 +982,16 @@ index 0000000..2d49395
 +  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
 +  glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_DYNAMIC_DRAW);
 +
++  GLenum tex_target = direct_dmabuf_present ? GL_TEXTURE_2D : GL_TEXTURE_EXTERNAL_OES;
++  LOG("gl_init: GL_VERSION=%s GL_RENDERER=%s dmabuf_target=%s",
++      glGetString(GL_VERSION), glGetString(GL_RENDERER),
++      tex_target == GL_TEXTURE_2D ? "2D" : "EXTERNAL_OES");
 +  glGenTextures(1, &gl_texture);
-+  glBindTexture(GL_TEXTURE_EXTERNAL_OES, gl_texture);
-+  glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-+  glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-+  glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-+  glTexParameteri(GL_TEXTURE_EXTERNAL_OES, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
++  glBindTexture(tex_target, gl_texture);
++  glTexParameteri(tex_target, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
++  glTexParameteri(tex_target, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
++  glTexParameteri(tex_target, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
++  glTexParameteri(tex_target, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 +
 +  glViewport(0, 0, viewport_w, viewport_h);
 +  glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -1011,6 +1029,8 @@ index 0000000..2d49395
 +  int out_w = 0, out_h = 0;
 +  if (sdl_renderer) {
 +    SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
++  } else if (gl_ctx) {
++    SDL_GL_GetDrawableSize(window, &out_w, &out_h);
 +  }
 +  if (out_w <= 0 || out_h <= 0) {
 +    SDL_GetWindowSize(window, &out_w, &out_h);
@@ -1041,7 +1061,24 @@ index 0000000..2d49395
 +  }
 +  sdl_dst_rect = dst;
 +
-+  LOG("presentation(SDL): video=%dx%d output=%dx%d dst=%d,%d %dx%d display=%d",
++  if (gl_ctx) {
++    float left   = ((float) dst.x / (float) out_w) * 2.0f - 1.0f;
++    float right  = ((float) (dst.x + dst.w) / (float) out_w) * 2.0f - 1.0f;
++    float top    = 1.0f - ((float) dst.y / (float) out_h) * 2.0f;
++    float bottom = 1.0f - ((float) (dst.y + dst.h) / (float) out_h) * 2.0f;
++    GLfloat quad[] = {
++      left,  bottom, 0.0f, 1.0f,
++      right, bottom, 1.0f, 1.0f,
++      left,  top,    0.0f, 0.0f,
++      right, top,    1.0f, 0.0f,
++    };
++    glViewport(0, 0, out_w, out_h);
++    glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
++    glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_DYNAMIC_DRAW);
++  }
++
++  LOG("presentation(%s): video=%dx%d output=%dx%d dst=%d,%d %dx%d display=%d",
++      gl_ctx ? "direct-dmabuf" : "SDL",
 +      video_w, video_h, out_w, out_h,
 +      dst.x, dst.y, dst.w, dst.h,
 +      SDL_GetWindowDisplayIndex(window));
@@ -1206,9 +1243,132 @@ index 0000000..2d49395
 +  return img;
 +}
 +
++
++static EGLImageKHR import_direct_dmabuf(AVFrame *frame, DirectFrameRef *ref,
++                                       int import_w, int import_h) {
++  if (!ref || ref->index < 0 || ref->index >= direct_cap_count)
++    return EGL_NO_IMAGE_KHR;
++  if (direct_cap[ref->index].dma_fd < 0)
++    return EGL_NO_IMAGE_KHR;
++
++  int uv_offset = direct_stride * direct_cap_h;
++  EGLint attribs[64];
++  int n = 0;
++  attribs[n++] = EGL_WIDTH; attribs[n++] = import_w;
++  attribs[n++] = EGL_HEIGHT; attribs[n++] = import_h;
++  attribs[n++] = EGL_LINUX_DRM_FOURCC_EXT; attribs[n++] = DRM_FORMAT_NV12;
++  attribs[n++] = EGL_DMA_BUF_PLANE0_FD_EXT; attribs[n++] = direct_cap[ref->index].dma_fd;
++  attribs[n++] = EGL_DMA_BUF_PLANE0_OFFSET_EXT; attribs[n++] = 0;
++  attribs[n++] = EGL_DMA_BUF_PLANE0_PITCH_EXT; attribs[n++] = direct_stride;
++  attribs[n++] = EGL_DMA_BUF_PLANE0_MODIFIER_LO_EXT; attribs[n++] = (EGLint)(DRM_FORMAT_MOD_LINEAR & 0xffffffff);
++  attribs[n++] = EGL_DMA_BUF_PLANE0_MODIFIER_HI_EXT; attribs[n++] = (EGLint)(DRM_FORMAT_MOD_LINEAR >> 32);
++  attribs[n++] = EGL_DMA_BUF_PLANE1_FD_EXT; attribs[n++] = direct_cap[ref->index].dma_fd;
++  attribs[n++] = EGL_DMA_BUF_PLANE1_OFFSET_EXT; attribs[n++] = uv_offset;
++  attribs[n++] = EGL_DMA_BUF_PLANE1_PITCH_EXT; attribs[n++] = direct_stride;
++  attribs[n++] = EGL_DMA_BUF_PLANE1_MODIFIER_LO_EXT; attribs[n++] = (EGLint)(DRM_FORMAT_MOD_LINEAR & 0xffffffff);
++  attribs[n++] = EGL_DMA_BUF_PLANE1_MODIFIER_HI_EXT; attribs[n++] = (EGLint)(DRM_FORMAT_MOD_LINEAR >> 32);
++  attribs[n++] = EGL_YUV_COLOR_SPACE_HINT_EXT; attribs[n++] = EGL_ITU_REC709_EXT;
++  attribs[n++] = EGL_SAMPLE_RANGE_HINT_EXT; attribs[n++] = EGL_YUV_NARROW_RANGE_EXT;
++  attribs[n++] = EGL_NONE;
++
++  EGLImageKHR img = egl_create_image(egl_dpy, EGL_NO_CONTEXT,
++                                     EGL_LINUX_DMA_BUF_EXT,
++                                     (EGLClientBuffer) NULL, attribs);
++  if (img == EGL_NO_IMAGE_KHR) {
++    EGLint err = eglGetError();
++    if (!direct_dmabuf_import_logged) {
++      LOG("direct-dmabuf: eglCreateImageKHR failed err=0x%04x index=%d fd=%d import=%dx%d visible=%dx%d cap=%dx%d stride=%d uv_offset=%d bytes=%zu mod=linear hints=yes",
++          err, ref->index, direct_cap[ref->index].dma_fd,
++          import_w, import_h, frame->width, frame->height,
++          direct_cap_w, direct_cap_h, direct_stride, uv_offset,
++          direct_cap[ref->index].length);
++    }
++  }
++  return img;
++}
++
++static void draw_frame_direct_dmabuf(AVFrame *frame) {
++  if (!gl_ctx || !egl_create_image || !egl_destroy_image || !gl_image_target_texture)
++    return;
++
++  DirectFrameRef *ref = (DirectFrameRef *) frame->opaque;
++  int import_w = direct_cap_w > 0 ? direct_cap_w : frame->width;
++  int import_h = direct_cap_h > 0 ? direct_cap_h : frame->height;
++  EGLImageKHR img = import_direct_dmabuf(frame, ref, import_w, import_h);
++  if (img == EGL_NO_IMAGE_KHR)
++    img = import_direct_dmabuf(frame, ref, frame->width, frame->height);
++  if (img == EGL_NO_IMAGE_KHR) {
++    direct_dmabuf_import_logged = true;
++    return;
++  }
++
++  if (!direct_dmabuf_import_logged) {
++    LOG("direct-dmabuf: first EGL import succeeded index=%d fd=%d visible=%dx%d import=%dx%d cap=%dx%d stride=%d",
++        ref ? ref->index : -1,
++        (ref && ref->index >= 0 && ref->index < direct_cap_count) ? direct_cap[ref->index].dma_fd : -1,
++        frame->width, frame->height, import_w, import_h, direct_cap_w, direct_cap_h, direct_stride);
++    direct_dmabuf_import_logged = true;
++  }
++
++  float uv_vmax = import_h > 0 ? (float) frame->height / (float) import_h : 1.0f;
++  if (uv_vmax > 1.0f) uv_vmax = 1.0f;
++  float left   = ((float) sdl_dst_rect.x / (float) gl_viewport_w) * 2.0f - 1.0f;
++  float right  = ((float) (sdl_dst_rect.x + sdl_dst_rect.w) / (float) gl_viewport_w) * 2.0f - 1.0f;
++  float top    = 1.0f - ((float) sdl_dst_rect.y / (float) gl_viewport_h) * 2.0f;
++  float bottom = 1.0f - ((float) (sdl_dst_rect.y + sdl_dst_rect.h) / (float) gl_viewport_h) * 2.0f;
++  GLfloat quad[] = {
++    left,  bottom, 0.0f, uv_vmax,
++    right, bottom, 1.0f, uv_vmax,
++    left,  top,    0.0f, 0.0f,
++    right, top,    1.0f, 0.0f,
++  };
++
++  GLenum tex_target = GL_TEXTURE_2D;
++  while (glGetError() != GL_NO_ERROR) { }
++  glBindTexture(tex_target, gl_texture);
++  gl_image_target_texture(tex_target, img);
++  GLenum glerr = glGetError();
++  if (glerr != GL_NO_ERROR) {
++    static bool logged_target_error = false;
++    if (!logged_target_error) {
++      LOG("direct-dmabuf: glEGLImageTargetTexture2DOES target=0x%04x error=0x%04x", tex_target, glerr);
++      logged_target_error = true;
++    }
++  }
++
++  glViewport(0, 0, gl_viewport_w, gl_viewport_h);
++  glClear(GL_COLOR_BUFFER_BIT);
++  glUseProgram(gl_program);
++  glActiveTexture(GL_TEXTURE0);
++  glBindTexture(tex_target, gl_texture);
++  glUniform1i(gl_uloc_tex, 0);
++
++  glBindBuffer(GL_ARRAY_BUFFER, gl_vbo);
++  glBufferData(GL_ARRAY_BUFFER, sizeof quad, quad, GL_DYNAMIC_DRAW);
++  glEnableVertexAttribArray(0);
++  glEnableVertexAttribArray(1);
++  glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)0);
++  glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(GLfloat), (void *)(2 * sizeof(GLfloat)));
++  glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
++  glerr = glGetError();
++  if (glerr != GL_NO_ERROR) {
++    static bool logged_draw_error = false;
++    if (!logged_draw_error) {
++      LOG("direct-dmabuf: glDrawArrays error=0x%04x", glerr);
++      logged_draw_error = true;
++    }
++  }
++  glDisableVertexAttribArray(0);
++  glDisableVertexAttribArray(1);
++
++  SDL_GL_SwapWindow(window);
++  egl_destroy_image(egl_dpy, img);
++}
++
 +/* Forward decls for the dispatching draw_frame(). */
 +static void draw_frame_drm_prime(AVFrame *frame);
 +static void draw_frame_nv12(AVFrame *frame);
++static void draw_frame_direct_dmabuf(AVFrame *frame);
 +
 +static void draw_frame(AVFrame *frame) {
 +  static int draw_count = 0;
@@ -1220,7 +1380,9 @@ index 0000000..2d49395
 +        frame->linesize[2], frame->linesize[3]);
 +  pump_sdl_window_events();
 +  update_render_geometry(frame->width, frame->height);
-+  if (frame->format == AV_PIX_FMT_DRM_PRIME) {
++  if (direct_dmabuf_present && direct_v4l2 && frame->format == AV_PIX_FMT_NV12) {
++    draw_frame_direct_dmabuf(frame);
++  } else if (frame->format == AV_PIX_FMT_DRM_PRIME) {
 +    draw_frame_drm_prime(frame);
 +  } else if (frame->format == AV_PIX_FMT_NV12) {
 +    draw_frame_nv12(frame);
@@ -1285,27 +1447,60 @@ index 0000000..2d49395
 +  (void) arg;
 +
 +
-+  sdl_renderer = SDL_CreateRenderer(window, -1,
-+                                    SDL_RENDERER_ACCELERATED |
-+                                    SDL_RENDERER_PRESENTVSYNC);
-+  if (!sdl_renderer) {
-+    LOG("SDL_CreateRenderer failed: %s", SDL_GetError());
-+    pthread_mutex_lock(&disp_mtx);
-+    disp_setup_rc = -1;
-+    disp_ready = true;
-+    pthread_cond_signal(&disp_cond);
-+    pthread_mutex_unlock(&disp_mtx);
-+    return NULL;
-+  }
-+  SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-+
 +  int out_w = 0, out_h = 0;
-+  SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
-+  if (out_w <= 0 || out_h <= 0)
-+    SDL_GetWindowSize(window, &out_w, &out_h);
-+  LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s",
-+      out_w, out_h, SDL_GetWindowDisplayIndex(window),
-+      SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown");
++  if (direct_dmabuf_present) {
++    gl_ctx = SDL_GL_CreateContext(window);
++    if (gl_ctx)
++      SDL_GL_MakeCurrent(window, gl_ctx);
++    if (!gl_ctx) {
++      LOG("SDL_GL_CreateContext failed: %s", SDL_GetError());
++      pthread_mutex_lock(&disp_mtx);
++      disp_setup_rc = -1;
++      disp_ready = true;
++      pthread_cond_signal(&disp_cond);
++      pthread_mutex_unlock(&disp_mtx);
++      return NULL;
++    }
++    SDL_GL_SetSwapInterval(1);
++    egl_dpy = eglGetCurrentDisplay();
++    SDL_GL_GetDrawableSize(window, &out_w, &out_h);
++    if (out_w <= 0 || out_h <= 0)
++      SDL_GetWindowSize(window, &out_w, &out_h);
++    if (gl_init(out_w, out_h) != 0) {
++      LOG("direct-dmabuf: GL/EGL init failed");
++      pthread_mutex_lock(&disp_mtx);
++      disp_setup_rc = -1;
++      disp_ready = true;
++      pthread_cond_signal(&disp_cond);
++      pthread_mutex_unlock(&disp_mtx);
++      return NULL;
++    }
++    LOG("display thread: direct-dmabuf GL output=%dx%d display=%d driver=%s egl=%p",
++        out_w, out_h, SDL_GetWindowDisplayIndex(window),
++        SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown",
++        (void *) egl_dpy);
++  } else {
++    sdl_renderer = SDL_CreateRenderer(window, -1,
++                                      SDL_RENDERER_ACCELERATED |
++                                      SDL_RENDERER_PRESENTVSYNC);
++    if (!sdl_renderer) {
++      LOG("SDL_CreateRenderer failed: %s", SDL_GetError());
++      pthread_mutex_lock(&disp_mtx);
++      disp_setup_rc = -1;
++      disp_ready = true;
++      pthread_cond_signal(&disp_cond);
++      pthread_mutex_unlock(&disp_mtx);
++      return NULL;
++    }
++    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
++
++    SDL_GetRendererOutputSize(sdl_renderer, &out_w, &out_h);
++    if (out_w <= 0 || out_h <= 0)
++      SDL_GetWindowSize(window, &out_w, &out_h);
++    LOG("display thread: SDL renderer output=%dx%d display=%d driver=%s",
++        out_w, out_h, SDL_GetWindowDisplayIndex(window),
++        SDL_GetCurrentVideoDriver() ? SDL_GetCurrentVideoDriver() : "unknown");
++  }
 +
 +  pthread_mutex_lock(&disp_mtx);
 +  disp_setup_rc = 0;
@@ -1347,6 +1542,15 @@ index 0000000..2d49395
 +
 +  direct_v4l2 = getenv("MOONLIGHT_V4L2M2M_DIRECT") &&
 +                strcmp(getenv("MOONLIGHT_V4L2M2M_DIRECT"), "0") != 0;
++  direct_dmabuf_present = direct_v4l2 && getenv("MOONLIGHT_V4L2M2M_DMABUF") &&
++                          strcmp(getenv("MOONLIGHT_V4L2M2M_DMABUF"), "0") != 0;
++  if (direct_dmabuf_present) {
++    LOG("setup: using experimental direct V4L2 dma-buf GL presentation path");
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
++    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
++    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
++  }
 +  if (direct_v4l2) {
 +    LOG("setup: using experimental direct V4L2 decoder path");
 +    if (direct_v4l2_setup(videoFormat, width, height) != 0)
@@ -1450,7 +1654,8 @@ index 0000000..2d49395
 +                            bounds.x, bounds.y,
 +                            bounds.w, bounds.h,
 +                            SDL_WINDOW_BORDERLESS |
-+                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN);
++                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIDDEN |
++                            (direct_dmabuf_present ? SDL_WINDOW_OPENGL : 0));
 +  if (window) {
 +    /* Ensure SDL's surface size starts at the selected display bounds even
 +     * if the compositor adjusted placement during creation. */
@@ -1481,7 +1686,10 @@ index 0000000..2d49395
 +    return -1;
 +  }
 +
-+  LOG("setup: decoder=%s %dx%d", direct_v4l2 ? "direct_v4l2" : codec->name, width, height);
++  LOG("setup: decoder=%s presenter=%s %dx%d",
++      direct_v4l2 ? "direct_v4l2" : codec->name,
++      direct_dmabuf_present ? "direct-dmabuf" : "sdl-nv12",
++      width, height);
 +  return 0;
 +}
 +
@@ -1509,6 +1717,8 @@ index 0000000..2d49395
 +  if (window)  { SDL_DestroyWindow(window); window = NULL; }
 +  SDL_QuitSubSystem(SDL_INIT_VIDEO);
 +
++  direct_dmabuf_import_logged = false;
++  direct_dmabuf_present = false;
 +  if (direct_v4l2) direct_v4l2_cleanup();
 +  if (pkt)        av_packet_free(&pkt);
 +  if (codec_ctx)  avcodec_free_context(&codec_ctx);
