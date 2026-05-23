@@ -261,8 +261,10 @@ grep -q '/proc/misc' "$ROOT/modules/steam.nix" \
   || fail "Steam uinput prep must fall back to kernel misc device discovery"
 ! grep -q 'mknod /dev/uinput c 10 223' "$ROOT/modules/steam.nix" \
   || fail "Steam uinput prep must not hardcode the live Thor uinput device number"
-grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$ROOT/modules/steam.nix" \
-  || fail "Steam module must expose uinput/input devices to pressure-vessel"
+grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$REPO_ROOT/packages/steam/scripts/steam-guest-run" \
+  || fail "Steam package run capsule must expose uinput/input devices to pressure-vessel"
+! grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$ROOT/modules/steam.nix" \
+  || fail "Steam module must not own pressure-vessel input exposure after runtime capsule refactor"
 grep -q 'networking.networkmanager' "$ROOT/modules/network.nix" \
   || fail "network module must enable NetworkManager"
 grep -q 'wifi.backend = "iwd"' "$ROOT/modules/network.nix" \
@@ -445,6 +447,12 @@ grep -q 'steam-arm64-seed' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package must install ARM64 seed helper"
 grep -q 'steam-guest-native' "$REPO_ROOT/packages/steam/package.nix" \
   || fail "Steam package must install guest-native launcher helper"
+grep -q 'steam-guest-runtime-prep' "$REPO_ROOT/packages/steam/package.nix" \
+  || fail "Steam package must install runtime prep helper"
+grep -q 'steam-guest-run' "$REPO_ROOT/packages/steam/package.nix" \
+  || fail "Steam package must install run capsule helper"
+grep -q 'steam-arm64-fhs' "$REPO_ROOT/packages/steam/package.nix" \
+  || fail "Steam package must define the aarch64 FHS run capsule"
 grep -q 'STEAM_HOME' "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
   || fail "Steam bootstrap helper must require explicit STEAM_HOME"
 grep -q 'STEAM_GAMES_ROOT' "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
@@ -459,6 +467,17 @@ grep -q 'steamrtarm64/steam' "$REPO_ROOT/packages/steam/scripts/steam-guest-nati
   || fail "Steam guest-native helper must execute the ARM64 Steam client"
 grep -q 'NIX_LD' "$REPO_ROOT/packages/steam/scripts/steam-guest-native" \
   || fail "Steam guest-native helper must preflight NixOS dynamic linker strategy"
+grep -q 'FEX_ROOTFS' "$REPO_ROOT/packages/steam/scripts/steam-guest-runtime-prep" \
+  || fail "Steam runtime prep helper must preserve FEX wrapper semantics"
+grep -q 'steamrtarm64' "$REPO_ROOT/packages/steam/scripts/steam-guest-run" \
+  || fail "Steam run capsule helper must execute the mutable ARM64 Steam client"
+grep -q 'options.rocknix.steam' "$ROOT/modules/steam.nix" \
+  && grep -q 'package = lib.mkOption' "$ROOT/modules/steam.nix" \
+  || fail "Steam module must consume the package through an explicit option"
+! grep -q 'rocknix-steam-prepare-runtime' "$ROOT/modules/steam.nix" \
+  || fail "Steam module must not embed runtime prep implementation"
+! grep -q 'buildFHSEnv' "$ROOT/modules/steam.nix" \
+  || fail "Steam module must not own the FHS Steam run capsule"
 for resource in compatibilitytool.vdf registry.vdf toolmanifest.vdf; do
   [ -f "$REPO_ROOT/packages/steam/resources/${resource}" ] \
     || fail "Steam resource missing: ${resource}"
@@ -467,8 +486,14 @@ done
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck "$REPO_ROOT/packages/steam/scripts/steam-arm64-bootstrap" \
     "$REPO_ROOT/packages/steam/scripts/steam-arm64-seed" \
-    "$REPO_ROOT/packages/steam/scripts/steam-guest-native"
+    "$REPO_ROOT/packages/steam/scripts/steam-guest-native" \
+    "$REPO_ROOT/packages/steam/scripts/steam-guest-runtime-prep" \
+    "$REPO_ROOT/packages/steam/scripts/steam-guest-run"
 fi
+
+bash "$REPO_ROOT/packages/steam/tests/steam-package-contract.sh"
+bash "$REPO_ROOT/packages/steam/tests/steam-guest-runtime-prep-smoke.sh"
+bash "$REPO_ROOT/packages/steam/tests/steam-guest-run-smoke.sh"
 
 ! grep -R 'systemctl\|swaymsg\|FEXRootFSFetcher\|gamescope\|/storage' \
   "$REPO_ROOT/packages/steam/package.nix" "$REPO_ROOT/packages/steam/scripts" >/tmp/rocknix-nix-guest-steam-boundary-grep.$$ \

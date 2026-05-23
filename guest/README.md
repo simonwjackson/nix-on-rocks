@@ -82,7 +82,7 @@ Packages own app-generic setup:
 - Nix Vulkan loader visibility in `packages/cemu`'s `bin/cemu` wrapper;
 - SDL screensaver guard in `packages/cemu`'s `bin/cemu` wrapper;
 - Cemu runtime data and SM8550 default settings under `$out/share/Cemu`;
-- Steam ARM64 guest-native seed/launch helpers, bootstrap resources, and source evidence under `$out/share/steam-rocknix-bootstrap` and `$out/nix-support/rocknix-steam-bootstrap`;
+- Steam ARM64 guest-native seed/preflight helpers, runtime-prep helper, aarch64 FHS run capsule, bootstrap resources, and source evidence under `$out/share/steam-rocknix-bootstrap` and `$out/nix-support/rocknix-steam-bootstrap`;
 - build evidence under `$out/nix-support/rocknix-cemu-build`.
 
 Guest modules and launch adapters own device/session policy:
@@ -92,7 +92,7 @@ Guest modules and launch adapters own device/session policy:
 - SM8550 host CPU/GPU tuning helpers;
 - guest profile promotion/deploy scripts;
 - BOTW/live validation orchestration;
-- guest FHS/nix-ld loader policy, FEX rootfs management, Sway/Gamescope launch policy, and per-game Proton settings.
+- selected Steam `/storage` path defaults, guest FHS/nix-ld loader policy outside the package capsule, FEX rootfs management, Sway/Gamescope launch policy, and per-game Proton settings.
 
 `launchers/start_cemu_guest.sh` defaults to `/run/current-system/sw/bin/cemu` and may fall back to a promoted profile for live rollback. It delegates ROCKNIX `/storage` layout compatibility to `cemu-storage-adapter.sh`; Vulkan loader setup stays in the Cemu package wrapper.
 

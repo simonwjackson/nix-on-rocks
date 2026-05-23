@@ -26,6 +26,12 @@ store. Those mutable payloads are fetched into caller-provided guest state by
   and client into explicit guest-owned mutable paths.
 - `$out/bin/steam-guest-native` — preflights and execs the ARM64 Steam client
   from inside the guest.
+- `$out/bin/steam-guest-runtime-prep` — repairs mutable Steam Runtime /
+  pressure-vessel/FEX helper state under an explicit `STEAM_HOME`.
+- `$out/bin/steam-guest-run` — package-owned Steam run helper used by the FHS
+  capsule.
+- `$out/bin/steam-arm64-fhs` — aarch64 package-owned FHS Steam execution
+  capsule when built for the guest runtime target.
 - `$out/share/steam-rocknix-bootstrap/resources/` — ROCKNIX-derived Steam VDF
   resources.
 - `$out/nix-support/rocknix-steam-bootstrap/` — source provenance and contract
@@ -58,18 +64,30 @@ This package owns:
 - ARM64 Steam bootstrap endpoint metadata
 - guest-owned ARM64 Steam runtime/client seeding helper
 - guest-native Steam launcher preflight and exec helper
+- Steam Runtime / pressure-vessel repair helper logic
+- FHS Steam execution capsule for the aarch64 guest runtime target
+- pressure-vessel exposure of already-provided input devices
 - Steam ARM64 manifest repair helper logic
 - source/evidence metadata under `$out/nix-support`
 
 Downstream ROCKNIX or guest integrations own:
 
 - selected mutable Steam home/library paths
-- guest nix-ld/FHS dynamic-linker policy
+- selected SM8550 `/storage` defaults passed through environment/options
+- guest nix-ld/FHS dynamic-linker policy outside the package capsule
 - FEX rootfs and thunk configuration for x86 games
 - binfmt state
+- `/dev/uinput` creation/repair and systemd service ordering
 - Sway, Gamescope, and display-session launch policy
 - per-game Proton settings
 - SM8550 power and affinity policy
+
+## x86 host package surface
+
+`x86_64-linux` package buildability is retained only where it helps the SM8550
+Steam workflow, such as helper/resource generation, local checks, or CI. It is
+not a runnable Steam target and it is not a Korri compatibility surface. The
+runnable FHS capsule is an aarch64 guest/device capability.
 
 ## Unsupported in v1
 

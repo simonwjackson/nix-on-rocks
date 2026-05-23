@@ -194,6 +194,15 @@
                 ${pkgs.bash}/bin/bash guest/scripts/static-checks.sh
                 touch $out
               '';
+          steam-package-contract =
+            pkgs.runCommand "rocknix-steam-package-contract"
+              { }
+              ''
+                cd ${self}
+                PACKAGE_OUT=${self.packages.${system}.steam} \
+                  ${pkgs.bash}/bin/bash packages/steam/tests/steam-package-contract.sh
+                touch $out
+              '';
         }
       );
       formatter = forAllHostSystems (system: nixpkgs.legacyPackages.${system}.nixpkgs-fmt);

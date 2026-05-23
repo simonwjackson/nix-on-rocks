@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: steam-guest-run [--check|--run] [steam args...]
+
+Run the mutable ARM64 Steam client from the package-owned FHS runtime capsule.
+The caller/guest adapter supplies paths, session variables, driver variables,
+and default Steam args. This helper owns generic Steam/FEX/pressure-vessel
+runtime mechanics only.
+
+Required environment:
+  STEAM_HOME        Steam client home containing steamrtarm64/steam
+  FEX_ROOTFS        FEX rootfs path for x86/x86_64 Steam Runtime helpers
+
+Optional environment:
+  STEAM_CLIENT      Override Steam client path
+  STEAM_RUNTIME_PREP  Runtime prep helper path (default: steam-guest-runtime-prep)
+  STEAM_PRESSURE_VESSEL_RW_PATHS
+                    Colon-separated paths exposed read-write to pressure-vessel
+                    (default: /dev/uinput:/dev/input)
+
+Modes:
+  --check          Validate runtime preconditions only
+  --run           Exec Steam (default)
+EOF
+}
+
+mode=run
+case "${1:-}" in
+  ""|--run) mode=run; [ "${1:-}" = --run ] && shift ;;
+  --check) mode=check; shift ;;
+  -h|--help) usage; exit 0 ;;
+  *) mode=run ;;
+esac
+
+require_env() {
+  local name="$1" value="${!1:-}"
+  if [ -z "$value" ]; then
+    echo "error: $name must be set explicitly" >&2
+    exit 2
+  fi
+}
+
+require_env STEAM_HOME
+require_env FEX_ROOTFS
+
+client="${STEAM_CLIENT:-$STEAM_HOME/steamrtarm64/steam}"
+if [ ! -x "$client" ]; then
+  cat >&2 <<EOF
+error: guest-native Steam client is missing or not executable: $client
+hint: seed the ARM64 Steam payload into STEAM_HOME first.
+EOF
+  exit 1
+fi
+
+pv_rw_paths="${STEAM_PRESSURE_VESSEL_RW_PATHS:-/dev/uinput:/dev/input}"
+if [ -n "${PRESSURE_VESSEL_FILESYSTEMS_RW:-}" ]; then
+  export PRESSURE_VESSEL_FILESYSTEMS_RW="$pv_rw_paths:$PRESSURE_VESSEL_FILESYSTEMS_RW"
+else
+  export PRESSURE_VESSEL_FILESYSTEMS_RW="$pv_rw_paths"
+fi
+
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+runtime_prep="${STEAM_RUNTIME_PREP:-$script_dir/steam-guest-runtime-prep}"
+
+# The FHS environment supplies the generic distro ABI and Nix-provided system
+# libraries. This LD_LIBRARY_PATH is intentionally limited to Valve's mutable
+# ARM64 payload so non-transitive dependencies such as steamrtarm64/libavcodec.so
+# -> libvpx.so.6 resolve without smearing Nix store paths globally.
+export LD_LIBRARY_PATH="$STEAM_HOME/steamrtarm64:$STEAM_HOME/steamrtarm64/video:$STEAM_HOME/lib/aarch64-linux-gnu${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+# Some Steam helper commands are launched by basename.
+export PATH="$STEAM_HOME/steamrtarm64:$STEAM_HOME/steamrtarm64/bin:$PATH"
+
+printf 'steam-guest-run mode=%s\n' "$mode"
+printf 'STEAM_HOME=%s\n' "$STEAM_HOME"
+printf 'STEAM_CLIENT=%s\n' "$client"
+printf 'FEX_ROOTFS=%s\n' "$FEX_ROOTFS"
+printf 'PRESSURE_VESSEL_FILESYSTEMS_RW=%s\n' "$PRESSURE_VESSEL_FILESYSTEMS_RW"
+
+if [ "$mode" = check ]; then
+  "$runtime_prep" --check
+  exit 0
+fi
+
+"$runtime_prep" --apply || true
+
+cd "$STEAM_HOME"
+exec "$client" "$@"

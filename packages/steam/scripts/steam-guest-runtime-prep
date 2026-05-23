@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+usage: steam-guest-runtime-prep [--check|--apply]
+
+Repair mutable Steam Runtime / pressure-vessel state in a caller-provided
+ARM64 Steam home. This helper is package-owned runtime mechanics only: it does
+not choose guest paths, start system services, or launch a display session.
+
+Required environment:
+  STEAM_HOME        Steam client home containing steamapps/common
+
+Modes:
+  --check          Validate required environment only
+  --apply          Repair mutable runtime state (default)
+EOF
+}
+
+mode=apply
+case "${1:-}" in
+  ""|--apply) mode=apply ;;
+  --check) mode=check ;;
+  -h|--help) usage; exit 0 ;;
+  *) usage >&2; exit 2 ;;
+esac
+
+if [ -z "${STEAM_HOME:-}" ]; then
+  echo "error: STEAM_HOME must be set explicitly" >&2
+  exit 2
+fi
+
+if [ "$mode" = check ]; then
+  echo "steam-guest-runtime-prep mode=check"
+  echo "STEAM_HOME=$STEAM_HOME"
+  exit 0
+fi
+
+common="$STEAM_HOME/steamapps/common"
+[ -d "$common" ] || exit 0
+
+restore_fex_wrapper() {
+  local file="$1" backup suffix
+  [ -f "$file" ] || return 0
+  for suffix in x86_64 x86; do
+    backup="$file.$suffix"
+    if [ -f "$backup" ] && grep -q "FEX_ROOTFS\|/FEX" "$file" 2>/dev/null; then
+      mv -f "$backup" "$file"
+      chmod a+rx "$file" 2>/dev/null || true
+      return 0
+    fi
+  done
+}
+
+wrap_fex_tool() {
+  local file="$1" backup info
+  [ -f "$file" ] || return 0
+  case "${file##*/}" in
+    srt-bwrap)
+      backup="$file.x86_64"
+      if [ ! -e "$backup" ]; then
+        mv -f "$file" "$backup"
+      fi
+      cat > "$file" <<'EOF'
+#!/bin/sh
+exec bwrap "$@"
+EOF
+      chmod 755 "$file"
+      return 0
+      ;;
+  esac
+
+  if grep -q "FEX_ROOTFS\|/FEX" "$file" 2>/dev/null; then
+    return 0
+  fi
+
+  info="$(file "$file" 2>/dev/null || true)"
+  case "$info" in
+    *"shared object"*)
+      return 0
+      ;;
+    *"executable"*"x86-64"*|*"x86-64"*"executable"*|*"executable"*"Intel 80386"*|*"Intel 80386"*"executable"*)
+      backup="$file.x86_64"
+      if [ ! -e "$backup" ]; then
+        mv -f "$file" "$backup"
+      fi
+      cat > "$file" <<'EOF'
+#!/bin/sh
+: "${FEX_ROOTFS:?FEX_ROOTFS must be set by the guest adapter before running wrapped Steam Runtime helpers}"
+PATH="/usr/bin:/bin:/usr/sbin:/sbin:${PATH:-}"
+export FEX_ROOTFS PATH
+exec FEX "$0.x86_64" "$@"
+EOF
+      chmod 755 "$file"
+      ;;
+  esac
+}
+
+# Earlier live experiments wrapped Proton/Wine payloads themselves. That breaks
+# Wine's own ELF-header checks. Keep Proton intact and restore any wrappers from
+# backups left by experiments; wrap only Steam Runtime / pressure-vessel Linux
+# helper executables launched by the ARM64 Steam client.
+for dir in "$common"/Proton*/files/bin "$common"/Proton*/files/bin-wow64 "$common"/Proton*/files/lib/wine/*-unix; do
+  [ -d "$dir" ] || continue
+  find "$dir" -maxdepth 1 -type f | while IFS= read -r file; do
+    restore_fex_wrapper "$file"
+  done
+done
+
+for pv in "$common"/SteamLinuxRuntime*/pressure-vessel "$STEAM_HOME"/steamrt64/pv-runtime/steam-runtime-steamrt/pressure-vessel; do
+  [ -d "$pv" ] || continue
+  find "$pv" -type f -perm -0100 | while IFS= read -r file; do
+    wrap_fex_tool "$file"
+  done
+done
+
+# Some ARM64 runtime snapshots lack .uuid marker files in font directories,
+# which makes pressure-vessel abort before Proton starts.
+for fonts in "$common"/SteamLinuxRuntime*/steamrt*_platform_*/files/share/fonts "$common"/SteamLinuxRuntime*/sniper_platform_*/files/share/fonts; do
+  [ -d "$fonts" ] || continue
+  find "$fonts" -type d | while IFS= read -r dir; do
+    : > "$dir/.uuid"
+  done
+done
+
+# Proton and Steam Runtime helper scripts commonly use /usr/bin/env python3.
+# Nested pressure-vessel containers have sparse PATH, so use the FHS-visible
+# absolute interpreter from the FHS runtime.
+for proton in "$common"/Proton*/proton; do
+  [ -f "$proton" ] || continue
+  first_line="$(head -n 1 "$proton" 2>/dev/null || true)"
+  if [ "$first_line" = "#!/usr/bin/env python3" ]; then
+    tmp="$proton.rocknix-python3-tmp"
+    { echo '#!/usr/bin/python3'; sed '1d' "$proton"; } > "$tmp"
+    chmod --reference="$proton" "$tmp" 2>/dev/null || chmod a+rx "$tmp"
+    mv -f "$tmp" "$proton"
+  fi
+done
+
+for py in "$common"/SteamLinuxRuntime*/steamrt*_platform_*/files/bin/python3.* "$common"/SteamLinuxRuntime*/sniper_platform_*/files/bin/python3.*; do
+  [ -x "$py" ] || continue
+  bindir="${py%/*}"
+  base="${py##*/}"
+  ln -sfn "$base" "$bindir/python3"
+  ln -sfn "$base" "$bindir/python"
+done

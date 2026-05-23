@@ -154,7 +154,10 @@ Logs live under `/var/log/rocknix-guest-soak*.log`.
 `nixosModules.rocknix-guest-base` is the product-blind downstream import
 contract. It imports the SM8550 guest modules, device/runtime plumbing, Steam
 runtime support, Moonlight support, and the root session D-Bus service without
-importing Korri modules or setting `services.korri.*` options. Runtime
+importing Korri modules or setting `services.korri.*` options. Steam runtime
+support is split: `packages/steam/` owns generic ARM64 Steam/FEX/pressure-vessel
+helpers and the aarch64 FHS run capsule, while `guest/modules/steam.nix` supplies
+SM8550 `/storage`, session, driver, uinput, and systemd adaptation. Runtime
 service-name references such as `korri-kiosk.service` are allowed where the
 substrate must order shared support services before whichever compositor owner a
 downstream product selects.

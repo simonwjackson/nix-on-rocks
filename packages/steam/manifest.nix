@@ -61,10 +61,15 @@
       "generic env-driven steam-arm64-bootstrap helper"
       "generic env-driven steam-arm64-seed helper for guest-owned mutable ARM64 client/runtime state"
       "generic steam-guest-native launcher preflight that executes the ARM64 client inside the guest"
+      "generic steam-guest-runtime-prep helper for Steam Runtime / pressure-vessel repair"
+      "generic steam-guest-run helper for the package-owned aarch64 FHS Steam execution capsule"
+      "pressure-vessel exposure of already-provided input devices"
       "resource/evidence output for downstream ROCKNIX or guest adapters"
     ];
     downstreamOwned = [
       "target Steam home and library layout"
+      "SM8550 /storage default path choices"
+      "/dev/uinput creation or repair"
       "FEX rootfs and thunk configuration"
       "binfmt toggling"
       "host or guest display-session orchestration"
