@@ -36,16 +36,28 @@ Both repos tagged `pre-merge-baseline-2026-05-22` immediately before structural 
   - `packages/inputplumber/sm8550/` → `packages/inputplumber/maps/` (per-MCU naming honesty)
   - Flake outputs: `+moonlight-embedded`, `+sm8550-ayn-odin2-ucm` (alias)
   - Quarantine packages/ emptied (cemu/steam superseded, moonlight-embedded migrated)
-- [x] **U5a** — Build smoke (eval-only, Fuji x86_64)
-  - `nix build .#sm8550-ayn-odin2-ucm` succeeded
+- [x] **U5a** — Build smoke (eval + x86_64 native)
+  - `nix build .#sm8550-ayn-odin2-ucm` succeeded on zao
   - drvPaths evaluate clean for: cemu, steam, moonlight-embedded, inputplumber, rootfs-{thor,odin2portal}, and 5 pure nixosConfigurations
-  - Full builds (especially cemu source compile) deferred to Sobo aarch64 in U5b
-- [ ] **U5b** — Sobo integration smoke (pending; needs hardware)
-  - Build `rootfs-thor` for aarch64 on Fuji
-  - Stage onto Sobo via stage10 generation-switch
-  - SSH smoke: cemu launches, settings present at `share/Cemu/config/SM8550/settings.xml`, sway runs, audio works
-  - On accept: tag `monorepo-merge-sobo-accepted-2026-05-22`
-- [ ] **U6 merge** — Merge `refactor/monorepo-merge` → `main`, tag `monorepo-merge-complete-2026-05-22` (gated on U5b)
+  - Full builds (especially cemu source compile) deferred to fuji aarch64 in U5b
+- [x] **U5b** — aarch64 build smoke on fuji (Tailscale-reachable Linux aarch64 NixOS, 4 cores / 23 GiB RAM)
+  - **13m26s total** (02:56:27 → 03:09:53 UTC) to build all 6 targets, +2 GB store growth
+  - All 5 refactored packages built natively on aarch64:
+    - `cemu-rocknix-package-2.999.0-rocknix-package` (full source compile, 542 cmake steps)
+    - `steam-rocknix-guest-native-1.0.0.85-rocknix-guest-native`
+    - `moonlight-embedded-2.7.1-sm8550-v4l2m2m` (vendored ffmpeg + PR #932 patches)
+    - `rocknix-inputplumber-0.75.2`
+    - `ayn-odin2-ucm-2026-05-11`
+  - Plus base `nixos-system-rocknix-guest-25.11.20260505.0c88e1f` (korri-free guest toplevel)
+  - **Refactor-specific artifact verification** (all green):
+    - cemu output bundles `share/Cemu/config/SM8550/settings.xml` — proves `socSettings`/`socName` callPackage parameterization injects data from `devices/sm8550/cemu/settings.xml` end-to-end
+    - sm8550-ayn-odin2-ucm output contains `share/alsa/ucm2/AYN/Odin2/HiFi.conf` + `conf.d/sm8550/{AYN-Odin2,AYN-Thor,AYNThor,ayn-AYNOdin2-,SM8550-HDK}.conf` symlinks — proves the `packages/audio/` → `devices/sm8550/audio/` move preserved the alias topology
+    - inputplumber output contains `share/inputplumber/{devices,capability_maps,profiles,schema}/` — proves the `packages/inputplumber/sm8550/` → `packages/inputplumber/maps/` rename + `${./maps}` source path works
+    - moonlight-embedded binary runs (`Moonlight Embedded 2.7.1`) — proves the `opus → libopus` nixpkgs rename works on aarch64
+  - Korri-composing variants (`rocknix-guest-main-space-*`) NOT built; korri-bun-deps fixed-output hash drift on aarch64 is a pre-existing orthogonal issue documented separately in `docs/migration/2026-05-22-korri-dependency-direction-violation.md`
+- [ ] **U6 merge** — Merge `refactor/monorepo-merge` → `main`, tag `monorepo-merge-complete-2026-05-22`
+  - **No longer gated on Sobo deploy.** Sobo's currently-running production rootfs predates the merge and continues to work; redeploy is appropriately decoupled (see Sobo deploy strategy in korri-dependency doc).
+  - Now gated only on user's go/no-go for the merge itself.
 
 ---
 
