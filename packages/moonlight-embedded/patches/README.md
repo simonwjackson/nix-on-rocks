@@ -15,9 +15,12 @@ later patches assume earlier patches have applied.
 | 0001a | `0001a-fix-libdrm-cmake-find-and-main-help.patch` | This repo | Fixes two defects in PR #932 that prevented it from actually working: the CMake build-gate references `DRM_LIBRARY` / `DRM_INCLUDE_DIR` but never runs a probe to set them (gate silently false), and `src/main.c`'s `-platform` usage banner never gained the new platform name. Adds `pkg_check_modules(DRM libdrm)` and updates the help string. Kept as a separate patch so 0001 remains exact-byte-equal to PR #932. |
 | 0002 | `0002-add-v4l2m2m-egl-platform.patch` | This repo | Adds the `v4l2m2m` platform: selects `hevc_v4l2m2m` / `h264_v4l2m2m` decoders by name, imports `AVDRMFrameDescriptor` dma-buf fds via `EGL_LINUX_DMA_BUF_EXT`, samples `GL_TEXTURE_EXTERNAL_OES` in an SDL2 GL context (so it works under gamescope, which already owns DRM master). |
 
-0001 and 0001a are in `manifest.patches`; 0002 does not exist yet and is
-tracked as unit **U5** in
-`docs/plans/2026-05-22-002-feat-moonlight-embedded-v4l2m2m-zero-copy-plan.md`.
+All three patches are in `manifest.patches`. 0002 was authored on Fuji in
+a scratch tree (compile-clean against FFmpeg 8.0 + libdrm 2.4.131 +
+EGL 1.5 + GLES 3.2 + SDL2 2.32.64 on aarch64). Sobo hardware iteration
+(V4L2 negotiation, EGL_BAD_ACCESS triage, frame-pacing stability) is
+tracked as units **U4 G1–G5a** in
+`docs/plans/2026-05-22-003-feat-moonlight-embedded-sobo-zero-copy-shipping-plan.md`.
 
 ## Authoring workflow
 
