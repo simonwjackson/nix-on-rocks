@@ -2360,7 +2360,7 @@ new file mode 100755
 index 0000000000..5581b52475
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
-@@ -0,0 +1,289 @@
+@@ -0,0 +1,301 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -2592,6 +2592,17 @@ index 0000000000..5581b52475
 +  log "pass /dev/drm_dp_aux0 (external display DP AUX)"
 +fi
 +
++# /dev/cpu_dma_latency lets a process hold the kernel's max idle-exit
++# latency at a fixed ceiling by keeping a write file descriptor open
++# against it. Steam/gamescope/wine open this device when configured for
++# low input-latency, and on a handheld it pins the CPU out of deeper
++# C-states for the duration of a stream/game. Conditional bind so the
++# substrate does not require a feature that isn't always present.
++if [ -c /dev/cpu_dma_latency ]; then
++  emit_arg "--bind=/dev/cpu_dma_latency"
++  log "pass /dev/cpu_dma_latency (PM QoS latency floor)"
++fi
++
 +emit_device_allow "DeviceAllow=/dev/net/tun rwm"
 +emit_device_allow "DeviceAllow=/dev/uhid rwm"
 +emit_device_allow "DeviceAllow=/dev/snd/controlC0 rwm"
@@ -2632,6 +2643,7 @@ index 0000000000..5581b52475
 +# the only thing gated on node presence.
 +emit_device_allow "DeviceAllow=/dev/ntsync rwm"
 +emit_device_allow "DeviceAllow=/dev/drm_dp_aux0 rwm"
++emit_device_allow "DeviceAllow=/dev/cpu_dma_latency rwm"
 +
 +emit_safe_block_binds
 +
@@ -3045,7 +3057,7 @@ new file mode 100644
 index 0000000000..e6102c0606
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-@@ -0,0 +1,176 @@
+@@ -0,0 +1,180 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +#
@@ -3168,6 +3180,10 @@ index 0000000000..e6102c0606
 +# /dev/drm_dp_aux0 carries DisplayPort AUX traffic for the card0-DP-1
 +# connector (USB-C DP-alt-mode). Required for external display EDID/HPD.
 +DeviceAllow=/dev/drm_dp_aux0 rwm
++# /dev/cpu_dma_latency: PM QoS latency floor. Steam/gamescope/wine open
++# it to keep deeper CPU C-states out of an active game/stream session.
++# Harmless when no consumer is running.
++DeviceAllow=/dev/cpu_dma_latency rwm
 +
 +# Game/media storage is passed by rocknix-guest-start after excluding any
 +# block root that backs mounted host filesystems. Keep block DeviceAllow exact
@@ -3299,7 +3315,7 @@ new file mode 100755
 index 0000000000..612f3e2984
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-@@ -0,0 +1,250 @@
+@@ -0,0 +1,252 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3427,7 +3443,8 @@ index 0000000000..612f3e2984
 +  'DeviceAllow=/dev/rfkill rwm' \
 +  'DeviceAllow=char-video4linux rwm' \
 +  'DeviceAllow=/dev/ntsync rwm' \
-+  'DeviceAllow=/dev/drm_dp_aux0 rwm'; do
++  'DeviceAllow=/dev/drm_dp_aux0 rwm' \
++  'DeviceAllow=/dev/cpu_dma_latency rwm'; do
 +  check_grep "${device_allow}" "${guest_unit}" "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +check_grep '--capability=CAP_NET_ADMIN' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3438,6 +3455,7 @@ index 0000000000..612f3e2984
 +check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
 +check_grep '--bind=/dev/ntsync' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/ntsync for Wine/Proton sync"
 +check_grep '--bind=/dev/drm_dp_aux0' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/drm_dp_aux0 for external DP"
++check_grep '--bind=/dev/cpu_dma_latency' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/cpu_dma_latency for PM QoS"
 +check_grep '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must keep the single host/guest storage seam through the compatibility bind"
 +check_grep 'has_candidate_media_member' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must classify media without probing blocked devices"
 +if grep -q 'blkid' "${SCRIPT_ROOT}/rocknix-guest-start"; then
@@ -3555,7 +3573,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1404 @@
+@@ -0,0 +1,1413 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3795,7 +3813,8 @@ index 0000000000..b28ce8fdc0
 +  'DeviceAllow=/dev/rfkill rwm' \
 +  'DeviceAllow=char-video4linux rwm' \
 +  'DeviceAllow=/dev/ntsync rwm' \
-+  'DeviceAllow=/dev/drm_dp_aux0 rwm'; do
++  'DeviceAllow=/dev/drm_dp_aux0 rwm' \
++  'DeviceAllow=/dev/cpu_dma_latency rwm'; do
 +  grep -q "${device_allow}" "${guest_unit}" || fail "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +grep -q -- '--capability=CAP_NET_ADMIN' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3811,6 +3830,8 @@ index 0000000000..b28ce8fdc0
 +grep -q 'DeviceAllow=/dev/ntsync rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/ntsync at runtime"
 +grep -q -- '--bind=/dev/drm_dp_aux0' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/drm_dp_aux0 for external DP"
 +grep -q 'DeviceAllow=/dev/drm_dp_aux0 rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/drm_dp_aux0 at runtime"
++grep -q -- '--bind=/dev/cpu_dma_latency' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/cpu_dma_latency for PM QoS"
++grep -q 'DeviceAllow=/dev/cpu_dma_latency rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/cpu_dma_latency at runtime"
 +grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind scrubbed udev db"
 +grep -q -- '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must keep the single host/guest storage seam"
 +! grep -q -- '--bind-ro=/storage/roms' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host ROM library"
