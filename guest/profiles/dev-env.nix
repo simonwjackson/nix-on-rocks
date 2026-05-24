@@ -18,9 +18,13 @@
 # Sway exec mechanism (used by every keybind) requires bashInteractive
 # on the unit's PATH so execlp("sh", ...) resolves -- same fix carried
 # in main-space.nix. See its long PATH comment for context.
-{ lib, pkgs, ... }:
+{ config, lib, pkgs, ... }:
 
 let
+  # Session runtime-dir is owned by ../modules/session.nix and
+  # parameterized on rocknix.session.runtimeDir.uid (default 0).
+  uid = toString config.rocknix.session.runtimeDir.uid;
+  runtimeDir = "/run/user/${uid}";
   # Status line script for swaybar. Lives as a separate file rather
   # than inline in the bar block because sway's config parser strips
   # shell quoting from `status_command`, which silently mangles any
@@ -82,7 +86,16 @@ in
   systemd.services.main-space-sway-kiosk = {
     description = "Main-space sway dev-env session";
     wantedBy = [ "multi-user.target" ];
-    after = [ "multi-user.target" "systemd-user-sessions.service" ];
+    # Order only after concrete prerequisites. Do NOT order after
+    # multi-user.target: that lets the target complete without
+    # reliably launching the compositor (same rule the main-space
+    # profile's sway-kiosk obeys; the static-check script asserts
+    # the prohibition for both profiles).
+    after = [
+      "systemd-user-sessions.service"
+      "main-space-runtime-dir.service"
+    ];
+    requires = [ "main-space-runtime-dir.service" ];
 
     path = with pkgs; [
       dbus
@@ -102,7 +115,6 @@ in
     serviceConfig = {
       Type = "simple";
       User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
       ExecStart = "${pkgs.sway}/bin/sway -c /etc/sway/config";
       Restart = "on-failure";
       RestartSec = 3;
@@ -110,7 +122,7 @@ in
       StandardError = "journal";
     };
     environment = {
-      XDG_RUNTIME_DIR = "/run/user/0";
+      XDG_RUNTIME_DIR = runtimeDir;
       WLR_NO_HARDWARE_CURSORS = "1";
       WLR_LIBINPUT_NO_DEVICES = "1";
       HOME = "/root";

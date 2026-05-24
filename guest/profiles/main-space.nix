@@ -31,6 +31,10 @@ let
   # output, it survives sway parsing untouched and runs under the same
   # bash the kiosk unit adds to its PATH.
   sm8550 = config.rocknix.sm8550;
+  # Session runtime-dir is owned by ../modules/session.nix and
+  # parameterized on rocknix.session.runtimeDir.uid (default 0).
+  uid = toString config.rocknix.session.runtimeDir.uid;
+  runtimeDir = "/run/user/${uid}";
   swayBarStatus = pkgs.writeShellScript "sway-bar-status" ''
     while true; do
       cap=$(cat /sys/class/power_supply/battery/capacity 2>/dev/null \
@@ -202,9 +206,10 @@ in
     # the concrete prerequisites it actually needs.
     after = [
       "systemd-user-sessions.service"
+      "main-space-runtime-dir.service"
       "main-space-session-dbus.service"
     ];
-    requires = [ "main-space-session-dbus.service" ];
+    requires = [ "main-space-runtime-dir.service" "main-space-session-dbus.service" ];
 
     # sway's wrapper invokes dbus-run-session which spawns dbus-daemon.
     # Without dbus on the unit's PATH the wrapper fails with
@@ -248,7 +253,6 @@ in
     serviceConfig = {
       Type = "simple";
       User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
       ExecStart = "${pkgs.sway}/bin/sway -c /etc/sway/config";
       Restart = "on-failure";
       RestartSec = 3;
@@ -259,7 +263,7 @@ in
       # Session-owned defaults for graphical apps launched via swaymsg exec.
       # Cemu's launcher should not have to manufacture Wayland/audio/XDG
       # basics; those belong to the Layer 14 guest session.
-      XDG_RUNTIME_DIR = "/run/user/0";
+      XDG_RUNTIME_DIR = runtimeDir;
       # WAYLAND_DISPLAY intentionally NOT pre-set here. Sway exports its
       # own WAYLAND_DISPLAY into the systemd activation environment when
       # the compositor finishes initializing, which is what clients
@@ -270,7 +274,7 @@ in
       # "backend/wayland/backend.c:608 Could not connect to remote
       # display: No such file or directory". Verified live on Thor
       # 2026-05-11 after cold boot.
-      DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/0/bus";
+      DBUS_SESSION_BUS_ADDRESS = "unix:path=${runtimeDir}/bus";
       XDG_CURRENT_DESKTOP = "sway";
       SDL_AUDIODRIVER = "pulseaudio";
       HOME = "/storage";

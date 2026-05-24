@@ -9,19 +9,24 @@
 let
   ucmPackage = config.rocknix.sm8550.audio.ucmPackage;
   ucmPath = "${ucmPackage}/share/alsa/ucm2";
+  uid = toString config.rocknix.session.runtimeDir.uid;
+  runtimeDir = "/run/user/${uid}";
   audioServiceEnvironment = {
-    XDG_RUNTIME_DIR = "/run/user/0";
-    DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/0/bus";
-    PIPEWIRE_RUNTIME_DIR = "/run/user/0";
+    XDG_RUNTIME_DIR = runtimeDir;
+    DBUS_SESSION_BUS_ADDRESS = "unix:path=${runtimeDir}/bus";
+    PIPEWIRE_RUNTIME_DIR = runtimeDir;
     ALSA_CONFIG_UCM2 = ucmPath;
-    PULSE_SERVER = "unix:/run/user/0/pulse/native";
+    PULSE_SERVER = "unix:${runtimeDir}/pulse/native";
   };
 in
 {
   # Keep NixOS PipeWire configuration available, but do not rely on its user
   # units: the main-space kiosk bypasses PAM/logind user sessions. The
   # root-owned main-space-* services below run the graph in the same
-  # /run/user/0 runtime as Sway and launched apps.
+  # /run/user/<uid> runtime as Sway and launched apps. They are ordered
+  # After=main-space-runtime-dir.service (defined in ../modules/session.nix)
+  # so logind's per-uid tmpfs mount has already happened before any socket
+  # is written; see that module's comment for the original wipe race.
   services.pipewire = {
     enable = true;
     alsa.enable = true;
@@ -53,11 +58,11 @@ in
   systemd.services.main-space-pipewire = {
     description = "Main-space root PipeWire service";
     wantedBy = [ "multi-user.target" ];
-    after = [ "main-space-session-dbus.service" ];
+    after = [ "main-space-runtime-dir.service" "main-space-session-dbus.service" ];
+    requires = [ "main-space-runtime-dir.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
       ExecStart = "${pkgs.pipewire}/bin/pipewire";
       Restart = "on-failure";
       RestartSec = 3;
@@ -68,12 +73,11 @@ in
   systemd.services.main-space-pipewire-pulse = {
     description = "Main-space root PipeWire PulseAudio service";
     wantedBy = [ "multi-user.target" ];
-    after = [ "main-space-pipewire.service" "main-space-session-dbus.service" ];
-    requires = [ "main-space-pipewire.service" ];
+    after = [ "main-space-runtime-dir.service" "main-space-pipewire.service" "main-space-session-dbus.service" ];
+    requires = [ "main-space-runtime-dir.service" "main-space-pipewire.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
       ExecStart = "${pkgs.pipewire}/bin/pipewire-pulse";
       Restart = "on-failure";
       RestartSec = 3;
@@ -84,12 +88,11 @@ in
   systemd.services.main-space-wireplumber = {
     description = "Main-space root WirePlumber service";
     wantedBy = [ "multi-user.target" ];
-    after = [ "main-space-pipewire.service" "main-space-session-dbus.service" ];
-    requires = [ "main-space-pipewire.service" ];
+    after = [ "main-space-runtime-dir.service" "main-space-pipewire.service" "main-space-session-dbus.service" ];
+    requires = [ "main-space-runtime-dir.service" "main-space-pipewire.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
       ExecStart = "${pkgs.wireplumber}/bin/wireplumber";
       Restart = "on-failure";
       RestartSec = 3;

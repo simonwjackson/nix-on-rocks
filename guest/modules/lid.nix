@@ -56,6 +56,12 @@ let
   killSwitch = "/storage/.guest/lid-suspend.disabled";
   stateDir = "/run/rocknix-lid";
   input = config.rocknix.sm8550.input;
+  # Session runtime-dir is owned by ./session.nix and parameterized on
+  # rocknix.session.runtimeDir.uid (default 0). Used by the
+  # main-space-hardware-button-handler environment block below so
+  # wpctl / pactl children find the substrate audio sockets.
+  uid = toString config.rocknix.session.runtimeDir.uid;
+  runtimeDir = "/run/user/${uid}";
   powerEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.powerEventNames;
   volumeDownEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.volumeDownEventNames;
   volumeUpLidEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.volumeUpLidEventNames;
@@ -401,6 +407,7 @@ in
     # "no PipeWire/PulseAudio control socket available".
     after = [
       "systemd-user-sessions.service"
+      "main-space-runtime-dir.service"
       "main-space-pipewire.service"
       "main-space-pipewire-pulse.service"
       "main-space-wireplumber.service"
@@ -410,13 +417,13 @@ in
     # socket at $PULSE_SERVER. The handler unit runs as root with the
     # systemd minimal environment by default; without these vars its
     # children fail with "no PipeWire/PulseAudio control socket
-    # available" even though the sockets exist under /run/user/0/.
+    # available" even though the sockets exist under /run/user/<uid>/.
     # Same triplet the main-space-pipewire* services use for their own
     # anchor (see modules/audio.nix). Verified on Thor 2026-05-11.
     environment = {
-      XDG_RUNTIME_DIR = "/run/user/0";
-      PULSE_SERVER = "unix:/run/user/0/pulse/native";
-      DBUS_SESSION_BUS_ADDRESS = "unix:path=/run/user/0/bus";
+      XDG_RUNTIME_DIR = runtimeDir;
+      PULSE_SERVER = "unix:${runtimeDir}/pulse/native";
+      DBUS_SESSION_BUS_ADDRESS = "unix:path=${runtimeDir}/bus";
     };
     serviceConfig = {
       Type = "simple";

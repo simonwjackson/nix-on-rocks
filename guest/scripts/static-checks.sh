@@ -199,8 +199,8 @@ grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/modules/audio.nix" \
   || fail "audio module must start audio services in the kiosk boot target"
 grep -q 'ALSA_CONFIG_UCM2 = ucmPath' "$ROOT/modules/audio.nix" \
   || fail "audio module must pass guest-owned UCM path to audio services"
-grep -qE 'PULSE_SERVER = "unix:/run/user/[^"]*/pulse/native"' "$ROOT/modules/audio.nix" \
-  || fail "audio module must point clients at the root PipeWire Pulse socket (literal /run/user/0/... or parameterized /run/user/\${...}/...)"
+grep -qE 'PULSE_SERVER = "unix:[^"]+/pulse/native"' "$ROOT/modules/audio.nix" \
+  || fail "audio module must point clients at the root PipeWire Pulse socket (literal /run/user/0/... or interpolated \${runtimeDir}/...)"
 grep -q 'services.inputplumber' "$ROOT/modules/input.nix" \
   || fail "input module must enable guest-owned InputPlumber"
 grep -q '0.75.2' "$REPO_ROOT/packages/inputplumber/default.nix" \
@@ -264,10 +264,39 @@ grep -q '../modules/session.nix' "$ROOT/profiles/dev-env.nix" \
 ! grep -qE 'KillUserProcesses|RemoveIPC' "$ROOT"/modules/*.nix "$ROOT"/profiles/*.nix \
   || fail "main-space runtime-dir fix must NOT introduce KillUserProcesses/RemoveIPC logind knobs (U1 verdict: logind is not implicated as a session-reaper, only as a too-late tmpfs mounter; ordering against user-runtime-dir@ is sufficient)"
 
-# Consumer-ordering assertions, the install-d removal assertions, the
-# dev-env audit-gap assertion, and the env-triplet parameterization
-# assertion all land with the U3 implementation commit so this script
-# stays green commit-by-commit.
+# Each main-space consumer (session-dbus, audio triplet, sway-kiosk in
+# both main-space and dev-env, hardware-button-handler) must reference
+# main-space-runtime-dir.service in its service ordering so logind's
+# tmpfs mount has already happened before sockets / env-dependent code
+# runs. (session-dbus's ordering is in rocknix-guest-base.nix.)
+for f in profiles/rocknix-guest-base.nix modules/audio.nix profiles/main-space.nix profiles/dev-env.nix modules/lid.nix; do
+  grep -q 'main-space-runtime-dir.service' "$ROOT/$f" \
+    || fail "$f must reference main-space-runtime-dir.service in service ordering (After=/Requires=)"
+done
+
+# No consumer keeps the ad-hoc install -d /run/user/0 ExecStartPre --
+# the anchor + logind's tmpfs are the sole creators.
+for f in profiles/rocknix-guest-base.nix modules/audio.nix profiles/main-space.nix profiles/dev-env.nix; do
+  ! grep -qE 'ExecStartPre.*install -d.*/run/user/0' "$ROOT/$f" \
+    || fail "$f must not keep the ad-hoc install -d /run/user/0 ExecStartPre after the runtime-dir anchor takes over"
+done
+
+# dev-env audit-gap parity: the dev-env profile copy of
+# main-space-sway-kiosk must obey the same After=multi-user.target
+# prohibition as the main-space copy (the rule that lets multi-user.target
+# finish without the compositor launching).
+! grep -q 'after = \[ "multi-user.target"' "$ROOT/profiles/dev-env.nix" \
+  || fail "dev-env sway kiosk service must not order After=multi-user.target (audit-gap parity with main-space)"
+
+# Env-triplet parameterization (R5: future non-root kiosk migration is
+# a single config change). XDG_RUNTIME_DIR / PULSE_SERVER /
+# DBUS_SESSION_BUS_ADDRESS / PIPEWIRE_RUNTIME_DIR must be derived from
+# the UID option rather than hardcoded to /run/user/0 in the service
+# environment = { ... } and audioServiceEnvironment blocks.
+! grep -qE '^[[:space:]]+XDG_RUNTIME_DIR = "/run/user/0";' "$ROOT/modules/audio.nix" "$ROOT/modules/lid.nix" "$ROOT/profiles/main-space.nix" "$ROOT/profiles/dev-env.nix" \
+  || fail "audio/lid/main-space/dev-env service environment blocks must parameterize XDG_RUNTIME_DIR through rocknix.session.runtimeDir.uid"
+! grep -qE '^[[:space:]]+PULSE_SERVER = "unix:/run/user/0/' "$ROOT/modules/audio.nix" "$ROOT/modules/lid.nix" \
+  || fail "audio/lid PULSE_SERVER must parameterize the /run/user/<uid>/ prefix through rocknix.session.runtimeDir.uid"
 
 grep -q 'main-space-hardware-button-handler' "$ROOT/modules/lid.nix" \
   || fail "lid module must own guest hardware button handling"
