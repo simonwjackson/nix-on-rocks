@@ -225,10 +225,10 @@ index 0000000000..51ff27c47f
 +  cp "${seed_tarball}" "${seed_release_dir}/${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE}"
 +
 +  # Contract docs are owned by Nix-on-Rocks under docs/contracts/.
-+  # Copy the two that the host ships on-image from the fetched product tarball.
++  # Staged into ${PKG_DIR}/contract-docs/ by scripts/apply-rocknix-patches.
 +  mkdir -p "${substrate_lib}/docs"
-+  cp "${guest_extract}/docs/contracts/layer14-main-space-contract.md" "${substrate_lib}/docs/"
-+  cp "${guest_extract}/docs/contracts/layer14-soak-checklist.md" "${substrate_lib}/docs/"
++  cp "${PKG_DIR}/contract-docs/layer14-main-space-contract.md" "${substrate_lib}/docs/"
++  cp "${PKG_DIR}/contract-docs/layer14-soak-checklist.md" "${substrate_lib}/docs/"
 +
 +  # Main-space wiring. SM8550 always boots the NixOS guest by default;
 +  # ROCKNIX remains the recovery plane via rocknix-recovery-toggle.
@@ -239,12 +239,12 @@ index 0000000000..51ff27c47f
 +  enable_service rocknix-guest-promote.service
 +  enable_service rocknix-recovery-toggle.service
 +
-+  # Ship the recovery readme to /flash/. Pulled from the fetched
-+  # Nix-on-Rocks product tarball (docs/contracts/HOW-TO-FALL-BACK.md) so
-+  # a teardown / SD-card reader on another machine can read it without
++  # Ship the recovery readme to /flash/. Staged into
++  # ${PKG_DIR}/contract-docs/ by scripts/apply-rocknix-patches so a
++  # teardown / SD-card reader on another machine can read it without
 +  # booting Thor.
 +  mkdir -p ${INSTALL}/flash
-+  cp "${guest_extract}/docs/contracts/HOW-TO-FALL-BACK.md" ${INSTALL}/flash/HOW-TO-FALL-BACK.md
++  cp "${PKG_DIR}/contract-docs/HOW-TO-FALL-BACK.md" ${INSTALL}/flash/HOW-TO-FALL-BACK.md
 +  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
 +    cat >> ${INSTALL}/flash/HOW-TO-FALL-BACK.md <<'EOF'
 +
@@ -3733,9 +3733,9 @@ index 0000000000..b28ce8fdc0
 +grep -q 'tar -xzf "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must extract fetched guest tarball"
 +grep -q 'cp -PR "${guest_source}/."' "${PKG_DIR}/package.mk" || fail "package.mk must stage fetched guest subtree"
 +grep -q 'guest-revision' "${PKG_DIR}/package.mk" || fail "package.mk must ship packaged guest revision marker"
-+grep -q 'docs/contracts/layer14-main-space-contract.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship main-space contract doc from guest"
-+grep -q 'docs/contracts/layer14-soak-checklist.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship soak checklist from guest"
-+grep -q 'docs/contracts/HOW-TO-FALL-BACK.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship fallback doc from guest"
++grep -q 'contract-docs/layer14-main-space-contract.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship main-space contract doc from staged contract-docs"
++grep -q 'contract-docs/layer14-soak-checklist.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship soak checklist from staged contract-docs"
++grep -q 'contract-docs/HOW-TO-FALL-BACK.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship fallback doc from staged contract-docs"
 +grep -q 'SM8550_MINIMAL_HOST=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document minimal-host fallback mode when enabled"
 +grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_URL=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed URL contract"
 +grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed SHA256 contract"

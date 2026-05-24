@@ -19,3 +19,20 @@ done < "${series}"
 
 git -C "${work_dir}" diff --check
 printf 'Applied Nix-on-Rocks patch queue to %s\n' "${work_dir}"
+
+# Stage Nix-on-Rocks-owned contract docs into the rocknix-guest-substrate
+# package directory so its post_install can cp them without reaching
+# across repos. The docs live in this repo under docs/contracts/; the
+# rocknix build runs inside work/rocknix/ and cannot read paths above
+# that root, so we mirror the three on-image docs into the patched
+# package tree. Patch 0006 references these copies via ${PKG_DIR}/
+# contract-docs/<file>.
+substrate_pkg_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
+contract_docs_dest="${substrate_pkg_dir}/contract-docs"
+mkdir -p "${contract_docs_dest}"
+for doc in layer14-main-space-contract.md layer14-soak-checklist.md HOW-TO-FALL-BACK.md; do
+  src="${repo_root}/docs/contracts/${doc}"
+  [ -f "${src}" ] || { echo "missing contract doc for substrate stage: ${src}" >&2; exit 1; }
+  cp "${src}" "${contract_docs_dest}/${doc}"
+done
+printf 'Staged Nix-on-Rocks contract docs into %s\n' "${contract_docs_dest}"
