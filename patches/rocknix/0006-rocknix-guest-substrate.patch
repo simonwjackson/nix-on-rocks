@@ -2357,10 +2357,10 @@ index 0000000000..e1411eeeb4
 +exit 0
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
 new file mode 100755
-index 0000000000..e3ba9f2668
+index 0000000000..5581b52475
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
-@@ -0,0 +1,264 @@
+@@ -0,0 +1,289 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -2573,6 +2573,25 @@ index 0000000000..e3ba9f2668
 +  log "pass v4l2 codec ${v_node}"
 +done
 +
++# /dev/ntsync exposes the kernel's Win32-compatible sync primitives
++# (added in 6.10 / present on the SM8550 7.0 kernel). When available,
++# Wine/Proton uses it for materially better game performance than
++# Esync/Fsync. Conditional bind because older kernels do not expose it.
++if [ -c /dev/ntsync ]; then
++  emit_arg "--bind=/dev/ntsync"
++  log "pass /dev/ntsync (Wine/Proton sync)"
++fi
++
++# /dev/drm_dp_aux0 is the DisplayPort AUX channel for card0-DP-1
++# (USB-C DP-alt-mode on SM8550 handhelds). Without it the guest
++# compositor cannot read EDID / receive HPD events from an attached
++# external display. Conditional bind because some SM8550 variants do
++# not wire the DP connector.
++if [ -c /dev/drm_dp_aux0 ]; then
++  emit_arg "--bind=/dev/drm_dp_aux0"
++  log "pass /dev/drm_dp_aux0 (external display DP AUX)"
++fi
++
 +emit_device_allow "DeviceAllow=/dev/net/tun rwm"
 +emit_device_allow "DeviceAllow=/dev/uhid rwm"
 +emit_device_allow "DeviceAllow=/dev/snd/controlC0 rwm"
@@ -2607,6 +2626,12 @@ index 0000000000..e3ba9f2668
 +# nodes, so a numbered DeviceAllow per node would either drift out of sync
 +# with the kernel's actual ordinal assignments or duplicate the enumeration.
 +emit_device_allow "DeviceAllow=char-video4linux rwm"
++# Companions to the conditional binds above. DeviceAllow is harmless when
++# the underlying node is absent (systemd accepts the entry; the cgroup
++# program never matches), so emit unconditionally and keep the bind list
++# the only thing gated on node presence.
++emit_device_allow "DeviceAllow=/dev/ntsync rwm"
++emit_device_allow "DeviceAllow=/dev/drm_dp_aux0 rwm"
 +
 +emit_safe_block_binds
 +
@@ -3017,10 +3042,10 @@ index 0000000000..b3783b8c25
 +WantedBy=rocknix-main-space.target
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
 new file mode 100644
-index 0000000000..41580339c6
+index 0000000000..e6102c0606
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-@@ -0,0 +1,169 @@
+@@ -0,0 +1,176 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +#
@@ -3136,6 +3161,13 @@ index 0000000000..41580339c6
 +# cgroup companion. Without it, the bind succeeds but every open() inside the
 +# guest returns EPERM and Moonlight's v4l2m2m enumeration finds nothing.
 +DeviceAllow=char-video4linux rwm
++# /dev/ntsync (kernel >= 6.10) lets Wine/Proton emulate Win32 sync
++# primitives natively. Big perf win for Steam Proton games on SM8550.
++# Harmless when the device is absent.
++DeviceAllow=/dev/ntsync rwm
++# /dev/drm_dp_aux0 carries DisplayPort AUX traffic for the card0-DP-1
++# connector (USB-C DP-alt-mode). Required for external display EDID/HPD.
++DeviceAllow=/dev/drm_dp_aux0 rwm
 +
 +# Game/media storage is passed by rocknix-guest-start after excluding any
 +# block root that backs mounted host filesystems. Keep block DeviceAllow exact
@@ -3264,10 +3296,10 @@ index 0000000000..6ccb1238d2
 +WantedBy=sysinit.target
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
 new file mode 100755
-index 0000000000..3a7dc88225
+index 0000000000..612f3e2984
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-@@ -0,0 +1,246 @@
+@@ -0,0 +1,250 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3393,7 +3425,9 @@ index 0000000000..3a7dc88225
 +  'DeviceAllow=/dev/tty0 rwm' \
 +  'DeviceAllow=/dev/tty1 rwm' \
 +  'DeviceAllow=/dev/rfkill rwm' \
-+  'DeviceAllow=char-video4linux rwm'; do
++  'DeviceAllow=char-video4linux rwm' \
++  'DeviceAllow=/dev/ntsync rwm' \
++  'DeviceAllow=/dev/drm_dp_aux0 rwm'; do
 +  check_grep "${device_allow}" "${guest_unit}" "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +check_grep '--capability=CAP_NET_ADMIN' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3402,6 +3436,8 @@ index 0000000000..3a7dc88225
 +check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uhid for guest Bluetooth HID devices"
 +check_grep '--bind=/dev/uinput' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uinput for guest InputPlumber"
 +check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
++check_grep '--bind=/dev/ntsync' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/ntsync for Wine/Proton sync"
++check_grep '--bind=/dev/drm_dp_aux0' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/drm_dp_aux0 for external DP"
 +check_grep '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must keep the single host/guest storage seam through the compatibility bind"
 +check_grep 'has_candidate_media_member' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must classify media without probing blocked devices"
 +if grep -q 'blkid' "${SCRIPT_ROOT}/rocknix-guest-start"; then
@@ -3516,7 +3552,7 @@ index 0000000000..3a7dc88225
 +printf 'rocknix-guest-substrate thin-host runtime smoke passed\n'
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 new file mode 100755
-index 0000000000..bd11769bb3
+index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 @@ -0,0 +1,1404 @@
@@ -3757,7 +3793,9 @@ index 0000000000..bd11769bb3
 +  'DeviceAllow=/dev/tty0 rwm' \
 +  'DeviceAllow=/dev/tty1 rwm' \
 +  'DeviceAllow=/dev/rfkill rwm' \
-+  'DeviceAllow=char-video4linux rwm'; do
++  'DeviceAllow=char-video4linux rwm' \
++  'DeviceAllow=/dev/ntsync rwm' \
++  'DeviceAllow=/dev/drm_dp_aux0 rwm'; do
 +  grep -q "${device_allow}" "${guest_unit}" || fail "guest unit must not let tun DeviceAllow block main-space devices: ${device_allow}"
 +done
 +grep -q -- '--capability=CAP_NET_ADMIN' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
@@ -3769,6 +3807,10 @@ index 0000000000..bd11769bb3
 +grep -q -- '--bind=/dev/snd' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through sound devices"
 +grep -q -- '--bind=${v_node}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/video* codec nodes for Moonlight v4l2m2m"
 +grep -q -- 'for v_node in /dev/video' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate /dev/video[0-9]* at runtime rather than hardcode ordinals"
++grep -q -- '--bind=/dev/ntsync' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/ntsync for Wine/Proton sync"
++grep -q 'DeviceAllow=/dev/ntsync rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/ntsync at runtime"
++grep -q -- '--bind=/dev/drm_dp_aux0' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/drm_dp_aux0 for external DP"
++grep -q 'DeviceAllow=/dev/drm_dp_aux0 rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/drm_dp_aux0 at runtime"
 +grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind scrubbed udev db"
 +grep -q -- '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must keep the single host/guest storage seam"
 +! grep -q -- '--bind-ro=/storage/roms' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host ROM library"
