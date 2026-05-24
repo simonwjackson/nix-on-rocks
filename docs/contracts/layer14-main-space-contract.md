@@ -169,7 +169,11 @@ Electrobun packaging, native bridge configuration, and rootfs artifact
 publication.
 
 ROCKNIX owns only the guest/session runtime environment a downstream product
-needs to start: `HOME=/storage`, `XDG_RUNTIME_DIR=/run/user/0`, the root session
+needs to start: `HOME=/storage`, `XDG_RUNTIME_DIR=/run/user/<uid>` (with the
+UID parameterized by `rocknix.session.runtimeDir.uid`, defaulting to `0`; the
+substrate-owned `main-space-runtime-dir.service` anchors all main-space
+consumers behind logind's per-uid `user-runtime-dir@<uid>.service` so the
+session tmpfs is mounted before any socket is written), the root session
 D-Bus socket, PipeWire/Pulse, display/input/audio/device binds, and Sway launch
 policy. Do not add a ROCKNIX-owned Korri package, Korri flake input, or duplicate
 Korri's native bridge URL option here. Legacy nix-on-rocks Korri-consuming

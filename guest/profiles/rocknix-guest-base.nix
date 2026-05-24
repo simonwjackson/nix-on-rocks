@@ -5,10 +5,14 @@
 # display/audio/input/network/lid modules, Steam runtime plumbing, and app
 # package helpers. Product composition (Korri client/server/kiosk selection,
 # Home-chord app launch policy, rootfs authority) lives downstream.
-{ pkgs
+{ config
+, pkgs
 , ...
 }:
 
+let
+  cfg = config.rocknix.session.runtimeDir;
+in
 {
   imports = [
     ../modules/base.nix
@@ -22,6 +26,7 @@
     ../modules/lid.nix
     ../modules/steam.nix
     ../modules/moonlight.nix
+    ../modules/session.nix
   ];
 
   # Layer 14 default hostname: distinguish from the Layer 10b minimal
@@ -43,12 +48,18 @@
   '';
 
   # Stable root session bus for whichever compositor owner the downstream
-  # appliance chooses. Runtime service-name references support both the legacy
-  # main-space fallback compositor and the Korri-owned kiosk compositor without
+  # appliance chooses. The After=/Requires=main-space-runtime-dir.service
+  # ordering ensures logind's per-uid tmpfs mount has happened before the
+  # bus socket is written. See ../modules/session.nix for the substrate-
+  # owned runtime-dir anchor and the rocknix.session.runtimeDir.uid option.
+  # Runtime service-name references support both the legacy main-space
+  # fallback compositor and the Korri-owned kiosk compositor without
   # importing or configuring Korri product modules here.
   systemd.services.main-space-session-dbus = {
     description = "Main-space root session D-Bus";
     wantedBy = [ "multi-user.target" ];
+    after = [ "main-space-runtime-dir.service" ];
+    requires = [ "main-space-runtime-dir.service" ];
     before = [
       "main-space-sway-kiosk.service"
       "korri-kiosk.service"
@@ -56,8 +67,7 @@
     serviceConfig = {
       Type = "simple";
       User = "root";
-      ExecStartPre = "${pkgs.coreutils}/bin/install -d -m 0700 -o 0 -g 0 /run/user/0";
-      ExecStart = "${pkgs.dbus}/bin/dbus-daemon --session --address=unix:path=/run/user/0/bus --nofork --nopidfile";
+      ExecStart = "${pkgs.dbus}/bin/dbus-daemon --session --address=unix:path=/run/user/${toString cfg.uid}/bus --nofork --nopidfile";
       Restart = "on-failure";
       RestartSec = 3;
       StandardOutput = "journal";

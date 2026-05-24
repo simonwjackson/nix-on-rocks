@@ -49,6 +49,7 @@ in
     ../modules/audio.nix
     ../modules/network.nix
     ../modules/lid.nix
+    ../modules/session.nix
   ];
 
   # Distinct from main-space ("rocknix-nix") so machinectl/journal/etc.

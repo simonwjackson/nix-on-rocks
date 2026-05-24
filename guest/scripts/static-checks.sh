@@ -151,6 +151,7 @@ for f in \
   modules/network.nix \
   modules/lid.nix \
   modules/steam.nix \
+  modules/session.nix \
   profiles/minimal.nix \
   profiles/ssh.nix \
   profiles/rocknix-guest-base.nix \
@@ -198,8 +199,8 @@ grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/modules/audio.nix" \
   || fail "audio module must start audio services in the kiosk boot target"
 grep -q 'ALSA_CONFIG_UCM2 = ucmPath' "$ROOT/modules/audio.nix" \
   || fail "audio module must pass guest-owned UCM path to audio services"
-grep -q 'PULSE_SERVER = "unix:/run/user/0/pulse/native"' "$ROOT/modules/audio.nix" \
-  || fail "audio module must point clients at the root PipeWire Pulse socket"
+grep -qE 'PULSE_SERVER = "unix:/run/user/[^"]*/pulse/native"' "$ROOT/modules/audio.nix" \
+  || fail "audio module must point clients at the root PipeWire Pulse socket (literal /run/user/0/... or parameterized /run/user/\${...}/...)"
 grep -q 'services.inputplumber' "$ROOT/modules/input.nix" \
   || fail "input module must enable guest-owned InputPlumber"
 grep -q '0.75.2' "$REPO_ROOT/packages/inputplumber/default.nix" \
@@ -235,6 +236,39 @@ grep -q 'PlaybackPCM "hw:${CardId},0"' "$REPO_ROOT/devices/sm8550/audio/ayn-odin
   || fail "AYN Odin2 UCM package must include Thor card-id symlink"
 ! grep -q 'module-alsa-sink\|sink_name=thor_hw0\|rocknix-audio-alsa-sink' "$ROOT/modules/audio.nix" "$ROOT/modules/lid.nix" \
   || fail "audio path must not depend on the diagnostic thor_hw0 module-alsa-sink workaround"
+
+# ==========================================================================
+# main-space /run/user/<uid> ownership (plan
+# docs/plans/2026-05-24-001-fix-main-space-pipewire-runtime-dir-plan.md).
+#
+# Per the U1 diagnostic trace, /run/user/<uid> is owned by logind's
+# user-runtime-dir@<uid>.service template (which mounts the tmpfs one
+# second after main-space-pipewire wrote its sockets into a plain
+# directory, masking them). main-space-* consumers must order After= a
+# thin substrate-owned anchor unit that itself orders After= and
+# Requires= user-runtime-dir@${uid}.service, so logind's tmpfs mount
+# happens before any session socket is written.
+# ==========================================================================
+grep -q 'options\.rocknix\.session\.runtimeDir' "$ROOT/modules/session.nix" \
+  || fail "modules/session.nix must declare the main-space runtime-dir UID option (rocknix.session.runtimeDir.uid)"
+grep -q 'systemd.services.main-space-runtime-dir' "$ROOT/modules/session.nix" \
+  || fail "modules/session.nix must define the main-space runtime-dir anchor service"
+grep -q 'user-runtime-dir@' "$ROOT/modules/session.nix" \
+  || fail "main-space runtime-dir anchor must order against logind user-runtime-dir@<uid>.service"
+grep -q '../modules/session.nix' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base profile must import the session module"
+grep -q '../modules/session.nix' "$ROOT/profiles/dev-env.nix" \
+  || fail "dev-env profile must import the session module (so its main-space-sway-kiosk can order behind the runtime-dir anchor)"
+! grep -qE 'systemd\.tmpfiles\.rules.*"d /run/user' "$ROOT/modules/session.nix" "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "session module / rocknix-guest-base must NOT declare a tmpfiles rule for /run/user/<uid> (U1 verdict: logind creates the dir inside its tmpfs; a second creator races the same way today's code does)"
+! grep -qE 'KillUserProcesses|RemoveIPC' "$ROOT"/modules/*.nix "$ROOT"/profiles/*.nix \
+  || fail "main-space runtime-dir fix must NOT introduce KillUserProcesses/RemoveIPC logind knobs (U1 verdict: logind is not implicated as a session-reaper, only as a too-late tmpfs mounter; ordering against user-runtime-dir@ is sufficient)"
+
+# Consumer-ordering assertions, the install-d removal assertions, the
+# dev-env audit-gap assertion, and the env-triplet parameterization
+# assertion all land with the U3 implementation commit so this script
+# stays green commit-by-commit.
+
 grep -q 'main-space-hardware-button-handler' "$ROOT/modules/lid.nix" \
   || fail "lid module must own guest hardware button handling"
 grep -q 'rocknix-volume' "$ROOT/modules/lid.nix" \
