@@ -17,8 +17,13 @@ This doc exists so the next operator hits these once, not five times.
 
 - Sobo (SM8550 handheld, ROCKNIX 25.x host + systemd-nspawn NixOS guest,
   guest on port 2222, rocknix-sway-kiosk.service running, PipeWire
-  socket broken — see runtime-errors/guest-pipewire-dummy-sink-missing-
-  udev-sound-records-rocknix-2026-05-13.md).
+  socket missing -- see acceptance/main-space-pipewire-runtime-dir-sobo-
+  2026-05-24.md and the underlying trace in thinking/SM8550/2026-05-24-
+  main-space-runtime-dir-wipe-trace.md. The 2026-05-13 "dummy-sink /
+  udev-sound-records" doc described a DIFFERENT failure mode
+  (auto_null sink due to missing udev sound records). Failures 4 and 5
+  here are the runtime-dir wipe race, not the udev / dummy-sink case;
+  the original write-up misattributed them).
 - Sunshine on aka (`192.168.1.117`, NixOS x86_64, AMD Radeon RX 7900 XT,
   Mesa 26.0.2, sway/Wayland session, sunshine-2025.924.154138).
 - moonlight-embedded built with patch stack 0001/0001a/0002 (SM8550
@@ -225,12 +230,24 @@ second.
 
 ### Root cause
 
-Sobo's PipeWire is broken in this branch (rocknix-pipewire.service is
-running, but the `/run/user/0/pipewire-0` socket is missing — see
-runtime-errors/guest-pipewire-dummy-sink-missing-udev-sound-records-
-rocknix-2026-05-13.md). SDL2's audio backend (pulse → fails;
-alsa-pipewire-bridge → fails) cannot open any device. `SDL_OpenAudio`
-returns "Audio subsystem is not initialized".
+Sobo's `/run/user/0/pipewire-0` socket is missing in this branch even
+though rocknix-pipewire.service is running. The real cause -- diagnosed
+later -- is a cold-boot race between `user-runtime-dir@0.service`
+(logind's tmpfs mount over /run/user/0) and `main-space-pipewire.service`
+(which writes the socket): pipewire wrote first, then logind's mount
+masked the socket, then callers (SDL2 pulse / alsa-pipewire-bridge)
+got ENOENT. SDL_OpenAudio returns "Audio subsystem is not initialized".
+The 2026-05-22 commit originally pointed at
+`runtime-errors/guest-pipewire-dummy-sink-missing-udev-sound-records-
+rocknix-2026-05-13.md` -- that is a different audio failure (auto_null
+sink due to missing udev sound records). The accurate references are:
+
+- `docs/thinking/SM8550/2026-05-24-main-space-runtime-dir-wipe-trace.md`
+  (diagnosis)
+- `docs/plans/2026-05-24-001-fix-main-space-pipewire-runtime-dir-plan.md`
+  (the fix plan)
+- `docs/acceptance/main-space-pipewire-runtime-dir-sobo-2026-05-24.md`
+  (cold-boot soak evidence that the race is closed)
 
 moonlight-embedded does not treat audio failure as a degraded-mode
 trigger. Its design is: video + audio + control are co-equal streams;
@@ -241,31 +258,43 @@ with the audio stream, not the client's init path).
 
 ### Fix
 
-SDL has a built-in `dummy` audio driver that always succeeds and
-produces no actual audio output. Setting `SDL_AUDIODRIVER=dummy`
-bypasses the failing real backend entirely.
+Two layers:
 
-The streaming launcher gains a `MOONLIGHT_AUDIO_DRIVER` env knob in
-this commit; setting it exports `SDL_AUDIODRIVER`. The runner
-auto-defaults to `dummy` when `MOONLIGHT_AUDIO_GATE=0` (the
-video-only smoke posture plan 003 U4 G5a uses), so operators in
-degraded mode don't have to remember.
+1. **Substrate fix (the real fix, landed 2026-05-24):** Plan
+   `docs/plans/2026-05-24-001-fix-main-space-pipewire-runtime-dir-plan.md`
+   adds a `main-space-runtime-dir.service` anchor that orders all
+   /run/user/<uid> consumers (pipewire/pulse/wireplumber/sway/lid/dbus)
+   after `user-runtime-dir@<uid>.service`, so the logind tmpfs mount
+   completes before any socket is written. Cold-boot soak PASS recorded
+   in `docs/acceptance/main-space-pipewire-runtime-dir-sobo-2026-05-24.md`.
+   After this fix, SDL_OpenAudio succeeds normally on sobo and Failures
+   4 and 5 do not reproduce.
+
+2. **Bypass workaround (kept for video-only smoke postures only):** SDL
+   has a built-in `dummy` audio driver that always succeeds and produces
+   no actual audio output. Setting `SDL_AUDIODRIVER=dummy` bypasses the
+   real backend entirely. The streaming launcher's
+   `MOONLIGHT_AUDIO_DRIVER` env knob still exports `SDL_AUDIODRIVER` when
+   explicitly set, but the runner no longer auto-defaults to `dummy`
+   under `MOONLIGHT_AUDIO_GATE=0` -- with the substrate fix landed, the
+   silent auto-park was hiding real audio regressions.
 
 ```sh
-# explicit video-only smoke posture:
-MOONLIGHT_AUDIO_DRIVER=dummy start_moonlight_embedded_gamescope.sh aka Desktop
+# happy path (post-fix): no audio knob needed, SDL picks pulse and wins.
+start_moonlight_embedded_gamescope.sh aka Desktop
 
-# via the runner -- audio gate parked, defaults to dummy:
-MOONLIGHT_AUDIO_GATE=0 \
-  remote-moonlight-runner.sh aka "Desktop (Sway)"
+# video-only smoke (e.g. headless CI, new device bring-up where the
+# substrate isn't ready yet) -- explicit opt-in to the dummy posture:
+MOONLIGHT_AUDIO_DRIVER=dummy start_moonlight_embedded_gamescope.sh aka Desktop
 ```
 
 ### When this becomes obsolete
 
-Plan 003 U6 G5b fixes the PipeWire substrate. When it does, the audio
-gate flips back on by default and `MOONLIGHT_AUDIO_DRIVER` is no
-longer set. The `dummy` posture remains available for future degraded
-modes (e.g. headless smoke runs from CI).
+Layer 1 is already obsolete on sobo; the substrate fix landed
+2026-05-24 and the cold-boot race is closed. Layer 2 (the `dummy`
+posture) remains available as an explicit opt-in for headless smoke
+runs and new device bring-up, but it is no longer a routine workaround
+and no script silently selects it.
 
 ---
 

@@ -31,7 +31,17 @@ MOONLIGHT_DURATION_S="${MOONLIGHT_DURATION_S:-30}"
 MOONLIGHT_REPS="${MOONLIGHT_REPS:-1}"
 MOONLIGHT_COOLDOWN_S="${MOONLIGHT_COOLDOWN_S:-4}"
 MOONLIGHT_MAPPING="${MOONLIGHT_MAPPING:-}"
-MOONLIGHT_AUDIO_DRIVER="${MOONLIGHT_AUDIO_DRIVER:-dummy}"
+# MOONLIGHT_AUDIO_DRIVER defaults to unset (SDL picks its normal driver,
+# i.e. PulseAudio on the substrate). The earlier silent default to "dummy"
+# existed because the substrate /run/user/0 PipeWire sockets were being
+# wiped at boot, which would make any audio-enabled run crash. That race
+# is fixed in plan
+# docs/plans/2026-05-24-001-fix-main-space-pipewire-runtime-dir-plan.md
+# (see acceptance doc dated 2026-05-24), so the silent default is no
+# longer warranted -- a benchmark with audio parked is a different smoke
+# than a benchmark with audio routing. Operators who want the parked
+# variant must set MOONLIGHT_AUDIO_DRIVER=dummy explicitly.
+MOONLIGHT_AUDIO_DRIVER="${MOONLIGHT_AUDIO_DRIVER:-}"
 MOONLIGHT_CAPTURE="${MOONLIGHT_CAPTURE:-1}"
 
 if [ -z "$MOONLIGHT_BIN" ] || [ ! -x "$MOONLIGHT_BIN" ]; then
@@ -195,7 +205,7 @@ run_one() {
 export XDG_RUNTIME_DIR=/run/user/0
 export WAYLAND_DISPLAY=wayland-1
 export SDL_VIDEODRIVER=wayland
-export SDL_AUDIODRIVER=$MOONLIGHT_AUDIO_DRIVER
+${MOONLIGHT_AUDIO_DRIVER:+export SDL_AUDIODRIVER=$MOONLIGHT_AUDIO_DRIVER}
 $env_exports
 exec /nix/store/nja3jimv61blss0mfgjqa68rfiwfxv39-coreutils-9.8/bin/stdbuf -oL -eL \\
   "$MOONLIGHT_BIN" -verbose stream -platform "$MOONLIGHT_PLATFORM" -keydir "$MOONLIGHT_KEYDIR" -mapping "$MOONLIGHT_MAPPING" -app "$MOONLIGHT_APP" "$MOONLIGHT_HOST" > "$rundir/launch.log" 2>&1

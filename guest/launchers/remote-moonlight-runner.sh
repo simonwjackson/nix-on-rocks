@@ -67,15 +67,14 @@ MOONLIGHT_RUNS_DIR="${MOONLIGHT_RUNS_DIR:-/storage/.guest/runs}"
 MOONLIGHT_DURATION_S="${MOONLIGHT_DURATION_S:-30}"
 MOONLIGHT_AUDIO_GATE="${MOONLIGHT_AUDIO_GATE:-1}"
 MOONLIGHT_CAPTURE="${MOONLIGHT_CAPTURE:-0}"
-# When the audio gate is parked (substrate audio known-broken, video-only
-# smoke posture per plan 003 U4 G5a), default the SDL audio driver to
-# `dummy` so moonlight does not tear down the whole stream on
-# SDL_OpenAudio failure. Operators can still override explicitly. See
-# docs/solutions/integration-issues/
-# moonlight-embedded-sobo-substrate-2026-05-22.md "Failure 4".
-if [ "$MOONLIGHT_AUDIO_GATE" = "0" ] && [ -z "${MOONLIGHT_AUDIO_DRIVER:-}" ]; then
-  MOONLIGHT_AUDIO_DRIVER=dummy
-fi
+# MOONLIGHT_AUDIO_DRIVER defaults to unset (SDL picks its normal driver).
+# The earlier auto-park to "dummy" when MOONLIGHT_AUDIO_GATE=0 existed
+# because the substrate /run/user/0 PipeWire sockets were being wiped at
+# boot; that race is fixed in plan
+# docs/plans/2026-05-24-001-fix-main-space-pipewire-runtime-dir-plan.md
+# (see acceptance doc dated 2026-05-24), so the auto-park is no longer
+# warranted. Operators who still want video-only with no audio init must
+# now set MOONLIGHT_AUDIO_DRIVER=dummy themselves explicitly.
 MOONLIGHT_AUDIO_DRIVER="${MOONLIGHT_AUDIO_DRIVER:-}"
 
 if [ -z "$MOONLIGHT_HOST" ]; then

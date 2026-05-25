@@ -56,14 +56,17 @@
 #   MOONLIGHT_LOG_OUT         combined launcher/gamescope/moonlight log path
 #                             (default /storage/.guest/runs/moonlight-embedded-stdout.log)
 #   MOONLIGHT_AUDIO_DRIVER    SDL2 audio driver name     (default unset -- SDL picks)
-#                             Set to "dummy" when the audio substrate is
-#                             broken (e.g. PipeWire socket missing) so
-#                             moonlight does NOT tear down the whole stream
-#                             on `SDL_OpenAudio` failure. See
-#                             docs/solutions/integration-issues/
-#                             moonlight-embedded-sobo-substrate-2026-05-22.md
-#                             "Failure 4: audio-init failure cascades to
-#                             video stream teardown".
+#                             Historically callers set this to "dummy" to
+#                             work around the /run/user/0 PipeWire socket
+#                             wipe race that made SDL_OpenAudio fail at
+#                             stream start. That race was fixed in plan
+#                             docs/plans/2026-05-24-001-fix-main-space-pipewire-runtime-dir-plan.md
+#                             (see acceptance doc dated 2026-05-24), so
+#                             the workaround should no longer be needed.
+#                             The env var is retained for video-only
+#                             smoke postures (and for future bring-up of
+#                             new devices where the substrate is not yet
+#                             ready).
 #
 # Pairing:
 #
@@ -114,11 +117,14 @@ GS_BACKEND="${GS_BACKEND:-wayland}"
 MOONLIGHT_KEYDIR="${MOONLIGHT_KEYDIR:-/storage/.cache/moonlight}"
 MOONLIGHT_PLATFORM="${MOONLIGHT_PLATFORM:-sdl}"
 
-# SDL audio driver override. When the substrate audio is broken (PipeWire
-# socket missing on ROCKNIX-on-rocks) and the operator wants a video-only
-# smoke, MOONLIGHT_AUDIO_DRIVER=dummy bypasses the audio init failure that
-# otherwise tears down the whole stream. Only export if set so SDL retains
-# its normal autodetection path in the happy case.
+# SDL audio driver override. Optional. When set (typically to "dummy")
+# the launcher exports SDL_AUDIODRIVER so moonlight does not tear down
+# the whole stream on SDL_OpenAudio failure. Only export if explicitly
+# set so SDL retains its normal autodetection path in the happy case.
+# The substrate's /run/user/0 socket wipe race that historically required
+# the "dummy" workaround is fixed (plan 2026-05-24-001); the override is
+# now reserved for video-only smoke postures rather than a routine
+# workaround.
 if [ -n "${MOONLIGHT_AUDIO_DRIVER:-}" ]; then
   export SDL_AUDIODRIVER="$MOONLIGHT_AUDIO_DRIVER"
 fi
