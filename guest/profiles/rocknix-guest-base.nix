@@ -9,6 +9,52 @@
 , ...
 }:
 
+let
+  runtimeDir = "/run/user/0";
+  sessionPortalBootstrap = pkgs.writeShellScript "rocknix-session-portal-bootstrap" ''
+    set -u
+
+    export XDG_RUNTIME_DIR=${runtimeDir}
+    export DBUS_SESSION_BUS_ADDRESS=unix:path=${runtimeDir}/bus
+    export XDG_CURRENT_DESKTOP="''${XDG_CURRENT_DESKTOP:-sway}"
+
+    # Portals are activated by the root user D-Bus manager, not by the
+    # compositor process. Wait for Sway to publish the session sockets, then
+    # teach D-Bus activation how to start display-bound portal backends.
+    for _ in $(${pkgs.coreutils}/bin/seq 1 150); do
+      wayland_socket=$(${pkgs.findutils}/bin/find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'wayland-*' | ${pkgs.coreutils}/bin/head -1 || true)
+      sway_socket=$(${pkgs.findutils}/bin/find "$XDG_RUNTIME_DIR" -maxdepth 1 -type s -name 'sway-ipc.*.sock' | ${pkgs.coreutils}/bin/head -1 || true)
+      if [ -n "$wayland_socket" ] && [ -n "$sway_socket" ]; then
+        break
+      fi
+      ${pkgs.coreutils}/bin/sleep 0.2
+    done
+
+    if [ -z "''${WAYLAND_DISPLAY:-}" ] && [ -n "''${wayland_socket:-}" ]; then
+      WAYLAND_DISPLAY="$(${pkgs.coreutils}/bin/basename "$wayland_socket")"
+      export WAYLAND_DISPLAY
+    fi
+    if [ -z "''${SWAYSOCK:-}" ] && [ -n "''${sway_socket:-}" ]; then
+      export SWAYSOCK="$sway_socket"
+    fi
+
+    if [ -z "''${WAYLAND_DISPLAY:-}" ] || [ -z "''${SWAYSOCK:-}" ]; then
+      echo "Sway session sockets are not ready; skipping portal bootstrap" >&2
+      exit 0
+    fi
+
+    ${pkgs.dbus}/bin/dbus-update-activation-environment --systemd \
+      XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS WAYLAND_DISPLAY SWAYSOCK XDG_CURRENT_DESKTOP \
+      >/dev/null 2>&1 || true
+
+    ${pkgs.coreutils}/bin/timeout 3s ${pkgs.systemd}/bin/systemctl --user reset-failed \
+      xdg-desktop-portal.service xdg-desktop-portal-gtk.service xdg-document-portal.service \
+      >/dev/null 2>&1 || true
+    ${pkgs.coreutils}/bin/timeout 5s ${pkgs.systemd}/bin/systemctl --user start \
+      xdg-desktop-portal.service \
+      >/dev/null 2>&1 || true
+  '';
+in
 {
   imports = [
     ../modules/base.nix
@@ -60,6 +106,33 @@
       ExecStart = "${pkgs.dbus}/bin/dbus-daemon --session --address=unix:path=/run/user/0/bus --nofork --nopidfile";
       Restart = "on-failure";
       RestartSec = 3;
+      StandardOutput = "journal";
+      StandardError = "journal";
+    };
+  };
+
+  # Product-owned Sway services inherit their environment from their systemd
+  # units, but D-Bus-activated portal backends inherit from the root user
+  # manager. If the manager never learns WAYLAND_DISPLAY/SWAYSOCK, Settings
+  # portal activation falls through to gtk.portal with no display and clients
+  # such as Gamescope block behind D-Bus timeouts. Bootstrap the activation
+  # environment at the substrate layer so downstream kiosks do not need their
+  # own gamescope-specific portal workaround.
+  systemd.services.main-space-portal-bootstrap = {
+    description = "Main-space session portal activation bootstrap";
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "main-space-session-dbus.service"
+      "main-space-sway-kiosk.service"
+      "korri-kiosk.service"
+    ];
+    requires = [ "main-space-session-dbus.service" ];
+    partOf = [ "main-space-sway-kiosk.service" "korri-kiosk.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      User = "root";
+      ExecStart = sessionPortalBootstrap;
+      RemainAfterExit = true;
       StandardOutput = "journal";
       StandardError = "journal";
     };
