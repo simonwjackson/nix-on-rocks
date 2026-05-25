@@ -1,7 +1,7 @@
 ---
 title: "fix: Give main-space /run/user/<uid> a single owner so PipeWire sockets survive boot"
 type: fix
-status: active
+status: completed
 date: 2026-05-24
 verify_command: "bash guest/scripts/static-checks.sh"
 ---
