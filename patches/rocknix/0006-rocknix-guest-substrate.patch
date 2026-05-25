@@ -25,8 +25,8 @@ index 0000000000..51ff27c47f
 +# remains the same; only the product authority source moved to Korri.
 +PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"
 +PKG_NIX_GUEST_AUTHORITY_NAME="${PKG_NIX_GUEST_AUTHORITY_REPO##*/}"
-+PKG_NIX_GUEST_REV="04b755a49695b5af00cf6fc9bb1f92527835c4c4"
-+PKG_NIX_GUEST_SHA256="49c02d414a29e50a71620561f158b1773a376e4cb30dcc22c29ca962e561e632"
++PKG_NIX_GUEST_REV="4d6aaa443809bc6e9551278e020f93b4cf230469"
++PKG_NIX_GUEST_SHA256="6c312a2ad0d3654d0c6fb3d6fa91254d5c2860883a7c5872dd9507d7fb3d925d"
 +PKG_NIX_GUEST_URL="https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}"
 +PKG_NIX_GUEST_SOURCE_SUBDIR="."
 +PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"

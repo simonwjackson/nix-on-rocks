@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root="$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)"
 patch_file="${repo_root}/patches/rocknix/0006-rocknix-guest-substrate.patch"
 
-product_ref="${KORRI_PROMOTION_PRODUCT_REF:-github:simonwjackson/korri/04b755a49695b5af00cf6fc9bb1f92527835c4c4}"
+product_ref="${KORRI_PROMOTION_PRODUCT_REF:-github:simonwjackson/korri/4d6aaa443809bc6e9551278e020f93b4cf230469}"
 build_target="${ROCKNIX_GUEST_BUILD_TARGET:-.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel}"
 compatible="${ROCKNIX_GUEST_DEVICE_COMPATIBLE:-ayn,odin2portal}"
 retired_target=".#nixosConfigurations.rocknix-guest-main-space-by-compatible.config.system.build.toplevel"
