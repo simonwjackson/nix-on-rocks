@@ -118,9 +118,11 @@ When the boot script finds a `*ROCKNIX*.tar` in `/storage/.update/`:
 
 | Write | Failure outcome | Recovery |
 |---|---|---|
-| `/flash/SYSTEM` (vfat file `dd`) | won't-boot-to-OS, bootloader fine | reflash from `/storage/.update/` via SSH-from-recovery, or fastboot |
+| `/flash/SYSTEM` (vfat file `dd`) | won't-boot-to-OS, bootloader fine | reflash from `/storage/.update/` via SSH-from-recovery, or `fastboot flash ROCKNIX <partition.img>` with a FAT formatted to match the device's 4096-byte UFS sectors (see caveat below) |
 | `/flash/KERNEL` (vfat file `dd`) | won't-boot-to-OS, bootloader fine | same as above |
 | `abl_a`, `abl_b` partition `dd` | **only** real bricking vector | EDL (Qualcomm Emergency Download Mode) + `qdl`/QFIL |
+
+**Fastboot-recovery caveat (2026-05-25):** the standard CI-built `.img.gz` from `scripts/mkimage` is **not** a valid fastboot-flash payload for the internal `ROCKNIX` UFS partition — it formats the boot FAT with `-S 512`, and the Linux FAT driver refuses to mount a 512-byte-sector FS on the 4 KiB-sector UFS device. ABL still loads `/KERNEL` from such a flash, so the failure looks like "FS present, label missing" rather than "unmountable FS". The OTA `/storage/.update/*.tar` path documented above is unaffected (it writes individual files into the existing FAT). See [`docs/solutions/runtime-errors/sm8550-mkimage-vfat-logical-sector-size-too-small-2026-05-25.md`](../runtime-errors/sm8550-mkimage-vfat-logical-sector-size-too-small-2026-05-25.md) for the source fix (`mkimage` qcom-abl branch using `-S 4096 -s 1`) and the bricked-device recovery procedure (build a raw 768 MiB FAT with 4 KiB sectors, `fastboot flash ROCKNIX <img>`).
 
 The ABL flash is the only operation that can soft-brick the device. The rest are recoverable without USB tooling. So the question for every custom-fork update reduces to: **does this build's ABL ELF differ from what's currently on the device's `abl_a`/`abl_b` slots?**
 

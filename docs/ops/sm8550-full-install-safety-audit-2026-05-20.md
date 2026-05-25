@@ -309,6 +309,12 @@ Internal safety after the removable write:
 
 Result: the full removable image can be laid down and verified on a sacrificial SD target without compromising internal Android, storage, ABL, or other sensitive UFS partitions.
 
+### Scope caveat for this proof
+
+The `/dev/mmcblk0` SD target reports 512-byte logical sectors, matching the FAT geometry that `scripts/mkimage` currently writes (`mkfs.vfat -S 512 -s 32`). This proof therefore does not extend to `fastboot flash ROCKNIX <img>` against internal UFS: `/dev/sda18` reports 4096-byte logical sectors, and the Linux FAT driver refuses to mount a 512-byte-sector FS on a 4096-byte-sector device.
+
+See [`docs/solutions/runtime-errors/sm8550-mkimage-vfat-logical-sector-size-too-small-2026-05-25.md`](../solutions/runtime-errors/sm8550-mkimage-vfat-logical-sector-size-too-small-2026-05-25.md). Until the `mkimage` patch (qcom-abl branch using `-S 4096 -s 1`) ships, the only safe install/update paths on internal UFS are the `/storage/.update/*.tar` OTA flow and the `installtointernal` script (which formats its own FAT with 4 KiB sectors); a full-image `fastboot flash ROCKNIX <img>` will leave the device unmountable by the kernel even though ABL still loads `/KERNEL`.
+
 ## Reboot with written SD inserted
 
 After writing the removable image, `sobo` was rebooted with `/dev/mmcblk0` still present and carrying duplicate `ROCKNIX`/`STORAGE` filesystem labels.

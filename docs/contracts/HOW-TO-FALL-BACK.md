@@ -167,3 +167,18 @@ reflash/update flow. `/storage` holds ROMs, saves, configs, the staged seed, and
 the persistent guest rootfs; a normal image update does not intentionally wipe
 it. A hard factory reset reformats or deletes `/storage`, so the seed must be
 copied again afterward.
+
+Supported reflash paths on SM8550:
+
+1. Place `ROCKNIX-SM8550.aarch64-*.tar` (with `.sha256`) in `/storage/.update/`
+   over SSH or via card reader, then reboot. The boot initramfs applies it.
+2. From host recovery, run `installtointernal` from a seeded SD card (formats
+   `/dev/sda18` with the correct 4 KiB-sector FAT).
+
+Do **not** `fastboot flash ROCKNIX <img>` with the standard CI-built
+`ROCKNIX-SM8550.aarch64-*.img.gz` on SM8550: the FAT inside that image is
+formatted with 512-byte logical sectors, which the Linux kernel refuses to
+mount on this device's 4 KiB-sector UFS. ABL still loads `/KERNEL` from such a
+flash, so the symptom is `Unable to find LABEL=ROCKNIX, powering off and on
+should correct it` on every boot, not an obvious flash failure. Recovery from
+that state requires building a FAT image with `mkfs.vfat -S 4096`.
