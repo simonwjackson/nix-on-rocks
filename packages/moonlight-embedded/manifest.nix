@@ -51,6 +51,12 @@
       upstreamPath = "this repo";
       role = "Adds runtime-only v4l2m2m pacing experiment gates. Defaults remain unchanged; MOONLIGHT_V4L2M2M_PACING=prefer-low-delay disables SDL present vsync for lower-delay measurement, while MOONLIGHT_V4L2M2M_TIGHT_THRESHOLDS=1 drops display frames that have waited longer than MOONLIGHT_V4L2M2M_TIGHT_LATE_US before presentation.";
     }
+    {
+      name = "0004-add-absolutetouch-flag-for-tap-to-click.patch";
+      file = ./patches/0004-add-absolutetouch-flag-for-tap-to-click.patch;
+      upstreamPath = "this repo";
+      role = "Adds the -absolutetouch CLI flag (and matching absolute_touch config key). When enabled, touchscreens (BTN_TOUCH + ABS_X/Y, fallback ABS_MT_POSITION_X/Y) feed LiSendMousePositionEvent using the device's ABS axis range as the reference plane, with -rotate applied inside that plane, and tap-to-click anchors the synthesized click at the touchdown position. Default is off, preserving the upstream trackpad behavior. Opted in by Korri's launcher for handhelds where the touchscreen drives GUI dialogs over the stream rather than acting as a trackpad.";
+    }
   ];
 
   cmakeFlags = [
