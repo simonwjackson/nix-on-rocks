@@ -46,6 +46,7 @@ in
 {
   imports = [
     ../modules/base.nix
+    ../modules/udev.nix
     ../modules/tools.nix
     ../modules/ssh.nix
     ../modules/device.nix

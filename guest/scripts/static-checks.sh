@@ -148,6 +148,7 @@ for f in \
   modules/display.nix \
   modules/audio.nix \
   modules/input.nix \
+  modules/udev.nix \
   modules/network.nix \
   modules/lid.nix \
   modules/steam.nix \
@@ -179,6 +180,18 @@ grep -q 'programs.sway' "$ROOT/modules/display.nix" \
   || fail "display module must enable sway"
 grep -q 'hardware.graphics' "$ROOT/modules/display.nix" \
   || fail "display module must enable hardware.graphics"
+grep -q 'services.udev.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
+  || fail "udev module must force-enable the full NixOS udev module under container mode"
+grep -q 'systemd.services.systemd-udevd.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
+  || fail "udev module must force-enable systemd-udevd"
+grep -q 'systemd.services.systemd-udev-trigger.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
+  || fail "udev module must force-enable systemd-udev-trigger"
+grep -q 'systemd.services.systemd-udev-settle.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
+  || fail "udev module must force-enable systemd-udev-settle"
+grep -q '../modules/udev.nix' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base profile must import the guest udev module"
+grep -q '../modules/udev.nix' "$ROOT/profiles/dev-env.nix" \
+  || fail "dev-env profile must import the guest udev module"
 grep -q 'services.pipewire' "$ROOT/modules/audio.nix" \
   || fail "audio module must enable pipewire"
 grep -q 'services.dbus' "$ROOT/modules/audio.nix" \
@@ -195,12 +208,16 @@ grep -q 'systemd.services.main-space-pipewire-pulse' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped PipeWire PulseAudio service"
 grep -q 'systemd.services.main-space-wireplumber' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped WirePlumber service"
+grep -q 'systemd-udev-settle.service' "$ROOT/modules/audio.nix" \
+  || fail "WirePlumber must order after udev-settle to preserve sound-card discovery"
 grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/modules/audio.nix" \
   || fail "audio module must start audio services in the kiosk boot target"
 grep -q 'ALSA_CONFIG_UCM2 = ucmPath' "$ROOT/modules/audio.nix" \
   || fail "audio module must pass guest-owned UCM path to audio services"
 grep -qE 'PULSE_SERVER = "unix:[^"]+/pulse/native"' "$ROOT/modules/audio.nix" \
   || fail "audio module must point clients at the root PipeWire Pulse socket (literal /run/user/0/... or interpolated \${runtimeDir}/...)"
+grep -q 'services.udev.packages = \[ rocknixInputplumber \]' "$ROOT/modules/input.nix" \
+  || fail "input module must install InputPlumber udev rules through the guest udev module"
 grep -q 'services.inputplumber' "$ROOT/modules/input.nix" \
   || fail "input module must enable guest-owned InputPlumber"
 grep -q '0.75.2' "$REPO_ROOT/packages/inputplumber/default.nix" \
@@ -211,6 +228,14 @@ grep -q 'ayn_mcu' "$REPO_ROOT/packages/inputplumber/maps/capability_maps/ayn_mcu
   || fail "guest InputPlumber package must include ROCKNIX SM8550 AYN capability map"
 grep -q 'c /dev/uinput' "$ROOT/modules/input.nix" \
   || fail "input module must create /dev/uinput for guest-owned virtual devices"
+grep -q 'L /dev/inputplumber - - - - /dev/input/.inputplumber' "$ROOT/modules/input.nix" \
+  || fail "input module must symlink /dev/inputplumber inside the /dev/input bind"
+grep -q 'd /run/udev/rules.d' "$ROOT/modules/input.nix" \
+  || fail "input module must pre-create /run/udev/rules.d for first-boot InputPlumber startup"
+grep -q 'HIDE_DEVICES_FROM_ROOT = "1"' "$ROOT/modules/input.nix" \
+  || fail "guest InputPlumber must hide raw devices by moving them away from /dev/input"
+grep -q 'systemd-udev-settle.service' "$ROOT/modules/input.nix" \
+  || fail "guest InputPlumber must start after udev-settle"
 grep -q '"korri-kiosk.service"' "$ROOT/modules/input.nix" \
   && grep -q '"main-space-sway-kiosk.service"' "$ROOT/modules/input.nix" \
   || fail "guest InputPlumber must order before Korri and fallback sway sessions"

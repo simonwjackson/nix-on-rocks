@@ -18,6 +18,7 @@ let
 in
 {
   environment.systemPackages = [ rocknixInputplumber ];
+  services.udev.packages = [ rocknixInputplumber ];
 
   # InputPlumber creates virtual keyboard/mouse/gamepad devices through uinput.
   # The host nspawn unit allows the cgroup device and binds /dev/uinput; this
@@ -25,6 +26,8 @@ in
   # node was not present when the container started.
   systemd.tmpfiles.rules = [
     "c /dev/uinput 0600 root root - 10:223"
+    "L /dev/inputplumber - - - - /dev/input/.inputplumber"
+    "d /run/udev/rules.d 0755 root root -"
   ];
 
   services.inputplumber = {
@@ -37,10 +40,15 @@ in
   # package above. Order it before sway so libseat sees the virtual devices and
   # does not race raw controller ownership.
   systemd.services.inputplumber = {
+    wants = [ "systemd-udev-settle.service" ];
+    after = [ "systemd-udev-settle.service" ];
     before = [
       "main-space-sway-kiosk.service"
       "korri-kiosk.service"
     ];
+    environment = {
+      HIDE_DEVICES_FROM_ROOT = "1";
+    };
     serviceConfig = {
       Restart = lib.mkForce "on-failure";
       RestartSec = lib.mkForce 2;
