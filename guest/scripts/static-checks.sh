@@ -433,6 +433,14 @@ grep -q 'rocknix-portal-bootstrap' "$ROOT/profiles/main-space.nix" \
   || fail "main-space profile must bootstrap xdg-desktop-portal from the Sway session"
 grep -q 'exec_always ${portalBootstrap}' "$ROOT/profiles/main-space.nix" \
   || fail "main-space sway config must run the portal bootstrap after compositor startup"
+grep -q 'rocknix-session-portal-bootstrap' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base must provide a product-blind session portal bootstrap"
+grep -q 'systemd.services.main-space-portal-bootstrap' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base must run the session portal bootstrap outside product-owned sway configs"
+grep -q 'dbus-update-activation-environment --systemd' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base portal bootstrap must import compositor env into D-Bus activation"
+grep -q 'xdg-desktop-portal.service' "$ROOT/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base portal bootstrap must prewarm xdg-desktop-portal after env import"
 grep -q 'XDG_CURRENT_DESKTOP = "sway"' "$ROOT/profiles/main-space.nix" \
   || fail "sway kiosk service must identify the desktop for portal backend selection"
 grep -q 'CEMU_DEFAULT_SETTINGS' "$ROOT/launchers/cemu-storage-adapter.sh" \
