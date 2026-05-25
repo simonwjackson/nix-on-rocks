@@ -28,6 +28,8 @@ Layer 13 must not:
 - expose guest SSH by default
 - permit password auth, keyboard-interactive auth, default credentials, or shipped reusable authorized keys
 - pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, Steam state, FEX state, or browser profiles by default
+
+SM8550 Layer 14 main-space is the deliberate exception to the default input passthrough rule: the host binds `/dev/input` and `/dev/uinput` into the managed guest, but the guest owns `systemd-udevd`, InputPlumber, and raw-device hiding. Host InputPlumber is masked during the safety-net release and the guest-visible `/dev/inputplumber` path resolves inside the `/dev/input` bind so hide-by-move remains on one mount.
 - bypass Layer 6/10/11/12 guardrails when applying module output
 
 ## Host module application model

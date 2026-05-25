@@ -52,7 +52,7 @@ This work should convert “thin host” from mostly image-composition trimming 
 
 ### Deferred to Follow-Up Work
 
-- Move InputPlumber fully into the guest, or remove the host InputPlumber dependency after a separate input-device ownership plan.
+- Move InputPlumber fully into the guest, or remove the host InputPlumber dependency after a separate input-device ownership plan. **Closure started:** `docs/plans/2026-05-25-001-feat-sm8550-guest-owned-input-boundary-plan.md` moves runtime ownership into the guest while keeping host InputPlumber and `rocknix-guest-udev-stage` installed/masked for one safety-net release; final deletion remains gated on Sobo soak.
 - Remove host audio recovery packages entirely after guest-owned audio has survived cold-boot and recovery validation.
 - Trim non-target product network services such as Samba, NFS, simple HTTP, and sync tooling after the Tailscale/WireGuard/netfilter pass.
 - Replace ConnMan with an even smaller host network path, if ConnMan's `iptables` dependency proves to be the last netfilter remnant.
@@ -107,7 +107,7 @@ External research was not needed. This is a repo-specific build graph and recove
 - **Should host SSH stay?** Yes. It is an indefinite recovery/development invariant.
 - **Should recovery require host graphical UI?** No for this trim. Recovery should be SSH/console-first so the host graphical stack can actually disappear.
 - **Should host Tailscale remain as off-LAN recovery?** No. Guest Tailscale owns tailnet identity; if the guest is broken, recovery is LAN SSH or physical/update-media based.
-- **Should InputPlumber be removed with graphical stack?** No. It is a separate input-boundary question and remains for this plan.
+- **Should InputPlumber be removed with graphical stack?** No. It was a separate input-boundary question. That follow-up is now active in `docs/plans/2026-05-25-001-feat-sm8550-guest-owned-input-boundary-plan.md`: runtime ownership moves into the guest first; host activation and udev-stage deletion wait for the soak-gated decommission PR.
 - **Can fast-iter alone prove this trim?** No. Use a full build for the first dependency-graph change.
 
 ### Deferred to Implementation
@@ -134,7 +134,8 @@ flowchart TD
     Substrate --> SSH[Host SSH]
     Substrate --> Nspawn[systemd-nspawn guest]
     Substrate --> Recovery[SSH/console recovery]
-    Substrate --> InputPlumber[InputPlumber + staged udev]
+    Substrate --> InputPlumber[Safety-net host InputPlumber package + udev-stage files]
+    GuestUX --> GuestInput[Guest udev + InputPlumber owns input hiding]
 
     Nspawn --> GuestUX[NixOS guest product UX]
     Nspawn --> GuestTS[Guest Tailscale via /dev/net/tun]

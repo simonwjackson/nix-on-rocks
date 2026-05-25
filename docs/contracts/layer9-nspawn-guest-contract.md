@@ -77,6 +77,8 @@ Layer 9 must not bind or expose these by default:
 
 Graphical/audio/input passthrough is Layer 11+ app/service bridge work, not Layer 9 proof work.
 
+Current SM8550 Layer 14 main-space intentionally uses that later-layer exception: the nspawn substrate passes `/dev/input` and `/dev/uinput`, but input classification and hiding are guest-owned. The host no longer binds a staged `/run/udev` database for the input boundary; the guest runs udev and InputPlumber, and `/dev/inputplumber` is a guest-side symlink into the existing `/dev/input` bind to avoid cross-mount `EXDEV` moves.
+
 ## Start and stop boundary
 
 Layer 9 validation is manual and opt-in. It may start `systemd-nspawn` directly for a bounded proof, then stop it before declaring success.
