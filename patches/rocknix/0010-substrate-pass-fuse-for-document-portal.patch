@@ -1,0 +1,75 @@
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
+@@ -72,6 +72,9 @@
+ # nodes here: systemd-255 does not apply the wildcard forms reliably enough
+ # for wlroots/libseat's DRM open path on Thor.
+ DeviceAllow=/dev/net/tun rwm
++# xdg-document-portal needs FUSE for /run/user/<uid>/doc. Bind and allow the
++# character device so the portal stack can be fully green inside main-space.
++DeviceAllow=/dev/fuse rwm
+ # BLE HID-over-GATT devices need uhid so guest bluetoothd can create kernel
+ # input devices for paired mice/keyboards.
+ DeviceAllow=/dev/uhid rwm
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
+@@ -181,6 +181,10 @@
+ emit_arg "--capability=CAP_NET_ADMIN"
+ emit_arg "--capability=CAP_NET_RAW"
+ emit_arg "--bind=/dev/net/tun"
++if [ -c /dev/fuse ]; then
++  emit_arg "--bind=/dev/fuse"
++  log "pass /dev/fuse (xdg document portal)"
++fi
+ emit_arg "--bind=/dev/uhid"
+ emit_arg "--bind=/dev/snd"
+ emit_arg "--bind=/dev/rfkill"
+@@ -253,6 +257,7 @@
+ done
+ 
+ emit_device_allow "DeviceAllow=/dev/net/tun rwm"
++emit_device_allow "DeviceAllow=/dev/fuse rwm"
+ emit_device_allow "DeviceAllow=/dev/uhid rwm"
+ emit_device_allow "DeviceAllow=/dev/snd/controlC0 rwm"
+ emit_device_allow "DeviceAllow=/dev/snd/pcmC0D0p rwm"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+@@ -217,6 +217,7 @@
+ grep -q -- '--directory=${ROCKNIX_GUEST_ROOT:-${NIX_ON_ROCK_CURRENT_ROOT}}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper has wrong guest root"
+ grep -q -- '--register=no' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must avoid machined registration"
+ grep -q 'DeviceAllow=/dev/net/tun rwm' "${guest_unit}" || fail "guest unit must allow tun device access for guest Tailscale"
++grep -q 'DeviceAllow=/dev/fuse rwm' "${guest_unit}" || fail "guest unit must allow fuse device access for xdg-document-portal"
+ for device_allow in \
+   'DeviceAllow=/dev/uhid rwm' \
+   'DeviceAllow=/dev/snd/controlC0 rwm' \
+@@ -247,6 +248,8 @@
+ grep -q -- '--capability=CAP_NET_ADMIN' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
+ grep -q -- '--capability=CAP_NET_RAW' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must retain CAP_NET_RAW for guest Tailscale"
+ grep -q -- '--bind=/dev/net/tun' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through tun device for guest Tailscale"
++grep -q -- '--bind=/dev/fuse' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through fuse device for xdg-document-portal"
++grep -q 'DeviceAllow=/dev/fuse rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fuse at runtime"
+ grep -q -- '--bind=/dev/uhid' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uhid for guest Bluetooth HID devices"
+ grep -q -- '--bind=/dev/input' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through input devices"
+ grep -q -- '--bind=/dev/uinput' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uinput for guest InputPlumber"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
+@@ -105,6 +105,7 @@
+ check_grep '--directory=${ROCKNIX_GUEST_ROOT:-${NIX_ON_ROCK_CURRENT_ROOT}}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must target the nix-on-rock active root"
+ check_grep '--register=no' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must avoid machined registration"
+ check_grep 'DeviceAllow=/dev/net/tun rwm' "${guest_unit}" "guest unit must allow tun device access for guest Tailscale"
++check_grep 'DeviceAllow=/dev/fuse rwm' "${guest_unit}" "guest unit must allow fuse device access for xdg-document-portal"
+ for device_allow in \
+   'DeviceAllow=/dev/uhid rwm' \
+   'DeviceAllow=/dev/snd/controlC0 rwm' \
+@@ -135,6 +136,8 @@
+ check_grep '--capability=CAP_NET_ADMIN' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_ADMIN for guest Tailscale"
+ check_grep '--capability=CAP_NET_RAW' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_RAW for guest Tailscale"
+ check_grep '--bind=/dev/net/tun' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through tun for guest Tailscale"
++check_grep '--bind=/dev/fuse' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through fuse for xdg-document-portal"
++check_grep 'DeviceAllow=/dev/fuse rwm' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must allow /dev/fuse at runtime"
+ check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uhid for guest Bluetooth HID devices"
+ check_grep '--bind=/dev/uinput' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uinput for guest InputPlumber"
+ check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
