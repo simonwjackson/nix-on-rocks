@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,278 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -118,6 +118,29 @@ index 0000000000..51ff27c47f
 +    ${INSTALL}/usr/bin/rocknix-guest-generation-import \
 +    ${INSTALL}/usr/bin/rocknix-guest-generation-switch \
 +    ${INSTALL}/usr/bin/rocknix-guest-activation-audit
++
++  # Safety-net release: the guest owns InputPlumber, so mask the old host
++  # unit while leaving its package files installed for SSH rollback.
++  mkdir -p ${INSTALL}/etc/systemd/system
++  ln -sf /dev/null ${INSTALL}/etc/systemd/system/inputplumber.service
++
++  # ROCKNIX ships /usr from squashfs, so rollback artifacts must be staged in
++  # writable storage ahead of time. Operators enable these files over SSH if the
++  # guest-owned udev cutover needs to be backed out without a reflash.
++  mkdir -p \
++    ${INSTALL}/storage/.config/system.d/rocknix-guest.service.d \
++    ${INSTALL}/storage/.cache
++  cat > ${INSTALL}/storage/.config/system.d/rocknix-guest.service.d/00-restore-udev-stage.conf.disabled <<'EOF'
++[Service]
++ExecStartPre=/usr/bin/rocknix-guest-udev-stage
++EOF
++  awk '
++    { print }
++    $0 == "emit_arg \"--bind=/dev/uinput\"" {
++      print "emit_arg \"--bind-ro=/run/.guest-udev:/run/udev\""
++    }
++  ' ${PKG_DIR}/scripts/rocknix-guest-start > ${INSTALL}/storage/.cache/rocknix-guest-start-with-stage-bind
++  chmod 0755 ${INSTALL}/storage/.cache/rocknix-guest-start-with-stage-bind
 +
 +  mkdir -p "${substrate_lib}/tests"
 +  cp ${PKG_DIR}/scripts/nix-on-rock-paths "${substrate_lib}/nix-on-rock-paths"
@@ -2360,7 +2383,7 @@ new file mode 100755
 index 0000000000..5581b52475
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
-@@ -0,0 +1,316 @@
+@@ -0,0 +1,323 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -2420,6 +2443,13 @@ index 0000000000..5581b52475
 +    exit 1
 +  }
 +  chmod 0666 /dev/net/tun 2>/dev/null || true
++}
++
++ensure_inputplumber_sources() {
++  mkdir -p /dev/input/.inputplumber/sources || {
++    log "FAIL: /dev/input/.inputplumber/sources could not be created"
++    exit 1
++  }
 +}
 +
 +block_root_for() {
@@ -2535,6 +2565,7 @@ index 0000000000..5581b52475
 +: > "${DEVICE_ALLOW_FILE}"
 +
 +ensure_tun_device
++ensure_inputplumber_sources
 +
 +emit_arg "--machine=rocknix-guest"
 +emit_arg "--directory=${ROCKNIX_GUEST_ROOT:-${NIX_ON_ROCK_CURRENT_ROOT}}"
@@ -2553,7 +2584,6 @@ index 0000000000..5581b52475
 +emit_arg "--bind=/dev/uinput"
 +emit_arg "--bind=/dev/tty0"
 +emit_arg "--bind=/dev/tty1"
-+emit_arg "--bind-ro=/run/.guest-udev:/run/udev"
 +emit_arg "--bind=/sys/class/backlight"
 +emit_arg "--bind=/sys/class/leds"
 +emit_arg "--bind=/sys/class/devfreq"
@@ -3072,7 +3102,7 @@ new file mode 100644
 index 0000000000..e6102c0606
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-@@ -0,0 +1,186 @@
+@@ -0,0 +1,185 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +#
@@ -3238,11 +3268,10 @@ index 0000000000..e6102c0606
 +# ownership marker; verify the rootfs is shaped for SM8550 guest.
 +ExecStartPre=/usr/bin/rocknix-guest-prep
 +
-+# Stage a copy of /run/udev under /run/.guest-udev for the guest. Older
-+# images used this to scrub host-InputPlumber-hidden event nodes. The guest now
-+# owns InputPlumber, but keeping the staged copy preserves the guest's udev DB
-+# contract and remains harmless when no hidden host records exist.
-+ExecStartPre=/usr/bin/rocknix-guest-udev-stage
++# Guest udev and InputPlumber now own input classification and hide-by-move.
++# The legacy rocknix-guest-udev-stage helper remains installed for one
++# safety-net release, but is no longer wired into the normal cold-boot path.
++# SSH rollback uses a disabled drop-in staged under /storage by package.mk.
 +
 +ExecStart=/usr/bin/rocknix-guest-start
 +
@@ -3336,7 +3365,7 @@ new file mode 100755
 index 0000000000..612f3e2984
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-@@ -0,0 +1,256 @@
+@@ -0,0 +1,263 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3475,12 +3504,17 @@ index 0000000000..612f3e2984
 +check_grep '--capability=CAP_NET_RAW' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must retain CAP_NET_RAW for guest Tailscale"
 +check_grep '--bind=/dev/net/tun' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through tun for guest Tailscale"
 +check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uhid for guest Bluetooth HID devices"
++check_grep '--bind=/dev/input' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through input devices"
++check_grep 'mkdir -p /dev/input/\.inputplumber/sources' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must create InputPlumber sources inside the /dev/input bind"
 +check_grep '--bind=/dev/uinput' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uinput for guest InputPlumber"
 +check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
 +check_grep '--bind=/dev/ntsync' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/ntsync for Wine/Proton sync"
 +check_grep '--bind=/dev/drm_dp_aux0' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/drm_dp_aux0 for external DP"
 +check_grep '--bind=/dev/cpu_dma_latency' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/cpu_dma_latency for PM QoS"
 +check_grep 'for fastrpc_node in /dev/fastrpc-adsp' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate Hexagon DSP RPC endpoints at runtime"
++if grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${SCRIPT_ROOT}/rocknix-guest-start"; then
++  fail "guest start helper must not bind host-staged udev into the guest"
++fi
 +check_grep '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must keep the single host/guest storage seam through the compatibility bind"
 +check_grep 'has_candidate_media_member' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must classify media without probing blocked devices"
 +if grep -q 'blkid' "${SCRIPT_ROOT}/rocknix-guest-start"; then
@@ -3494,7 +3528,9 @@ index 0000000000..612f3e2984
 +  fail "guest unit must not use broad block DeviceAllow classes"
 +fi
 +check_grep 'ExecStartPre=/usr/bin/rocknix-guest-prep' "${guest_unit}" "guest unit missing prep helper"
-+check_grep 'ExecStartPre=/usr/bin/rocknix-guest-udev-stage' "${guest_unit}" "guest unit missing udev stage helper"
++if grep -q 'ExecStartPre=/usr/bin/rocknix-guest-udev-stage' "${guest_unit}"; then
++  fail "guest unit must no longer stage host udev into the guest"
++fi
 +if grep -q 'ExecStopPost=' "${guest_unit}"; then
 +  fail "guest unit must not run host-side fallback/reclaim hooks"
 +fi
@@ -3598,7 +3634,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1420 @@
+@@ -0,0 +1,1424 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3770,6 +3806,9 @@ index 0000000000..b28ce8fdc0
 +grep -q 'enable_service rocknix-guest-wifi-ready.service' "${PKG_DIR}/package.mk" || fail "package.mk does not enable guest Wi-Fi unblock service"
 +grep -q 'enable_service rocknix-guest-promote.service' "${PKG_DIR}/package.mk" || fail "package.mk does not enable guest promotion service"
 +grep -q 'enable_service rocknix-recovery-toggle.service' "${PKG_DIR}/package.mk" || fail "package.mk does not enable recovery toggle"
++grep -q 'inputplumber.service' "${PKG_DIR}/package.mk" || fail "package.mk must mask host InputPlumber during the guest-owned input safety-net release"
++grep -q '00-restore-udev-stage.conf.disabled' "${PKG_DIR}/package.mk" || fail "package.mk must stage disabled udev-stage revert drop-in under writable storage"
++grep -q 'rocknix-guest-start-with-stage-bind' "${PKG_DIR}/package.mk" || fail "package.mk must stage cached revert start script with host udev bind"
 +
 +grep -q 'Alias=default.target' "${PKG_DIR}/system.d/rocknix-main-space.target" || fail "rocknix-main-space.target must alias default.target"
 +! grep -q 'rocknix-graphical.target' "${PKG_DIR}/system.d/rocknix-main-space.target" || fail "rocknix-main-space.target must not keep old graphical-target alias"
@@ -3812,7 +3851,7 @@ index 0000000000..b28ce8fdc0
 +grep -q 'StartLimitAction=none' "${guest_unit}" || fail "guest unit must not auto-reboot or auto-recover"
 +grep -q 'ExecStartPre=/usr/bin/rocknix-guest-wifi-unblock --host-only' "${guest_unit}" || fail "guest unit must unblock host Wi-Fi before starting guest"
 +grep -q 'ExecStartPre=/usr/bin/rocknix-guest-prep' "${guest_unit}" || fail "guest unit missing prep helper"
-+grep -q 'ExecStartPre=/usr/bin/rocknix-guest-udev-stage' "${guest_unit}" || fail "guest unit missing udev stage helper"
++! grep -q 'ExecStartPre=/usr/bin/rocknix-guest-udev-stage' "${guest_unit}" || fail "guest unit must no longer stage host udev into the guest"
 +grep -q 'ExecStart=/usr/bin/rocknix-guest-start' "${guest_unit}" || fail "guest unit must launch through guest start helper"
 +grep -q '/usr/bin/systemd-nspawn' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must exec systemd-nspawn"
 +grep -q -- '--directory=${ROCKNIX_GUEST_ROOT:-${NIX_ON_ROCK_CURRENT_ROOT}}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper has wrong guest root"
@@ -3850,6 +3889,7 @@ index 0000000000..b28ce8fdc0
 +grep -q -- '--bind=/dev/net/tun' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through tun device for guest Tailscale"
 +grep -q -- '--bind=/dev/uhid' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uhid for guest Bluetooth HID devices"
 +grep -q -- '--bind=/dev/input' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through input devices"
++grep -q 'mkdir -p /dev/input/\.inputplumber/sources' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must create InputPlumber sources inside the /dev/input bind"
 +grep -q -- '--bind=/dev/uinput' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uinput for guest InputPlumber"
 +grep -q -- '--bind=/dev/snd' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through sound devices"
 +grep -q -- '--bind=${v_node}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/video* codec nodes for Moonlight v4l2m2m"
@@ -3864,7 +3904,7 @@ index 0000000000..b28ce8fdc0
 +grep -q 'DeviceAllow=/dev/fastrpc-adsp rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fastrpc-adsp at runtime"
 +grep -q 'DeviceAllow=/dev/fastrpc-cdsp rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fastrpc-cdsp at runtime"
 +grep -q 'DeviceAllow=/dev/fastrpc-cdsp-secure rwm' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must allow /dev/fastrpc-cdsp-secure at runtime"
-+grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind scrubbed udev db"
++! grep -q -- '--bind-ro=/run/.guest-udev:/run/udev' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host-staged udev into the guest"
 +grep -q -- '--bind=${NIX_ON_ROCK_GUEST_EXCHANGE_DIR}:${NIX_ON_ROCK_GUEST_EXCHANGE_GUEST_PATH}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must keep the single host/guest storage seam"
 +! grep -q -- '--bind-ro=/storage/roms' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host ROM library"
 +! grep -q -- '--bind=/storage/.config/Cemu' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must not bind host Cemu config"
