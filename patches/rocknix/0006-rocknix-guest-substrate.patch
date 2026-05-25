@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,278 @@
+@@ -0,0 +1,280 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -121,8 +121,8 @@ index 0000000000..51ff27c47f
 +
 +  # Safety-net release: the guest owns InputPlumber, so mask the old host
 +  # unit while leaving its package files installed for SSH rollback.
-+  mkdir -p ${INSTALL}/etc/systemd/system
-+  ln -sf /dev/null ${INSTALL}/etc/systemd/system/inputplumber.service
++  mkdir -p ${INSTALL}/storage/.config/system.d
++  ln -sf /dev/null ${INSTALL}/storage/.config/system.d/inputplumber.service
 +
 +  # ROCKNIX ships /usr from squashfs, so rollback artifacts must be staged in
 +  # writable storage ahead of time. Operators enable these files over SSH if the
@@ -133,6 +133,8 @@ index 0000000000..51ff27c47f
 +  cat > ${INSTALL}/storage/.config/system.d/rocknix-guest.service.d/00-restore-udev-stage.conf.disabled <<'EOF'
 +[Service]
 +ExecStartPre=/usr/bin/rocknix-guest-udev-stage
++ExecStart=
++ExecStart=/storage/.cache/rocknix-guest-start-with-stage-bind
 +EOF
 +  awk '
 +    { print }
@@ -3634,7 +3636,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1424 @@
+@@ -0,0 +1,1426 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3806,9 +3808,11 @@ index 0000000000..b28ce8fdc0
 +grep -q 'enable_service rocknix-guest-wifi-ready.service' "${PKG_DIR}/package.mk" || fail "package.mk does not enable guest Wi-Fi unblock service"
 +grep -q 'enable_service rocknix-guest-promote.service' "${PKG_DIR}/package.mk" || fail "package.mk does not enable guest promotion service"
 +grep -q 'enable_service rocknix-recovery-toggle.service' "${PKG_DIR}/package.mk" || fail "package.mk does not enable recovery toggle"
-+grep -q 'inputplumber.service' "${PKG_DIR}/package.mk" || fail "package.mk must mask host InputPlumber during the guest-owned input safety-net release"
++grep -q 'ln -sf /dev/null ${INSTALL}/storage/.config/system.d/inputplumber.service' "${PKG_DIR}/package.mk" || fail "package.mk must mask host InputPlumber in ROCKNIX's writable systemd unit directory"
 +grep -q '00-restore-udev-stage.conf.disabled' "${PKG_DIR}/package.mk" || fail "package.mk must stage disabled udev-stage revert drop-in under writable storage"
++grep -q 'ExecStart=/storage/.cache/rocknix-guest-start-with-stage-bind' "${PKG_DIR}/package.mk" || fail "revert drop-in must switch nspawn back to the staged-udev start script"
 +grep -q 'rocknix-guest-start-with-stage-bind' "${PKG_DIR}/package.mk" || fail "package.mk must stage cached revert start script with host udev bind"
++grep -q 'print "emit_arg \\"--bind-ro=/run/.guest-udev:/run/udev\\""' "${PKG_DIR}/package.mk" || fail "cached revert start script must restore the staged udev bind"
 +
 +grep -q 'Alias=default.target' "${PKG_DIR}/system.d/rocknix-main-space.target" || fail "rocknix-main-space.target must alias default.target"
 +! grep -q 'rocknix-graphical.target' "${PKG_DIR}/system.d/rocknix-main-space.target" || fail "rocknix-main-space.target must not keep old graphical-target alias"

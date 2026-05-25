@@ -88,6 +88,7 @@ in
   systemd.services.main-space-wireplumber = {
     description = "Main-space root WirePlumber service";
     wantedBy = [ "multi-user.target" ];
+    wants = [ "systemd-udev-settle.service" ];
     after = [ "systemd-udev-settle.service" "main-space-runtime-dir.service" "main-space-pipewire.service" "main-space-session-dbus.service" ];
     requires = [ "main-space-runtime-dir.service" "main-space-pipewire.service" ];
     serviceConfig = {

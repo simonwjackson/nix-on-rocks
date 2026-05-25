@@ -13,6 +13,11 @@
 {
   services.udev.enable = lib.mkForce true;
 
+  # boot.isContainer normally suppresses the coldplug trigger unit entirely.
+  # Re-add the upstream unit, then force-enable it so settle has a real trigger
+  # to wait for instead of settling an empty queue.
+  systemd.additionalUpstreamSystemUnits = [ "systemd-udev-trigger.service" ];
+
   systemd.services.systemd-udevd.enable = lib.mkForce true;
   systemd.services.systemd-udev-trigger.enable = lib.mkForce true;
   systemd.services.systemd-udev-settle.enable = lib.mkForce true;

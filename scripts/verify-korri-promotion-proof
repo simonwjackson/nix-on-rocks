@@ -56,6 +56,20 @@ old_attr="${retired_target#.\#}"
 env ROCKNIX_GUEST_DEVICE_COMPATIBLE="${compatible}" \
   nix eval --impure --raw "path:${staged_source}#${attr}.drvPath" >/dev/null
 
+udev_enabled="$(env ROCKNIX_GUEST_DEVICE_COMPATIBLE="${compatible}" \
+  nix eval --impure --raw "path:${staged_source}#${attr}.config.services.udev.enable")"
+[ "${udev_enabled}" = "true" ] || {
+  echo "promotion-proof expected pinned Korri to evaluate with guest services.udev.enable=true" >&2
+  exit 1
+}
+
+hide_from_root="$(env ROCKNIX_GUEST_DEVICE_COMPATIBLE="${compatible}" \
+  nix eval --impure --raw "path:${staged_source}#${attr}.config.systemd.services.inputplumber.environment.HIDE_DEVICES_FROM_ROOT")"
+[ "${hide_from_root}" = "1" ] || {
+  echo "promotion-proof expected pinned Korri InputPlumber HIDE_DEVICES_FROM_ROOT=1" >&2
+  exit 1
+}
+
 if env ROCKNIX_GUEST_DEVICE_COMPATIBLE="${compatible}" \
   nix eval --impure --raw "path:${staged_source}#${old_attr}.drvPath" >/dev/null 2>&1; then
   echo "promotion-proof unexpectedly evaluated retired target ${retired_target}" >&2

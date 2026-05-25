@@ -62,6 +62,8 @@ grep -q 'cemu = cemu;' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must retain the in-repo Cemu package output"
 grep -q 'steam = steam;' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must retain the in-repo Steam package output"
+grep -q 'guest-input-boundary-contract' "$REPO_ROOT/flake.nix" \
+  || fail "guest flake must include evaluated guest input boundary contract check"
 grep -q 'rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix' "$REPO_ROOT/flake.nix" \
   || fail "guest flake must expose rocknix-guest-base substrate module"
 [ -f "$ROOT/profiles/rocknix-guest-base.nix" ] \
@@ -182,6 +184,8 @@ grep -q 'hardware.graphics' "$ROOT/modules/display.nix" \
   || fail "display module must enable hardware.graphics"
 grep -q 'services.udev.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
   || fail "udev module must force-enable the full NixOS udev module under container mode"
+grep -q 'systemd.additionalUpstreamSystemUnits = \[ "systemd-udev-trigger.service" \]' "$ROOT/modules/udev.nix" \
+  || fail "udev module must re-add the upstream udev-trigger unit suppressed by container mode"
 grep -q 'systemd.services.systemd-udevd.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
   || fail "udev module must force-enable systemd-udevd"
 grep -q 'systemd.services.systemd-udev-trigger.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
@@ -208,6 +212,8 @@ grep -q 'systemd.services.main-space-pipewire-pulse' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped PipeWire PulseAudio service"
 grep -q 'systemd.services.main-space-wireplumber' "$ROOT/modules/audio.nix" \
   || fail "audio module must configure a root-scoped WirePlumber service"
+grep -q 'wants = \[ "systemd-udev-settle.service" \]' "$ROOT/modules/audio.nix" \
+  || fail "WirePlumber must pull udev-settle into the boot transaction"
 grep -q 'systemd-udev-settle.service' "$ROOT/modules/audio.nix" \
   || fail "WirePlumber must order after udev-settle to preserve sound-card discovery"
 grep -q 'wantedBy = \[ "multi-user.target" \]' "$ROOT/modules/audio.nix" \
