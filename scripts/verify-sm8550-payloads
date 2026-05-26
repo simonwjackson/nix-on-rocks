@@ -4,7 +4,7 @@ set -euo pipefail
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 target_dir=${1:-"${work_dir}/target"}
-package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+renderer="${repo_root}/scripts/render-product-payload"
 manifest=${NIX_ON_ROCKS_BUILD_MANIFEST:-"${repo_root}/nix-on-rocks-build-manifest.md"}
 
 fail() {
@@ -13,7 +13,27 @@ fail() {
 }
 
 [ -d "${target_dir}" ] || fail "missing target directory: ${target_dir}"
-[ -f "${package_mk}" ] || fail "missing patched package.mk: ${package_mk}"
+[ -x "${renderer}" ] || fail "missing executable ${renderer}"
+
+payload_env=$(mktemp)
+tar_listing=$(mktemp)
+tar_verbose_listing=$(mktemp)
+trap 'rm -f "${payload_env}" "${tar_listing}" "${tar_verbose_listing}"' EXIT
+"${renderer}" > "${payload_env}"
+# shellcheck source=/dev/null
+. "${payload_env}"
+
+for field in \
+  PKG_NIX_GUEST_AUTHORITY_REPO \
+  PKG_NIX_GUEST_REV \
+  PKG_NIX_GUEST_SHA256 \
+  PKG_NIX_GUEST_BUILD_TARGET \
+  PKG_NIX_GUEST_ROOTFS_SEED_DEVICE \
+  PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE \
+  PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE \
+  PKG_NIX_GUEST_ROOTFS_SEED_SHA256; do
+  [ -n "${!field:-}" ] || fail "${field} must not be empty"
+done
 
 budget_mib=$(sed -n \
   -e 's/.*SM8550_FLASH_PARTITION_BUDGET_MIB:-\([0-9][0-9]*\).*/\1/p' \
@@ -25,9 +45,6 @@ mapfile -t update_tars < <(find "${target_dir}" -maxdepth 1 -name 'ROCKNIX-*.tar
 [ "${#update_tars[@]}" -eq 1 ] || fail "expected exactly one SM8550 update tar, found ${#update_tars[@]}"
 update_tar=${update_tars[0]}
 
-tar_listing=$(mktemp)
-tar_verbose_listing=$(mktemp)
-trap 'rm -f "${tar_listing}" "${tar_verbose_listing}"' EXIT
 tar -tf "${update_tar}" > "${tar_listing}"
 tar -tvf "${update_tar}" > "${tar_verbose_listing}"
 
@@ -39,11 +56,8 @@ budget_bytes=$((budget_mib * 1024 * 1024))
 grep -Eq '(^|/)target/SYSTEM$' "${tar_listing}" || fail "${update_tar} missing target/SYSTEM"
 grep -Eq '(^|/)target/KERNEL$' "${tar_listing}" || fail "${update_tar} missing target/KERNEL"
 
-expected_seed=$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' "${package_mk}" | sed -n '1p')
-expected_seed_sha=$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' "${package_mk}" | sed -n '1p')
-[ -n "${expected_seed}" ] || fail "unable to parse expected SM8550 guest seed archive"
-[ -n "${expected_seed_sha}" ] || fail "unable to parse expected SM8550 guest seed SHA256"
-
+expected_seed=${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE}
+expected_seed_sha=${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}
 seed_entry=$(awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }' "${tar_listing}")
 [ -n "${seed_entry}" ] || fail "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}"
 actual_seed_sha=$(tar -xOf "${update_tar}" "${seed_entry}" | sha256sum | awk '{print $1}')
@@ -57,9 +71,16 @@ for checksum in "${target_dir}"/ROCKNIX-*.img.gz.sha256 "${target_dir}"/ROCKNIX-
   (cd "${target_dir}" && sha256sum -c "$(basename "${checksum}")")
 done
 
+"${repo_root}/scripts/verify-image-fat-sector-size" "${target_dir}"
+
 if [ -f "${manifest}" ]; then
+  grep -q "${PKG_NIX_GUEST_AUTHORITY_REPO}" "${manifest}" || fail "manifest missing product authority ${PKG_NIX_GUEST_AUTHORITY_REPO}: ${manifest}"
+  grep -q "${PKG_NIX_GUEST_REV}" "${manifest}" || fail "manifest missing product revision ${PKG_NIX_GUEST_REV}: ${manifest}"
+  grep -q "${PKG_NIX_GUEST_SHA256}" "${manifest}" || fail "manifest missing product source SHA256 ${PKG_NIX_GUEST_SHA256}: ${manifest}"
+  grep -q "${PKG_NIX_GUEST_ROOTFS_SEED_DEVICE}" "${manifest}" || fail "manifest missing expected guest seed device ${PKG_NIX_GUEST_ROOTFS_SEED_DEVICE}: ${manifest}"
+  grep -q "${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE}" "${manifest}" || fail "manifest missing expected guest seed compatible ${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE}: ${manifest}"
   grep -q "${expected_seed}" "${manifest}" || fail "manifest missing expected guest seed ${expected_seed}: ${manifest}"
   grep -q "${expected_seed_sha}" "${manifest}" || fail "manifest missing expected guest seed SHA256 ${expected_seed_sha}: ${manifest}"
 fi
 
-printf 'Verified SM8550 payloads in %s\n' "${target_dir}"
+printf 'Verified SM8550 payloads in %s for %s %s\n' "${target_dir}" "${PKG_NIX_GUEST_ROOTFS_SEED_DEVICE}" "${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE}"
