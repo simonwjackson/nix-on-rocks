@@ -35,6 +35,68 @@ in
     package = rocknixInputplumber;
   };
 
+  systemd.services.rocknix-guest-hide-raw-gamepad = {
+    description = "Hide raw SM8550 gamepad event nodes after InputPlumber claims them";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "inputplumber.service" ];
+    after = [ "inputplumber.service" ];
+    before = [
+      "korri-compositor.service"
+      "korri-inputd.service"
+      "main-space-sway-kiosk.service"
+      "korri-kiosk.service"
+    ];
+    path = [ pkgs.coreutils ];
+    script = ''
+      set -eu
+
+      mkdir -p /dev/inputplumber/sources
+
+      # Wait until InputPlumber has opened the raw pad and created the virtual
+      # Xbox target. Moving the node before that point would hide the source
+      # from InputPlumber itself; moving after preserves InputPlumber's fd while
+      # removing the raw node from later consumers such as Moonlight/libinput.
+      for _ in $(seq 1 200); do
+        for name in /sys/class/input/event*/device/name; do
+          [ -r "$name" ] || continue
+          if [ "$(cat "$name")" = "Microsoft X-Box 360 pad" ]; then
+            found_virtual_gamepad=1
+            break 2
+          fi
+        done
+        sleep 0.1
+      done
+
+      [ "''${found_virtual_gamepad:-0}" = 1 ] || {
+        echo "InputPlumber virtual Xbox target did not appear" >&2
+        exit 1
+      }
+
+      moved=0
+      for event in /dev/input/event*; do
+        [ -e "$event" ] || continue
+        name_path="/sys/class/input/$(basename "$event")/device/name"
+        [ -r "$name_path" ] || continue
+        [ "$(cat "$name_path")" = "AYN Odin2 Gamepad" ] || continue
+
+        target="/dev/inputplumber/sources/$(basename "$event")"
+        if [ ! -e "$target" ]; then
+          mv "$event" "$target"
+        fi
+        moved=1
+      done
+
+      [ "$moved" = 1 ] || {
+        echo "Raw AYN Odin2 gamepad event node was not found" >&2
+        exit 1
+      }
+    '';
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+  };
+
   # The nixpkgs service module sets XDG_DATA_DIRS so InputPlumber discovers
   # /run/current-system/sw/share/inputplumber, including the SM8550 maps in the
   # package above. Order it before sway so libseat sees the virtual devices and

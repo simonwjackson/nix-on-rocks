@@ -18,7 +18,20 @@
   # to wait for instead of settling an empty queue.
   systemd.additionalUpstreamSystemUnits = [ "systemd-udev-trigger.service" ];
 
-  systemd.services.systemd-udevd.enable = lib.mkForce true;
-  systemd.services.systemd-udev-trigger.enable = lib.mkForce true;
-  systemd.services.systemd-udev-settle.enable = lib.mkForce true;
+  systemd.services.systemd-udevd = {
+    enable = lib.mkForce true;
+    # nspawn provides a read-only sysfs view, but guest udev still needs to run
+    # so InputPlumber-created uinput devices get /run/udev records and group
+    # ownership. The upstream unit's container-hostile /sys write condition
+    # otherwise skips udevd entirely.
+    unitConfig.ConditionPathIsReadWrite = lib.mkForce "";
+  };
+  systemd.services.systemd-udev-trigger = {
+    enable = lib.mkForce true;
+    unitConfig.ConditionPathIsReadWrite = lib.mkForce "";
+  };
+  systemd.services.systemd-udev-settle = {
+    enable = lib.mkForce true;
+    unitConfig.ConditionPathIsReadWrite = lib.mkForce "";
+  };
 }

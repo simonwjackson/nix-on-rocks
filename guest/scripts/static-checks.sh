@@ -186,12 +186,14 @@ grep -q 'services.udev.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
   || fail "udev module must force-enable the full NixOS udev module under container mode"
 grep -q 'systemd.additionalUpstreamSystemUnits = \[ "systemd-udev-trigger.service" \]' "$ROOT/modules/udev.nix" \
   || fail "udev module must re-add the upstream udev-trigger unit suppressed by container mode"
-grep -q 'systemd.services.systemd-udevd.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
-  || fail "udev module must force-enable systemd-udevd"
-grep -q 'systemd.services.systemd-udev-trigger.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
-  || fail "udev module must force-enable systemd-udev-trigger"
-grep -q 'systemd.services.systemd-udev-settle.enable = lib.mkForce true' "$ROOT/modules/udev.nix" \
-  || fail "udev module must force-enable systemd-udev-settle"
+grep -q 'systemd.services.systemd-udevd = {' "$ROOT/modules/udev.nix" \
+  || fail "udev module must configure systemd-udevd"
+grep -q 'systemd.services.systemd-udev-trigger = {' "$ROOT/modules/udev.nix" \
+  || fail "udev module must configure systemd-udev-trigger"
+grep -q 'systemd.services.systemd-udev-settle = {' "$ROOT/modules/udev.nix" \
+  || fail "udev module must configure systemd-udev-settle"
+grep -q 'unitConfig.ConditionPathIsReadWrite = lib.mkForce ""' "$ROOT/modules/udev.nix" \
+  || fail "udev module must clear upstream /sys read-write conditions for nspawn sysfs"
 grep -q '../modules/udev.nix' "$ROOT/profiles/rocknix-guest-base.nix" \
   || fail "rocknix-guest-base profile must import the guest udev module"
 grep -q '../modules/udev.nix' "$ROOT/profiles/dev-env.nix" \
@@ -242,9 +244,19 @@ grep -q 'HIDE_DEVICES_FROM_ROOT = "1"' "$ROOT/modules/input.nix" \
   || fail "guest InputPlumber must hide raw devices by moving them away from /dev/input"
 grep -q 'systemd-udev-settle.service' "$ROOT/modules/input.nix" \
   || fail "guest InputPlumber must start after udev-settle"
-grep -q '"korri-kiosk.service"' "$ROOT/modules/input.nix" \
+grep -q 'systemd.services.rocknix-guest-hide-raw-gamepad' "$ROOT/modules/input.nix" \
+  || fail "input module must include a guest-side raw gamepad hiding service"
+grep -q 'Microsoft X-Box 360 pad' "$ROOT/modules/input.nix" \
+  || fail "raw gamepad hiding service must wait for InputPlumber's virtual Xbox target"
+grep -q 'AYN Odin2 Gamepad' "$ROOT/modules/input.nix" \
+  || fail "raw gamepad hiding service must match the raw SM8550 controller by sysfs name"
+grep -q '/dev/inputplumber/sources' "$ROOT/modules/input.nix" \
+  || fail "raw gamepad hiding service must move raw controller nodes into InputPlumber sources"
+grep -q '"korri-inputd.service"' "$ROOT/modules/input.nix" \
+  && grep -q '"korri-compositor.service"' "$ROOT/modules/input.nix" \
+  && grep -q '"korri-kiosk.service"' "$ROOT/modules/input.nix" \
   && grep -q '"main-space-sway-kiosk.service"' "$ROOT/modules/input.nix" \
-  || fail "guest InputPlumber must order before Korri and fallback sway sessions"
+  || fail "guest input services must order before Korri and fallback sway consumers"
 grep -q '../modules/input.nix' "$ROOT/profiles/rocknix-guest-base.nix" \
   || fail "rocknix-guest-base profile must import the guest input module"
 grep -q 'ayn-odin2-ucm' "$REPO_ROOT/flake.nix" \
