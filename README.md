@@ -72,10 +72,25 @@ scripts/verify-product-payload
 scripts/tests/product-payload-contract.sh
 ```
 
-Flake builds run from the repo root:
+Source and check-boundary validation runs from the repo root:
 
 ```sh
-guest/scripts/static-checks.sh
+nix flake check --no-write-lock-file --print-build-logs
+scripts/check-shell-smoke
+scripts/check-boundary-lint
+scripts/check-docs-contract
+```
+
+`nix/tests/*.nix` owns declarative Nix/build invariants: flake outputs,
+package attributes, NixOS module evaluation, generated systemd/tmpfiles config,
+and package-output contracts. Shell smoke owns real shell/runtime/artifact
+behavior only. Source-policy and docs checks use explicit lint/docs commands;
+they do not live in shell smoke. There is no TypeScript/Bun runtime surface in
+this repo today, so there are no `*.test.ts` checks to run.
+
+Retained manual/targeted builds and proofs:
+
+```sh
 scripts/verify-korri-promotion-proof
 nix build .#nixosConfigurations.rocknix-guest.config.system.build.toplevel
 nix build .#nixosConfigurations.rocknix-guest-dev-env.config.system.build.toplevel

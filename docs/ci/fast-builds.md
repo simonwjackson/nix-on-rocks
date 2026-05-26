@@ -73,7 +73,9 @@ If the product tarball fetch mode changes (for example private/authenticated API
 
 `product-payload.lock` is a Phase 1 characterization seam, not an active image-build input. It describes the current locked Korri product source, promotion target, and rootfs seed with sourceable `PRODUCT_*` shell assignments. `scripts/render-product-payload` maps those fields to the current `PKG_NIX_GUEST_*` package variables, and `scripts/verify-product-payload` compares the rendered values to the patched ROCKNIX `package.mk` after `scripts/apply-rocknix-patches`.
 
-Phase 1 validation is intentionally cheap: patch application, `scripts/verify-sm8550-contract`, `scripts/verify-sm8550-locks`, `scripts/verify-product-payload`, shell syntax checks, and `guest/scripts/static-checks.sh`. Do not dispatch full/image-only SM8550 workflows just to prove the generic mirror; later phases own image-build validation after the generic seam becomes a build input.
+Phase 1 validation is intentionally cheap: patch application, `scripts/verify-sm8550-contract`, `scripts/verify-sm8550-locks`, `scripts/verify-product-payload`, `scripts/tests/product-payload-contract.sh`, `nix flake check --no-write-lock-file --print-build-logs`, `scripts/check-shell-smoke`, `scripts/check-boundary-lint`, and `scripts/check-docs-contract`. Do not dispatch full/image-only SM8550 workflows just to prove the generic mirror; later phases own image-build validation after the generic seam becomes a build input.
+
+Check ownership is split by where the truth lives. `nix/tests/*.nix` covers flake outputs, package attributes, NixOS module evaluation, generated systemd/tmpfiles config, and package-output contracts. Shell smoke covers real shell/runtime behavior and mutable artifacts. Source-policy and safety-doc assertions live in named lint/docs commands instead of the guest smoke path.
 
 `work/rocknix` is generated scratch state. Direct edits there are not durable; update this repo's lock files and patch queue instead.
 

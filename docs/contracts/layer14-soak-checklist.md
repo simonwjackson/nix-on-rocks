@@ -19,7 +19,9 @@ Read this checklist alongside:
 - [ ] `/storage/nix-on-rock/rootfs/current/` exists.
 - [ ] `/storage/nix-on-rock/staging/guest-exchange/` exists and is writable (guest-visible as `/storage/.guest` during the compatibility window).
 - [ ] `/usr/lib/rocknix-guest-substrate/guest-revision` exists.
-- [ ] Packaged guest source static checks pass:
+- [ ] Packaged guest source compatibility smoke passes. This host-shell-safe
+      command is retained for the on-device substrate path; repo-local Nix
+      source contracts run through `nix flake check` before image build.
 
   ```text
   /usr/lib/rocknix-guest-substrate/guest/scripts/static-checks.sh
