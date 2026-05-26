@@ -52,7 +52,9 @@ product_fields=(
   PRODUCT_ROOTFS_SEED_URLS
 )
 
-eval "$(load_shell_fields "${product_lock}" "${product_fields[@]}")"
+loaded_fields=$(load_shell_fields "${product_lock}" "${product_fields[@]}") \
+  || fail "unable to source product payload lock: ${product_lock}"
+eval "${loaded_fields}"
 
 for field in \
   PRODUCT_AUTHORITY_REPO \

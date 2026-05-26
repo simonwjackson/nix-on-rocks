@@ -67,9 +67,22 @@ load_shell_fields() {
 
 scan_package_payload_fields() {
   awk '
+    /PKG_NIX_GUEST[A-Za-z0-9_]*/ && ($0 ~ /printf[[:space:]][^#]*-v[[:space:]]+PKG_NIX_GUEST/ || $0 ~ /(^|[[:space:];])read[[:space:]][^#]*PKG_NIX_GUEST/ || $0 ~ /(^|[[:space:];])eval[[:space:]][^#]*PKG_NIX_GUEST[A-Za-z0-9_]*[+]?=/) {
+      print "BAD:" FNR ":" $0
+      next
+    }
     /PKG_NIX_GUEST[A-Za-z0-9_]*[+]?=/ {
       if (!payload_block_ended && $0 ~ /^PKG_NIX_GUEST[A-Za-z0-9_]*=/) {
         payload_block_started = 1
+        rhs = $0
+        sub(/^[^=]*=/, "", rhs)
+        while (rhs ~ /\$\{?PKG_NIX_GUEST[A-Za-z0-9_]*(##[^}]*)?\}?/) {
+          sub(/\$\{?PKG_NIX_GUEST[A-Za-z0-9_]*(##[^}]*)?\}?/, "", rhs)
+        }
+        if (rhs ~ /\$\{?[A-Za-z_][A-Za-z0-9_]*/) {
+          print "BAD:" FNR ":" $0
+          next
+        }
         field = $0
         sub(/=.*/, "", field)
         print "FIELD:" field
@@ -102,8 +115,12 @@ guest_fields=(
   GUEST_SEED_SHA256
 )
 
-eval "$(load_shell_fields "${product_lock}" "${product_fields[@]}")"
-eval "$(load_shell_fields "${guest_lock}" "${guest_fields[@]}")"
+loaded_fields=$(load_shell_fields "${product_lock}" "${product_fields[@]}") \
+  || fail "unable to source product payload lock: ${product_lock}"
+eval "${loaded_fields}"
+loaded_fields=$(load_shell_fields "${guest_lock}" "${guest_fields[@]}") \
+  || fail "unable to source guest lock: ${guest_lock}"
+eval "${loaded_fields}"
 
 require_equal PRODUCT_ROOTFS_SEED_REV "${PRODUCT_ROOTFS_SEED_REV:-}" "${GUEST_REV:-}"
 require_equal PRODUCT_ROOTFS_SEED_DEVICE "${PRODUCT_ROOTFS_SEED_DEVICE:-}" "${GUEST_DEVICE:-}"
@@ -132,7 +149,9 @@ modeled_fields=(
   PKG_NIX_GUEST_ROOTFS_SEED_URLS
 )
 
-eval "$(load_shell_fields "${rendered_env}" "${modeled_fields[@]}")"
+loaded_fields=$(load_shell_fields "${rendered_env}" "${modeled_fields[@]}") \
+  || fail "unable to source rendered product payload environment"
+eval "${loaded_fields}"
 
 declare -A rendered_values=()
 for field in "${modeled_fields[@]}"; do
@@ -157,7 +176,13 @@ done < <(scan_package_payload_fields "${package_mk}")
 [ "${#non_top_level_assignments[@]}" -eq 0 ] \
   || fail "non-top-level PKG_NIX_GUEST_* assignment in ${package_mk}: ${non_top_level_assignments[*]}"
 
-IFS=$'\n' read -r -d '' -a package_fields < <(printf '%s\n' "${package_fields[@]}" | sort -u && printf '\0')
+declare -A seen_package_fields=()
+for field in "${package_fields[@]}"; do
+  [ -z "${seen_package_fields[${field}]+x}" ] \
+    || fail "duplicate product payload package field: ${field}"
+  seen_package_fields["${field}"]=1
+done
+IFS=$'\n' read -r -d '' -a package_fields < <(printf '%s\n' "${package_fields[@]}" | sort && printf '\0')
 for field in "${package_fields[@]}"; do
   contains_field "${field}" || fail "unmodeled product payload package field: ${field}"
 done
@@ -166,7 +191,9 @@ for field in "${modeled_fields[@]}"; do
     || fail "missing modeled product payload package field: ${field}"
 done
 
-eval "$(load_shell_fields "${package_mk}" "${package_fields[@]}")"
+loaded_fields=$(load_shell_fields "${package_mk}" "${package_fields[@]}") \
+  || fail "unable to source patched package metadata: ${package_mk}"
+eval "${loaded_fields}"
 
 for field in "${package_fields[@]}"; do
   require_equal "${field}" "${!field-}" "${rendered_values[${field}]}"
