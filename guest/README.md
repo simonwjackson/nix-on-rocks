@@ -22,7 +22,7 @@ ROCKNIX remains the base OS, boot/recovery plane, and host-side nspawn importer/
 - `packages/steam/` contains guest-native Steam ARM64 bootstrap/seed/launch helpers.
 - `packages/` also contains InputPlumber, Moonlight, and UCM derivations.
 - `launchers/` contains helper scripts used by the Layer 14 Cemu validation path.
-- `scripts/static-checks.sh` is the repo-local structural check suite.
+- `scripts/static-checks.sh` is the packaged compatibility smoke entry point; repo-local source contracts live in `nix/tests/*.nix` and repo-root `scripts/check-*` commands.
 
 ## Flake outputs
 

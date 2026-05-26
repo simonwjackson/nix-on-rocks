@@ -71,4 +71,56 @@ grep -q 'steam-guest-runtime-prep' "$manifest" \
 grep -q 'steam-guest-run' "$manifest" \
   || fail "Steam manifest must list steam-guest-run in the package contract"
 
+# Rootfs packaging helper source-policy guardrails. A fuller package-output
+# rootfs inspection check can replace these when it is cheap enough for CI.
+grep -q 'root/etc/ssh/authorized_keys.d/root' "$repo_root/flake.nix" \
+  || fail "rootfs packaging must provide regular authorized_keys target for StrictModes"
+grep -q 'root/usr/bin/nix' "$repo_root/flake.nix" \
+  || fail "rootfs packaging must expose /usr/bin/nix for bridge/smoke contracts"
+
+# Launcher source-boundary contracts that are not represented by evaluated
+# NixOS config: the launchers compose runtime policy and must retain their
+# handoff seams.
+grep -q 'SYSTEM_CEMU=' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must default through the main-space system Cemu package"
+grep -q 'PROMOTED_CEMU=' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must retain promoted Cemu fallback"
+grep -q 'REQUESTED_CEMU=${CEMU_BIN:-$SYSTEM_CEMU}' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must preserve CEMU_BIN override over system Cemu"
+! grep -q 'CEMU_VULKAN_LOADER_LIB_PATH\|LD_LIBRARY_PATH' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must not own Vulkan loader setup"
+grep -q 'cemu-storage-adapter.sh' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must delegate Cemu /storage layout to cemu-storage-adapter.sh"
+grep -q 'bootstrap_session_portals' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must prewarm session portals before wxGTK startup"
+grep -q 'quote_for_sway_exec' "$guest_root/launchers/botw-guest.sh" \
+  || fail "botw-guest.sh must quote values passed through swaymsg exec"
+! grep -q 'P3_MAX=\|GPU_MIN=\|taskset -p' "$guest_root/launchers/botw-guest.sh" \
+  || fail "botw-guest.sh must not own CPU/GPU/affinity policy directly"
+for cemu_remote in remote-cemu-build-fingerprint.sh remote-cemu-cleanup.sh remote-cemu-runner.sh remote-cemu-runtime-ab.sh remote-cemu-promote.sh; do
+  grep -q 'GUEST_SERVICE="${ROCKNIX_GUEST_SERVICE:-rocknix-guest.service}"' "$guest_root/launchers/$cemu_remote" \
+    || fail "$cemu_remote must default to current rocknix-guest.service with override"
+done
+grep -q 'cubeb-backend-evidence.txt' "$guest_root/launchers/remote-cemu-build-fingerprint.sh" \
+  || fail "Cemu build fingerprint must report Cubeb backend evidence"
+
+# Cemu package source-boundary guardrails retained until the package-output
+# characterization check is split into an explicit non-default package lane.
+grep -F -q 'exec "\$cemu_wrapper_dir/Cemu"' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must exec real Cemu binary"
+grep -q 'vulkan_loader_lib_path=' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must own Vulkan loader path"
+grep -q 'audio_backend_lib_path=' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must expose Pulse/ALSA backend library path"
+grep -q 'USE_PULSE' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must gate on bundled Cubeb Pulse backend evidence"
+grep -q 'USE_ALSA' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must gate on bundled Cubeb ALSA backend evidence"
+grep -q 'cubeb-backend-evidence.txt' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must persist Cubeb backend evidence"
+grep -q 'cubeb-backend-strings.txt' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must persist Cubeb runtime string evidence"
+grep -q 'SDL_VIDEO_ALLOW_SCREENSAVER' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must own SDL screensaver guard"
+
 echo "check-boundary-lint: ok"

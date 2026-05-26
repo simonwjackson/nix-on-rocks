@@ -32,6 +32,11 @@ jobs:
       - name: Verify Nix contracts
         run: nix flake check --no-write-lock-file --print-build-logs
 
+      - name: Verify target check graph
+        run: |
+          nix eval --raw --no-write-lock-file .#checks.aarch64-linux.flake-surface-contract.drvPath
+          nix eval --raw --no-write-lock-file .#checks.aarch64-linux.steam-package-contract.drvPath
+
       - name: Verify shell smoke
         run: scripts/check-shell-smoke
 

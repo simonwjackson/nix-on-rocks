@@ -198,16 +198,12 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          static =
-            pkgs.runCommand "nix-on-rocks-guest-static-checks"
-              {
-                nativeBuildInputs = [ pkgs.shellcheck ];
-              }
-              ''
-                cd ${self}
-                ${pkgs.bash}/bin/bash guest/scripts/static-checks.sh
-                touch $out
-              '';
+          # Compatibility attr name for callers that used the old monolithic
+          # static check. Keep the flake check surface Nix-owned; shell smoke,
+          # boundary lint, and docs contracts run through named scripts/ steps.
+          static = import ./nix/tests/flake-surface-contract.nix {
+            inherit pkgs self system;
+          };
           steam-package-contract = import ./nix/tests/steam-package-output-contract.nix {
             inherit pkgs;
             steamPackage = self.packages.${system}.steam;

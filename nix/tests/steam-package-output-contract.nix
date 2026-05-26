@@ -51,5 +51,17 @@ pkgs.runCommand "rocknix-steam-package-output-contract"
       }
     done
 
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    mkdir -p "$tmp/Steam/steamrtarm64"
+    : > "$tmp/Steam/steamrtarm64/steam"
+    chmod 755 "$tmp/Steam/steamrtarm64/steam"
+    STEAM_HOME="$tmp/Steam" FEX_ROOTFS="$tmp/fex" \
+      "$package_out/bin/steam-guest-run" --check >/tmp/steam-guest-run-built-check.out
+    test ! -e "$tmp/Steam/prep-applied" || {
+      echo "built steam-guest-run --check must not apply mutable prep" >&2
+      exit 1
+    }
+
     touch $out
   ''
