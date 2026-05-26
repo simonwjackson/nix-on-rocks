@@ -18,7 +18,6 @@
       # active 1080x1920 panel and needs transform 270 instead of Thor's 90.
       output DSI-1 enable
       output DSI-1 transform 270
-      output DSI-1 scale 2.0
       output DSI-1 pos 0 0
       output DSI-1 bg #000000 solid_color
       output DSI-1 allow_tearing yes

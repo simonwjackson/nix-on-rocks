@@ -24,24 +24,20 @@ in
       default = ''
         # ROCKNIX Layer 14 sway device block (Thor, SM8550).
         # Validated on Thor 2026-05-08: foot terminal renders readably in
-        # landscape orientation on DSI-2 with these transforms.
+        # landscape orientation on DSI-2 with this transform.
         output DSI-2 transform 90
-        output DSI-2 scale 2.0
         output DSI-2 pos 0 0
         output DSI-2 bg #000000 solid_color
         output DSI-2 allow_tearing yes
         output DSI-2 max_render_time off
 
         # Thor's bottom panel: 1080x1240 native, same physical orientation
-        # as DSI-2 (panel is portrait, device is held landscape). transform
-        # 90 + scale 2.0 yields 620x540 logical, stacked under DSI-2's
-        # 960x540 starting at y=540. Both panels share the device's full
-        # physical width but the bottom panel is shorter, so its logical
-        # width is narrower.
+        # as DSI-2 (panel is portrait, device is held landscape). Leave Sway
+        # at its default scale and stack the bottom panel below DSI-2's
+        # 1920x1080 logical surface.
         output DSI-1 enable
         output DSI-1 transform 90
-        output DSI-1 scale 2.0
-        output DSI-1 pos 0 540
+        output DSI-1 pos 0 1080
         output DSI-1 bg #000000 solid_color
 
         # Touch routing for Thor's dual-screen design.
