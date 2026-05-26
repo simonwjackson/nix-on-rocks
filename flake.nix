@@ -208,15 +208,10 @@
                 ${pkgs.bash}/bin/bash guest/scripts/static-checks.sh
                 touch $out
               '';
-          steam-package-contract =
-            pkgs.runCommand "rocknix-steam-package-contract"
-              { }
-              ''
-                cd ${self}
-                PACKAGE_OUT=${self.packages.${system}.steam} \
-                  ${pkgs.bash}/bin/bash packages/steam/tests/steam-package-contract.sh
-                touch $out
-              '';
+          steam-package-contract = import ./nix/tests/steam-package-output-contract.nix {
+            inherit pkgs;
+            steamPackage = self.packages.${system}.steam;
+          };
           flake-surface-contract = import ./nix/tests/flake-surface-contract.nix {
             inherit pkgs self system;
           };
