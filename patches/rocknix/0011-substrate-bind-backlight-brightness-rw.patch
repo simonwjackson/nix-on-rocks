@@ -1,0 +1,44 @@
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
+@@ -135,6 +135,14 @@ has_candidate_media_member() {
+   return 1
+ }
+ 
++emit_backlight_brightness_binds() {
++  for brightness_path in /sys/class/backlight/*/brightness; do
++    [ -e "${brightness_path}" ] || continue
++    emit_arg "--bind=${brightness_path}"
++    log "pass writable backlight brightness $(basename "$(dirname "${brightness_path}")")"
++  done
++}
++
+ emit_safe_block_binds() {
+   seen_roots=" "
+   for sysdev in /sys/class/block/*; do
+@@ -195,6 +203,11 @@ emit_arg "--bind=/dev/uinput"
+ emit_arg "--bind=/dev/tty0"
+ emit_arg "--bind=/dev/tty1"
+ emit_arg "--bind=/sys/class/backlight"
++# /sys/class/backlight entries are symlinks into /sys/devices. Binding the
++# class directory lets the guest enumerate devices, but writes still resolve to
++# nspawn's read-only /sys/devices mount. Layer per-file binds over the runtime
++# brightness attributes so guest tools can adjust host-owned panel backlights.
++emit_backlight_brightness_binds
+ emit_arg "--bind=/sys/class/leds"
+ emit_arg "--bind=/sys/class/devfreq"
+ emit_arg "--bind=/sys/devices/system/cpu/cpufreq"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+@@ -262,6 +262,10 @@ grep -q -- '--bind=/dev/input' "${PKG_DIR}/scripts/rocknix-guest-start" || fai
+ grep -q 'mkdir -p /dev/input/\.inputplumber/sources' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must create InputPlumber sources inside the /dev/input bind"
+ grep -q -- '--bind=/dev/uinput' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uinput for guest InputPlumber"
+ grep -q -- '--bind=/dev/snd' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through sound devices"
++grep -q 'emit_backlight_brightness_binds' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind backlight brightness files for guest writes"
++grep -q 'for brightness_path in /sys/class/backlight/\*/brightness' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate runtime backlight brightness files"
++grep -q -- '--bind=${brightness_path}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass writable backlight brightness files"
++assert_order "${PKG_DIR}/scripts/rocknix-guest-start" '--bind=/sys/class/backlight' 'emit_backlight_brightness_binds' "guest start helper must layer brightness file binds after the backlight class bind"
+ grep -q -- '--bind=${v_node}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/video* codec nodes for Moonlight v4l2m2m"
+ grep -q -- 'for v_node in /dev/video' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate /dev/video[0-9]* at runtime rather than hardcode ordinals"
+ grep -q -- '--bind=/dev/ntsync' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through /dev/ntsync for Wine/Proton sync"
