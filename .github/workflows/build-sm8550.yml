@@ -30,6 +30,7 @@ jobs:
           scripts/apply-rocknix-patches
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
+          scripts/verify-product-payload
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -72,6 +73,7 @@ jobs:
           scripts/apply-rocknix-patches
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
+          scripts/verify-product-payload
 
       - name: Restore toolchain ccache
         run: scripts/restore-ccache toolchain
@@ -144,6 +146,7 @@ jobs:
           scripts/apply-rocknix-patches
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
+          scripts/verify-product-payload
 
       - name: Download aarch64 toolchain
         uses: actions/download-artifact@v8
@@ -237,6 +240,7 @@ jobs:
           scripts/apply-rocknix-patches
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
+          scripts/verify-product-payload
 
       - name: Download aarch64 base
         uses: actions/download-artifact@v8

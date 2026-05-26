@@ -123,6 +123,15 @@ guest without manual `nixos-rebuild` steps on-device. `ROCKNIX_GUEST_BUILD_TARGE
 can override the target for proof runs, but the helper refuses the retired
 nix-on-rocks by-compatible product target.
 
+`product-payload.lock` characterizes the current packaged product payload before
+Docker work begins. In Phase 1 it mirrors the Korri source pin, build target,
+and accepted rootfs seed already hardcoded in patched `package.mk`; the image
+path still consumes `package.mk` from `patches/rocknix/0006-rocknix-guest-substrate.patch`.
+`scripts/verify-product-payload` renders the generic lock to `PKG_NIX_GUEST_*`
+values and fails if the mirror, `guest.lock`, or patched package metadata drift.
+Downstream products still consume nix-on-rocks; nix-on-rocks must not import a
+downstream product flake to satisfy this contract.
+
 ## Recovery contract
 
 Two override mechanisms have OR semantics:

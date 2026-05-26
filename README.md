@@ -25,6 +25,7 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Korri consumes nix-on-rocks as the SM8550 substrate; nix-on-rocks no longer imports Korri.
 - Canonical guest product source: Korri branch `feat/korri-rocknix-inversion` (`.#korri-rocknix-rootfs-odin2portal`), verified on Fuji/native arm64.
 - Host-packaged guest source: pinned Korri product tarball, extracting the flake root.
+- Product payload mirror: see `product-payload.lock`; Phase 1 characterizes the same Korri tarball, build target, and rootfs seed that patched `package.mk` still consumes.
 - Accepted guest seed pin: see `guest.lock`; old nix-on-rocks seeds are archived fallback evidence only.
 - Patch queue: `patches/rocknix/series`
 - Latest accepted Phase 5 CI/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
@@ -66,6 +67,9 @@ callPackage arguments (e.g., cemu accepts `socSettings` and `socName`).
 scripts/fetch-upstream
 scripts/apply-rocknix-patches
 scripts/verify-sm8550-contract
+scripts/verify-sm8550-locks
+scripts/verify-product-payload
+scripts/tests/product-payload-contract.sh
 ```
 
 Flake builds run from the repo root:
@@ -93,11 +97,13 @@ scripts/build-sm8550
 1. checkout this repo;
 2. clone pinned ROCKNIX into `work/rocknix`;
 3. apply `patches/rocknix/series`;
-4. run SM8550 contract checks;
+4. run SM8550 contract checks, lock checks, and `scripts/verify-product-payload`;
 5. build SM8550 with the patched ROCKNIX tree;
 6. fetch the pinned Korri product tarball inside `rocknix-guest-substrate` and package its flake root for `korri-rocknix-kiosk-by-compatible` promotion;
 7. keep `.github/workflows/build-rootfs-seed.yml` as a Retired legacy rootfs seed fallback notice; canonical rootfs artifacts are built by Korri;
 8. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, guest seed, and payload checksums.
+
+`product-payload.lock` is not an image-build input yet. It is a pre-build characterization contract: `scripts/render-product-payload` maps the product-neutral `PRODUCT_*` fields to the current `PKG_NIX_GUEST_*` package variables, and `scripts/verify-product-payload` compares that rendered environment to the patched `work/rocknix/.../package.mk`. Direct edits under `work/rocknix` are generated scratch changes; update `patches/rocknix/0006-rocknix-guest-substrate.patch`, `guest.lock`, and/or `product-payload.lock` instead.
 
 The product repo is public, but host packaging still pins the exact GitHub-generated tarball bytes by SHA256. If the fetch mode changes, verify the archive resolves to the same pinned commit before updating the checksum.
 

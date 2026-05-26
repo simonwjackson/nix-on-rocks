@@ -118,6 +118,20 @@ promote_section="$(sed -n '/scripts\/rocknix-guest-promote /,/scripts\/rocknix-g
   || fail "missing executable Korri promotion proof script"
 grep -q 'promotion-proof passed' "$REPO_ROOT/scripts/verify-korri-promotion-proof" \
   || fail "Korri promotion proof script must exercise the configured target"
+[ -f "$REPO_ROOT/product-payload.lock" ] \
+  || fail "missing generic product payload lock"
+[ -x "$REPO_ROOT/scripts/render-product-payload" ] \
+  || fail "missing executable product payload renderer"
+[ -x "$REPO_ROOT/scripts/verify-product-payload" ] \
+  || fail "missing executable product payload verifier"
+[ -x "$REPO_ROOT/scripts/tests/product-payload-contract.sh" ] \
+  || fail "missing executable product payload contract test"
+grep -q 'PRODUCT_AUTHORITY_REPO="simonwjackson/korri"' "$REPO_ROOT/product-payload.lock" \
+  || fail "product payload lock must characterize Korri during Phase 1"
+grep -q 'PRODUCT_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"' "$REPO_ROOT/product-payload.lock" \
+  || fail "product payload lock must preserve the current Korri by-compatible build target during Phase 1"
+grep -q 'PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"' "$ROCKNIX_SUBSTRATE_PATCH" \
+  || fail "ROCKNIX substrate patch must still bake the current Korri by-compatible build target during Phase 1"
 
 ROOTFS_SEED_WORKFLOW="$ROOT/.github/workflows/build-rootfs-seed.yml"
 grep -q 'Retired legacy rootfs seed fallback' "$ROOTFS_SEED_WORKFLOW" \
