@@ -69,6 +69,14 @@ Current accepted image-only proof:
 
 If the product tarball fetch mode changes (for example private/authenticated API tarball to public API tarball), expect the GitHub-generated tarball checksum to change and update `PKG_NIX_GUEST_SHA256` only after verifying the fetched archive is still the pinned revision.
 
+## Cheap product-payload contract verification
+
+`product-payload.lock` is a Phase 1 characterization seam, not an active image-build input. It describes the current locked Korri product source, promotion target, and rootfs seed with sourceable `PRODUCT_*` shell assignments. `scripts/render-product-payload` maps those fields to the current `PKG_NIX_GUEST_*` package variables, and `scripts/verify-product-payload` compares the rendered values to the patched ROCKNIX `package.mk` after `scripts/apply-rocknix-patches`.
+
+Phase 1 validation is intentionally cheap: patch application, `scripts/verify-sm8550-contract`, `scripts/verify-sm8550-locks`, `scripts/verify-product-payload`, shell syntax checks, and `guest/scripts/static-checks.sh`. Do not dispatch full/image-only SM8550 workflows just to prove the generic mirror; later phases own image-build validation after the generic seam becomes a build input.
+
+`work/rocknix` is generated scratch state. Direct edits there are not durable; update this repo's lock files and patch queue instead.
+
 ## Cache strategy
 
 The workflows now have hooks for ccache restore/save:
@@ -94,6 +102,7 @@ Saving is best-effort and writes to this repo's `ccache` release tag using `GITH
 Preflight and build lanes now run explicit lock/payload checks:
 
 - `scripts/verify-sm8550-locks` confirms `guest.lock` and patched `package.mk` agree on guest rev, device, compatible string, seed archive, SHA256, and authenticated Nix-on-Rocks fetch URLs.
+- `scripts/verify-product-payload` confirms `product-payload.lock` renders to every current top-level `PKG_NIX_GUEST_*` assignment in patched `package.mk`, including derived authority/name URL values, the blank single seed URL, and the ordered split seed URL list.
 - `scripts/verify-sm8550-payloads` confirms the produced update tar carries `target/SYSTEM`, `target/KERNEL`, the expected `target/seed/<archive>`, matching seed SHA256, valid `.sha256` files, gzip integrity, and manifest seed records.
 
 These checks are intentionally separate from the ROCKNIX build so artifacts downloaded after CI can be reverified locally before device install.
