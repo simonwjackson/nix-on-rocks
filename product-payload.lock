@@ -1,0 +1,24 @@
+# Product payload contract for the current SM8550 ROCKNIX image path.
+#
+# Phase 1 is characterization-only: this sourceable lock mirrors the product
+# payload that patches/rocknix/0006-rocknix-guest-substrate.patch still bakes
+# into ROCKNIX package.mk. Image builds do not consume this file yet.
+# Korri remains the locked downstream product payload until a later phase wires a
+# generic product path through an image-build-gated rollout.
+
+PRODUCT_AUTHORITY_REPO="simonwjackson/korri"
+PRODUCT_REV="e04962162702a22cb834545e008c7c9c987565b1"
+PRODUCT_SOURCE_SHA256="c92e75f5cb093cc8dcb85d8052ca6daa0de5f13c6d08e455ad496783356bb701"
+PRODUCT_SOURCE_SUBDIR="."
+PRODUCT_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"
+
+# Accepted bootable rootfs seed for the current product payload. These fields
+# intentionally duplicate guest.lock and are checked against it so partial seed
+# bumps fail before any Docker/ROCKNIX build begins.
+PRODUCT_ROOTFS_SEED_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
+PRODUCT_ROOTFS_SEED_DEVICE="thor"
+PRODUCT_ROOTFS_SEED_COMPATIBLE="ayn,thor"
+PRODUCT_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
+PRODUCT_ROOTFS_SEED_SHA256="0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb"
+PRODUCT_ROOTFS_SEED_URL=""
+PRODUCT_ROOTFS_SEED_URLS="https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426703720 https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426704444"
