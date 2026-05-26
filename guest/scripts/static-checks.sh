@@ -12,9 +12,9 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 if [ -x "$REPO_ROOT/scripts/check-shell-smoke" ] \
   && [ -x "$REPO_ROOT/scripts/check-boundary-lint" ] \
   && [ -x "$REPO_ROOT/scripts/check-docs-contract" ]; then
-  "$REPO_ROOT/scripts/check-shell-smoke"
-  "$REPO_ROOT/scripts/check-boundary-lint"
-  "$REPO_ROOT/scripts/check-docs-contract"
+  bash "$REPO_ROOT/scripts/check-shell-smoke"
+  bash "$REPO_ROOT/scripts/check-boundary-lint"
+  bash "$REPO_ROOT/scripts/check-docs-contract"
   echo "guest-static-checks: ok"
   exit 0
 fi
