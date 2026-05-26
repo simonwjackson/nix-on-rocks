@@ -3,7 +3,8 @@ set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
-package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
+package_mk="${package_dir}/package.mk"
 
 [ -f "${repo_root}/guest.lock" ] || { echo "missing guest.lock" >&2; exit 1; }
 [ -f "${package_mk}" ] || { echo "missing patched package.mk: ${package_mk}" >&2; exit 1; }
@@ -16,6 +17,7 @@ package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/
 # and helper functions are defined but not executed.
 # shellcheck source=/dev/null
 # shellcheck disable=SC1090,SC1091
+PKG_DIR="${package_dir}"
 . "${package_mk}"
 
 fail() {

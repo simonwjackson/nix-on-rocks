@@ -36,3 +36,8 @@ for doc in layer14-main-space-contract.md layer14-soak-checklist.md HOW-TO-FALL-
   cp "${src}" "${contract_docs_dest}/${doc}"
 done
 printf 'Staged Nix-on-Rocks contract docs into %s\n' "${contract_docs_dest}"
+
+payload_env_dest="${substrate_pkg_dir}/product-payload.env"
+"${repo_root}/scripts/render-product-payload" > "${payload_env_dest}.tmp"
+mv "${payload_env_dest}.tmp" "${payload_env_dest}"
+printf 'Staged rendered product payload environment into %s\n' "${payload_env_dest}"

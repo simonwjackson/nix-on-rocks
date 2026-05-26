@@ -7,7 +7,9 @@ guest_lock="${repo_root}/guest.lock"
 renderer="${repo_root}/scripts/render-product-payload"
 verifier="${repo_root}/scripts/verify-product-payload"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
-package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
+package_mk="${package_dir}/package.mk"
+staged_payload_env="${package_dir}/product-payload.env"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -34,9 +36,12 @@ require_equal() {
 
 copy_package_fixture() {
   local tmp_work=$1
-  local fixture_package_mk="${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  mkdir -p "$(dirname -- "${fixture_package_mk}")"
-  cp "${package_mk}" "${fixture_package_mk}"
+  local fixture_package_dir="${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
+  mkdir -p "${fixture_package_dir}"
+  cp "${package_mk}" "${fixture_package_dir}/package.mk"
+  if [ -f "${staged_payload_env}" ]; then
+    cp "${staged_payload_env}" "${fixture_package_dir}/product-payload.env"
+  fi
 }
 
 expect_verifier_failure() {
@@ -119,6 +124,15 @@ expect_verifier_failure "${tmp_work}" "run scripts/apply-rocknix-patches first"
 rm -rf "${tmp_work}"
 
 if [ -f "${package_mk}" ]; then
+  require_file "${staged_payload_env}"
+  require_equal product-payload.env "$("${renderer}")" "$(cat "${staged_payload_env}")"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  rm -f "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/product-payload.env"
+  expect_verifier_failure "${tmp_work}" "missing staged product payload environment"
+  rm -rf "${tmp_work}"
+
   (
     product_backup=$(mktemp)
     cp "${product_lock}" "${product_backup}"
@@ -135,67 +149,61 @@ if [ -f "${package_mk}" ]; then
       printf '\nrequire_equal() { :; }\n'
       printf 'PRODUCT_REV="0000000000000000000000000000000000000000"\n'
     } >> "${product_lock}"
-    expect_verifier_failure "${work_dir}" "PKG_NIX_GUEST_REV"
+    expect_verifier_failure "${work_dir}" "staged product payload environment is stale"
   )
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
-  sed -i '/^PKG_NIX_GUEST_ROOTFS_SEED_URLS=/a PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "unmodeled product payload package field: PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD"
+  printf '\nPKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/product-payload.env"
+  expect_verifier_failure "${tmp_work}" "staged product payload environment is stale"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
-  sed -i '/^PKG_NIX_GUEST_ROOTFS_SEED_URL=/d' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "missing modeled product payload package field: PKG_NIX_GUEST_ROOTFS_SEED_URL"
+  sed -i '/^PKG_NIX_GUEST_ROOTFS_SEED_URL=/d' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/product-payload.env"
+  expect_verifier_failure "${tmp_work}" "staged product payload environment is stale"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
-  sed -i 's/^PKG_NIX_GUEST_SHA256=.*/PKG_NIX_GUEST_SHA256="deadbeef"/' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "PKG_NIX_GUEST_SHA256"
+  sed -i 's/^PKG_NIX_GUEST_SHA256=.*/PKG_NIX_GUEST_SHA256="deadbeef"/' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/product-payload.env"
+  expect_verifier_failure "${tmp_work}" "staged product payload environment is stale"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  sed -i 's/^\. "${PKG_PRODUCT_PAYLOAD_ENV}"$/: # payload source removed/' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "package.mk does not source staged product payload environment"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   sed -i '/^post_install() {/a PKG_NIX_GUEST_REV="runtime-mutation"' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  expect_verifier_failure "${tmp_work}" "independent PKG_NIX_GUEST"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   printf '\nif [ "${PROJECT:-}" = "ROCKNIX" ]; then PKG_NIX_GUEST_REV="runtime-mutation"; fi\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
-  rm -rf "${tmp_work}"
-
-  tmp_work=$(mktemp -d)
-  copy_package_fixture "${tmp_work}"
-  sed -i '/^PKG_NIX_GUEST_REV=/a PKG_NIX_GUEST_REV="${PROJECT:+0000000000000000000000000000000000000000}"\nPKG_NIX_GUEST_REV="${PKG_NIX_GUEST_REV:-e04962162702a22cb834545e008c7c9c987565b1}"' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "PKG_NIX_GUEST_REV"
-  rm -rf "${tmp_work}"
-
-  tmp_work=$(mktemp -d)
-  copy_package_fixture "${tmp_work}"
-  perl -0pi -e 's/^PKG_NIX_GUEST_REV=.*/PKG_NIX_GUEST_REV="\$(printenv PROJECT || printf '\''%s'\'' e04962162702a22cb834545e008c7c9c987565b1)"/m' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  expect_verifier_failure "${tmp_work}" "independent PKG_NIX_GUEST"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   printf '\ndeclare PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  expect_verifier_failure "${tmp_work}" "independent PKG_NIX_GUEST"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   sed -i '/^post_install() {/a printf -v PKG_NIX_GUEST_REV '\''%s'\'' '\''runtime-mutation'\''' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  expect_verifier_failure "${tmp_work}" "independent PKG_NIX_GUEST"
   rm -rf "${tmp_work}"
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   sed -i '/^post_install() {/a printf -v "PKG_NIX_GUEST_REV" '\''%s'\'' '\''runtime-mutation'\''' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  expect_verifier_failure "${tmp_work}" "independent PKG_NIX_GUEST"
   rm -rf "${tmp_work}"
 fi
 

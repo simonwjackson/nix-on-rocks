@@ -3,7 +3,9 @@ set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
-package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
+package_mk="${package_dir}/package.mk"
+staged_payload_env="${package_dir}/product-payload.env"
 product_lock="${repo_root}/product-payload.lock"
 guest_lock="${repo_root}/guest.lock"
 renderer="${repo_root}/scripts/render-product-payload"
@@ -42,15 +44,6 @@ require_equal() {
   [ "${actual}" = "${expected}" ] || fail "${name}: expected '${expected}', got '${actual}'"
 }
 
-contains_field() {
-  local needle=$1
-  local field
-  for field in "${modeled_fields[@]}"; do
-    [ "${field}" = "${needle}" ] && return 0
-  done
-  return 1
-}
-
 load_shell_fields() {
   local file=$1
   shift
@@ -65,49 +58,37 @@ load_shell_fields() {
   ' bash "${file}" "$@"
 }
 
-scan_package_payload_fields() {
+load_package_fields() {
+  local file=$1
+  shift
+  env -i PKG_DIR="${package_dir}" bash -c '
+    set -euo pipefail
+    file=$1
+    shift
+    . "${file}"
+    for field in "$@"; do
+      builtin printf "%s=%q\n" "${field}" "${!field-}"
+    done
+  ' bash "${file}" "$@" || fail "unable to source package.mk with staged product payload environment: ${file}"
+}
+
+scan_package_payload_assignments() {
   awk '
     /PKG_NIX_GUEST[A-Za-z0-9_]*/ && ($0 ~ /printf[[:space:]][^#]*-v[[:space:]]+"?PKG_NIX_GUEST/ || $0 ~ /(^|[[:space:];])(read|mapfile|declare|typeset|local|readonly|export)[[:space:]][^#]*PKG_NIX_GUEST/ || $0 ~ /(^|[[:space:];])eval[[:space:]][^#]*PKG_NIX_GUEST/) {
       print "BAD:" FNR ":" $0
       next
     }
-    /PKG_NIX_GUEST[A-Za-z0-9_]*[+]?=/ {
-      if (!payload_block_ended && $0 ~ /^PKG_NIX_GUEST[A-Za-z0-9_]*=/) {
-        payload_block_started = 1
-        rhs = $0
-        sub(/^[^=]*=/, "", rhs)
-        if (rhs ~ /\$\(/ || rhs ~ /`/) {
-          print "BAD:" FNR ":" $0
-          next
-        }
-        while (rhs ~ /\$\{?PKG_NIX_GUEST[A-Za-z0-9_]*(##[^}]*)?\}?/) {
-          sub(/\$\{?PKG_NIX_GUEST[A-Za-z0-9_]*(##[^}]*)?\}?/, "", rhs)
-        }
-        if (rhs ~ /\$\{?[A-Za-z_][A-Za-z0-9_]*/) {
-          print "BAD:" FNR ":" $0
-          next
-        }
-        print "FIELD:" $0
-      } else {
-        print "BAD:" FNR ":" $0
-      }
+    /(^|[[:space:];])PKG_NIX_GUEST[A-Za-z0-9_]*[+]?=/ {
+      print "BAD:" FNR ":" $0
       next
     }
-    payload_block_started && $0 !~ /^[[:space:]]*($|#)/ { payload_block_ended = 1 }
   ' "$1"
-}
-
-decode_package_rhs() {
-  local value=$1
-  if [[ ${value} == "\""*"\"" && ${#value} -ge 2 ]]; then
-    value=${value:1:${#value}-2}
-  fi
-  printf '%s' "${value}"
 }
 
 require_file "${product_lock}"
 require_file "${guest_lock}"
 require_file "${package_mk}" "run scripts/apply-rocknix-patches first"
+require_file "${staged_payload_env}" "missing staged product payload environment; run scripts/apply-rocknix-patches first"
 require_executable "${renderer}"
 
 product_fields=(
@@ -123,6 +104,22 @@ guest_fields=(
   GUEST_COMPATIBLE
   GUEST_SEED_ARCHIVE
   GUEST_SEED_SHA256
+)
+modeled_fields=(
+  PKG_NIX_GUEST_AUTHORITY_REPO
+  PKG_NIX_GUEST_AUTHORITY_NAME
+  PKG_NIX_GUEST_REV
+  PKG_NIX_GUEST_SHA256
+  PKG_NIX_GUEST_URL
+  PKG_NIX_GUEST_SOURCE_SUBDIR
+  PKG_NIX_GUEST_BUILD_TARGET
+  PKG_NIX_GUEST_ROOTFS_SEED_REV
+  PKG_NIX_GUEST_ROOTFS_SEED_DEVICE
+  PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE
+  PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE
+  PKG_NIX_GUEST_ROOTFS_SEED_SHA256
+  PKG_NIX_GUEST_ROOTFS_SEED_URL
+  PKG_NIX_GUEST_ROOTFS_SEED_URLS
 )
 
 loaded_fields=$(load_shell_fields "${product_lock}" "${product_fields[@]}") \
@@ -142,27 +139,25 @@ rendered_env=$(mktemp)
 trap 'rm -f "${rendered_env}"' EXIT
 "${renderer}" > "${rendered_env}"
 
-modeled_fields=(
-  PKG_NIX_GUEST_AUTHORITY_REPO
-  PKG_NIX_GUEST_AUTHORITY_NAME
-  PKG_NIX_GUEST_REV
-  PKG_NIX_GUEST_SHA256
-  PKG_NIX_GUEST_URL
-  PKG_NIX_GUEST_SOURCE_SUBDIR
-  PKG_NIX_GUEST_BUILD_TARGET
-  PKG_NIX_GUEST_ROOTFS_SEED_REV
-  PKG_NIX_GUEST_ROOTFS_SEED_DEVICE
-  PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE
-  PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE
-  PKG_NIX_GUEST_ROOTFS_SEED_SHA256
-  PKG_NIX_GUEST_ROOTFS_SEED_URL
-  PKG_NIX_GUEST_ROOTFS_SEED_URLS
-)
+if ! cmp -s "${rendered_env}" "${staged_payload_env}"; then
+  fail "staged product payload environment is stale: ${staged_payload_env}"
+fi
+
+assignment_findings=()
+while IFS= read -r entry; do
+  case "${entry}" in
+    BAD:*) assignment_findings+=("${entry#BAD:}") ;;
+  esac
+done < <(scan_package_payload_assignments "${package_mk}")
+[ "${#assignment_findings[@]}" -eq 0 ] \
+  || fail "package.mk must source ${staged_payload_env}; independent PKG_NIX_GUEST_* assignment found: ${assignment_findings[*]}"
+
+grep -Eq '^[[:space:]]*\.[[:space:]]+"?\$\{PKG_PRODUCT_PAYLOAD_ENV\}"?' "${package_mk}" \
+  || fail "package.mk does not source staged product payload environment"
 
 loaded_fields=$(load_shell_fields "${rendered_env}" "${modeled_fields[@]}") \
   || fail "unable to source rendered product payload environment"
 eval "${loaded_fields}"
-
 declare -A rendered_values=()
 for field in "${modeled_fields[@]}"; do
   rendered_values["${field}"]="${!field-}"
@@ -173,51 +168,13 @@ if [ -z "${rendered_values[PKG_NIX_GUEST_ROOTFS_SEED_URL]}" ]; then
   require_nonempty PKG_NIX_GUEST_ROOTFS_SEED_URLS "${rendered_values[PKG_NIX_GUEST_ROOTFS_SEED_URLS]}"
 fi
 
-package_fields=()
-non_top_level_assignments=()
-declare -A package_raw_values=()
+loaded_fields=$(load_package_fields "${package_mk}" "${modeled_fields[@]}")
+eval "${loaded_fields}"
 declare -A package_values=()
-while IFS= read -r entry; do
-  case "${entry}" in
-    FIELD:*)
-      assignment=${entry#FIELD:}
-      field=${assignment%%=*}
-      raw_value=${assignment#*=}
-      package_fields+=("${field}")
-      package_raw_values["${field}"]="${raw_value}"
-      ;;
-    BAD:*) non_top_level_assignments+=("${entry#BAD:}") ;;
-  esac
-done < <(scan_package_payload_fields "${package_mk}")
-
-[ "${#package_fields[@]}" -gt 0 ] || fail "no top-level PKG_NIX_GUEST_* assignments found in ${package_mk}"
-[ "${#non_top_level_assignments[@]}" -eq 0 ] \
-  || fail "non-top-level PKG_NIX_GUEST_* assignment in ${package_mk}: ${non_top_level_assignments[*]}"
-
-declare -A seen_package_fields=()
-for field in "${package_fields[@]}"; do
-  [ -z "${seen_package_fields[${field}]+x}" ] \
-    || fail "duplicate product payload package field: ${field}"
-  seen_package_fields["${field}"]=1
-done
-IFS=$'\n' read -r -d '' -a package_fields < <(printf '%s\n' "${package_fields[@]}" | sort && printf '\0')
-for field in "${package_fields[@]}"; do
-  contains_field "${field}" || fail "unmodeled product payload package field: ${field}"
-done
 for field in "${modeled_fields[@]}"; do
-  printf '%s\n' "${package_fields[@]}" | grep -Fxq "${field}" \
-    || fail "missing modeled product payload package field: ${field}"
-done
-
-for field in "${package_fields[@]}"; do
-  package_values["${field}"]=$(decode_package_rhs "${package_raw_values[${field}]}")
-done
-package_values[PKG_NIX_GUEST_AUTHORITY_NAME]="${package_values[PKG_NIX_GUEST_AUTHORITY_REPO]##*/}"
-package_values[PKG_NIX_GUEST_URL]="https://api.github.com/repos/${package_values[PKG_NIX_GUEST_AUTHORITY_REPO]}/tarball/${package_values[PKG_NIX_GUEST_REV]}"
-
-for field in "${package_fields[@]}"; do
+  package_values["${field}"]="${!field-}"
   require_equal "${field}" "${package_values[${field}]}" "${rendered_values[${field}]}"
 done
 
-printf 'Verified product payload contract/package equivalence for %s %s\n' \
-  "${package_values[PKG_NIX_GUEST_AUTHORITY_REPO]}" "${package_values[PKG_NIX_GUEST_REV]}"
+printf 'Verified active product payload seam for %s %s via %s\n' \
+  "${package_values[PKG_NIX_GUEST_AUTHORITY_REPO]}" "${package_values[PKG_NIX_GUEST_REV]}" "${staged_payload_env}"

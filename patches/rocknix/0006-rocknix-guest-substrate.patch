@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,286 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -16,35 +16,40 @@ index 0000000000..51ff27c47f
 +PKG_LONGDESC="rocknix-guest-substrate: SM8550 main-space guest substrate for ROCKNIX"
 +PKG_TOOLCHAIN="manual"
 +
-+# Pinned source of the NixOS main-space guest. The host repo carries
-+# only the substrate plumbing for the guest; the product appliance source lives
-+# in Korri and is fetched from a pinned product commit at build time.
-+# Bump PKG_NIX_GUEST_REV (and the accompanying
-+# SHA256 of the GitHub-rendered tarball) to roll the host to a newer guest
-+# release. The closure layout dropped into /usr/lib/rocknix-guest-substrate/guest/
-+# remains the same; only the product authority source moved to Korri.
-+PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"
-+PKG_NIX_GUEST_AUTHORITY_NAME="${PKG_NIX_GUEST_AUTHORITY_REPO##*/}"
-+PKG_NIX_GUEST_REV="e04962162702a22cb834545e008c7c9c987565b1"
-+PKG_NIX_GUEST_SHA256="c92e75f5cb093cc8dcb85d8052ca6daa0de5f13c6d08e455ad496783356bb701"
-+PKG_NIX_GUEST_URL="https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}"
-+PKG_NIX_GUEST_SOURCE_SUBDIR="."
-+PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"
++# Product/source/seed facts are rendered by nix-on-rocks from
++# product-payload.lock during scripts/apply-rocknix-patches and staged into
++# this package directory. Docker/ROCKNIX builds consume only the package-local
++# env file so the build context is self-contained and never reaches back to the
++# nix-on-rocks repository root.
++PKG_PRODUCT_PAYLOAD_ENV="${PKG_DIR}/product-payload.env"
++if [ ! -r "${PKG_PRODUCT_PAYLOAD_ENV}" ]; then
++  echo "rocknix-guest-substrate: missing staged product payload environment: ${PKG_PRODUCT_PAYLOAD_ENV}" >&2
++  echo "rocknix-guest-substrate: run scripts/apply-rocknix-patches before building" >&2
++  exit 1
++fi
++# shellcheck source=/dev/null
++. "${PKG_PRODUCT_PAYLOAD_ENV}"
 +
-+# Bootable first-boot guest rootfs seed. This is intentionally distinct from
-+# PKG_NIX_GUEST_URL: packaged Korri source can be promoted by a running guest,
-+# but fresh /storage needs a prebuilt bootable rootfs seed before
-+# rocknix-guest.service can start. Until Korri publishes canonical seed assets,
-+# this lock records the archived fallback seed revision and SHA explicitly.
-+# Leave placeholders unset only while developing the substrate; post_install
-+# fails closed until a real URL and SHA256 are provided.
-+PKG_NIX_GUEST_ROOTFS_SEED_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-+PKG_NIX_GUEST_ROOTFS_SEED_DEVICE="thor"
-+PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE="ayn,thor"
-+PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
-+PKG_NIX_GUEST_ROOTFS_SEED_SHA256="0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb"
-+PKG_NIX_GUEST_ROOTFS_SEED_URL=""
-+PKG_NIX_GUEST_ROOTFS_SEED_URLS="https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426703720 https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426704444"
++for required_payload_field in \
++  PKG_NIX_GUEST_AUTHORITY_REPO \
++  PKG_NIX_GUEST_AUTHORITY_NAME \
++  PKG_NIX_GUEST_REV \
++  PKG_NIX_GUEST_SHA256 \
++  PKG_NIX_GUEST_URL \
++  PKG_NIX_GUEST_SOURCE_SUBDIR \
++  PKG_NIX_GUEST_BUILD_TARGET \
++  PKG_NIX_GUEST_ROOTFS_SEED_REV \
++  PKG_NIX_GUEST_ROOTFS_SEED_DEVICE \
++  PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE \
++  PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE \
++  PKG_NIX_GUEST_ROOTFS_SEED_SHA256 \
++  PKG_NIX_GUEST_ROOTFS_SEED_URLS; do
++  eval "required_payload_value=\${${required_payload_field}:-}"
++  if [ -z "${required_payload_value}" ]; then
++    echo "rocknix-guest-substrate: staged product payload field is empty: ${required_payload_field}" >&2
++    exit 1
++  fi
++done
 +
 +github_token() {
 +  printf '%s' "${GITHUB_TOKEN:-${GH_TOKEN:-}}"
@@ -188,6 +193,7 @@ index 0000000000..51ff27c47f
 +  cp -PR "${guest_source}/." "${substrate_lib}/guest/"
 +  printf '%s\n' "${PKG_NIX_GUEST_REV}" > "${substrate_lib}/guest-revision"
 +  printf '%s\n' "${PKG_NIX_GUEST_REV}" > "${substrate_lib}/guest/.rocknix-guest-revision"
++  printf '%s\n' "${PKG_NIX_GUEST_BUILD_TARGET}" > "${substrate_lib}/guest-build-target"
 +
 +  if { [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URL}" ] && [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URLS}" ]; } || \
 +     [ "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" = "REPLACE_WITH_BOOTABLE_ROOTFS_SEED_SHA256" ]; then
@@ -1204,7 +1210,7 @@ new file mode 100755
 index 0000000000..d741131510
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,275 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -1255,7 +1261,7 @@ index 0000000000..d741131510
 +LEGACY_MANUAL_HOLD_FILE="${ROCKNIX_GUEST_LEGACY_MANUAL_HOLD_FILE:-/storage/.guest/rocknix-guest-manual-generation-hold}"
 +SELECTED_PROFILE_GUEST="${ROCKNIX_GUEST_SYSTEM_PROFILE:-/nix/var/nix/profiles/per-user/root/rocknix-guest-system}"
 +DEVICE_COMPATIBLE_FILE="${ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
-+BUILD_TARGET="${ROCKNIX_GUEST_BUILD_TARGET:-.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel}"
++BUILD_TARGET_FILE="${ROCKNIX_GUEST_BUILD_TARGET_FILE:-/usr/lib/rocknix-guest-substrate/guest-build-target}"
 +LOG_TAG="rocknix-guest-promote"
 +
 +log() {
@@ -1266,6 +1272,15 @@ index 0000000000..d741131510
 +  log "FAIL: $*"
 +  exit 1
 +}
++
++default_build_target() {
++  [ -r "${BUILD_TARGET_FILE}" ] || fail "missing packaged guest build target file: ${BUILD_TARGET_FILE}; set ROCKNIX_GUEST_BUILD_TARGET to override"
++  target=$(sed -n '1p' "${BUILD_TARGET_FILE}" | tr -d '[:space:]')
++  [ -n "${target}" ] || fail "empty packaged guest build target file: ${BUILD_TARGET_FILE}; set ROCKNIX_GUEST_BUILD_TARGET to override"
++  printf '%s' "${target}"
++}
++
++BUILD_TARGET="${ROCKNIX_GUEST_BUILD_TARGET:-$(default_build_target)}"
 +
 +read_first_line() {
 +  file="$1"
@@ -3636,7 +3651,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1426 @@
+@@ -0,0 +1,1437 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3755,13 +3770,21 @@ index 0000000000..b28ce8fdc0
 +[ -f "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" ] || fail "missing runtime smoke test"
 +sh -n "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" || fail "runtime smoke syntax failed"
 +
-+# Product authority source is fetched and verified by SHA256.
-+grep -q 'PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"' "${PKG_DIR}/package.mk" || fail "package.mk must record Korri as product authority during cutover"
-+grep -q 'PKG_NIX_GUEST_REV=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest rev pin"
-+grep -q 'PKG_NIX_GUEST_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest tarball sha256 pin"
-+grep -q 'api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball' "${PKG_DIR}/package.mk" || fail "package.mk missing configurable product tarball URL"
-+grep -q 'PKG_NIX_GUEST_SOURCE_SUBDIR="."' "${PKG_DIR}/package.mk" || fail "package.mk must select Korri flake root from the product tarball"
-+grep -q 'PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"' "${PKG_DIR}/package.mk" || fail "package.mk must pin the Korri by-compatible appliance promotion target"
++# Product authority source is rendered into the staged package-local payload env
++# and fetched/verified by package.mk from those sourced facts.
++payload_env="${PKG_DIR}/product-payload.env"
++[ -f "${payload_env}" ] || fail "missing staged product payload environment: ${payload_env}"
++# shellcheck source=/dev/null
++. "${payload_env}"
++[ "${PKG_NIX_GUEST_AUTHORITY_REPO:-}" = "simonwjackson/korri" ] || fail "staged product payload env must record Korri as product authority during cutover"
++[ -n "${PKG_NIX_GUEST_REV:-}" ] || fail "staged product payload env missing guest rev pin"
++[ -n "${PKG_NIX_GUEST_SHA256:-}" ] || fail "staged product payload env missing guest tarball sha256 pin"
++case "${PKG_NIX_GUEST_URL:-}" in
++  "https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}") : ;;
++  *) fail "staged product payload env missing configurable product tarball URL" ;;
++esac
++grep -q 'PKG_PRODUCT_PAYLOAD_ENV="${PKG_DIR}/product-payload.env"' "${PKG_DIR}/package.mk" || fail "package.mk must source the staged product payload environment"
++grep -q '. "${PKG_PRODUCT_PAYLOAD_ENV}"' "${PKG_DIR}/package.mk" || fail "package.mk must source staged product payload facts"
 +grep -q 'curl_fetch "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"' "${PKG_DIR}/package.mk" || fail "package.mk must use authenticated-capable fetch for product tarball"
 +grep -q 'sha256sum "${guest_tarball}.tmp"' "${PKG_DIR}/package.mk" || fail "package.mk must verify freshly downloaded guest tarball sha256"
 +grep -q 'sha256sum "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must verify cached guest tarball sha256 before extraction"
@@ -3775,10 +3798,10 @@ index 0000000000..b28ce8fdc0
 +grep -q 'contract-docs/layer14-soak-checklist.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship soak checklist from staged contract-docs"
 +grep -q 'contract-docs/HOW-TO-FALL-BACK.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship fallback doc from staged contract-docs"
 +grep -q 'SM8550_MINIMAL_HOST=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document minimal-host fallback mode when enabled"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_URL=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed URL contract"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed SHA256 contract"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed compatible contract"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed archive filename contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}}" ] || fail "staged product payload env missing bootable rootfs seed URL contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256:-}" ] || fail "staged product payload env missing bootable rootfs seed SHA256 contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE:-}" ] || fail "staged product payload env missing bootable rootfs seed compatible contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE:-}" ] || fail "staged product payload env missing bootable rootfs seed archive filename contract"
 +grep -q 'bootable guest rootfs seed URL/SHA256 are not configured' "${PKG_DIR}/package.mk" || fail "package.mk must fail closed while rootfs seed URL/SHA are placeholders"
 +grep -q 'guest-rootfs-seed.manifest' "${PKG_DIR}/package.mk" || fail "package.mk must install a rootfs seed manifest"
 +grep -q 'seed_release_dir="${BUILD}/rocknix-guest-rootfs-seed"' "${PKG_DIR}/package.mk" || fail "package.mk must stage rootfs seed outside SYSTEM for image packaging"
@@ -3959,8 +3982,8 @@ index 0000000000..b28ce8fdc0
 +grep -q 'WantedBy=rocknix-main-space.target' "${promote_unit}" || fail "guest promotion must be wanted by main-space target"
 +grep -q 'TimeoutStartSec=60min' "${promote_unit}" || fail "guest promotion needs a long timeout for Nix builds"
 +grep -q 'nix build' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must build packaged guest configuration"
-+grep -q 'korri-rocknix-kiosk-by-compatible' "${PKG_DIR}/scripts/rocknix-guest-promote" \
-+  || fail "guest promotion must default to Korri's by-compatible appliance dispatch target"
++grep -q 'guest-build-target' "${PKG_DIR}/scripts/rocknix-guest-promote" \
++  || fail "guest promotion must default from the installed product payload build target"
 +grep -q 'ROCKNIX_GUEST_BUILD_TARGET' "${PKG_DIR}/scripts/rocknix-guest-promote" \
 +  || fail "guest promotion must allow product target override for executable promotion proof"
 +grep -q 'refusing retired nix-on-rocks by-compatible product target' "${PKG_DIR}/scripts/rocknix-guest-promote" \
@@ -4023,6 +4046,7 @@ index 0000000000..b28ce8fdc0
 +  nsenter_log="${tmp_dir}/nsenter.log"
 +  systemctl_log="${tmp_dir}/systemctl.log"
 +  compatible_file="${tmp_dir}/compatible"
++  build_target_file="${tmp_dir}/guest-build-target"
 +  mkdir -p \
 +    "${guest_root}/nix/var/nix/profiles/per-user/root" \
 +    "${guest_root}/nix/var/nix/profiles" \
@@ -4036,6 +4060,8 @@ index 0000000000..b28ce8fdc0
 +  chmod 0755 "${guest_root}/nix/store/applied-system/init" "${guest_root}/nix/store/old-system/init"
 +  printf 'rev-a\n' > "${guest_rev}"
 +  printf 'ayn,thor\n' > "${compatible_file}"
++  printf '%s\n' '.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel' > "${build_target_file}"
++  export ROCKNIX_GUEST_BUILD_TARGET_FILE="${build_target_file}"
 +  printf 'rev-a\n' > "${guest_root}/etc/rocknix-guest-revision"
 +  printf '/nix/store/applied-system\n' > "${guest_root}/etc/rocknix-guest-system-path"
 +
