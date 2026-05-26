@@ -1,7 +1,7 @@
 ---
 title: refactor: Align test boundary checks
 type: refactor
-status: active
+status: completed
 date: 2026-05-26
 ---
 
