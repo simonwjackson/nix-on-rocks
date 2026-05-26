@@ -176,6 +176,12 @@ if [ -f "${package_mk}" ]; then
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
+  perl -0pi -e 's/^PKG_NIX_GUEST_REV=.*/PKG_NIX_GUEST_REV="\$(printenv PROJECT || printf '\''%s'\'' e04962162702a22cb834545e008c7c9c987565b1)"/m' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
   printf '\ndeclare PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
   expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
   rm -rf "${tmp_work}"
@@ -188,8 +194,8 @@ if [ -f "${package_mk}" ]; then
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
-  printf '\nreturn 1\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
-  expect_verifier_failure "${tmp_work}" "unable to source patched package metadata"
+  sed -i '/^post_install() {/a printf -v "PKG_NIX_GUEST_REV" '\''%s'\'' '\''runtime-mutation'\''' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
   rm -rf "${tmp_work}"
 fi
 
