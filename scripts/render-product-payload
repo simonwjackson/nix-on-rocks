@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+product_lock="${repo_root}/product-payload.lock"
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+require_nonempty() {
+  local name=$1
+  local value=$2
+  [ -n "${value}" ] || fail "${name} must not be empty"
+}
+
+emit() {
+  local name=$1
+  local value=$2
+  printf '%s=%q\n' "${name}" "${value}"
+}
+
+[ -f "${product_lock}" ] || fail "missing product payload lock: ${product_lock}"
+
+# shellcheck source=../product-payload.lock
+# shellcheck disable=SC1090,SC1091
+. "${product_lock}"
+
+for field in \
+  PRODUCT_AUTHORITY_REPO \
+  PRODUCT_REV \
+  PRODUCT_SOURCE_SHA256 \
+  PRODUCT_SOURCE_SUBDIR \
+  PRODUCT_BUILD_TARGET \
+  PRODUCT_ROOTFS_SEED_REV \
+  PRODUCT_ROOTFS_SEED_DEVICE \
+  PRODUCT_ROOTFS_SEED_COMPATIBLE \
+  PRODUCT_ROOTFS_SEED_ARCHIVE \
+  PRODUCT_ROOTFS_SEED_SHA256 \
+  PRODUCT_ROOTFS_SEED_URLS; do
+  require_nonempty "${field}" "${!field:-}"
+done
+
+product_authority_name="${PRODUCT_AUTHORITY_REPO##*/}"
+product_url="https://api.github.com/repos/${PRODUCT_AUTHORITY_REPO}/tarball/${PRODUCT_REV}"
+
+emit PKG_NIX_GUEST_AUTHORITY_REPO "${PRODUCT_AUTHORITY_REPO}"
+emit PKG_NIX_GUEST_AUTHORITY_NAME "${product_authority_name}"
+emit PKG_NIX_GUEST_REV "${PRODUCT_REV}"
+emit PKG_NIX_GUEST_SHA256 "${PRODUCT_SOURCE_SHA256}"
+emit PKG_NIX_GUEST_URL "${product_url}"
+emit PKG_NIX_GUEST_SOURCE_SUBDIR "${PRODUCT_SOURCE_SUBDIR}"
+emit PKG_NIX_GUEST_BUILD_TARGET "${PRODUCT_BUILD_TARGET}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_REV "${PRODUCT_ROOTFS_SEED_REV}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_DEVICE "${PRODUCT_ROOTFS_SEED_DEVICE}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE "${PRODUCT_ROOTFS_SEED_COMPATIBLE}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE "${PRODUCT_ROOTFS_SEED_ARCHIVE}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_SHA256 "${PRODUCT_ROOTFS_SEED_SHA256}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_URL "${PRODUCT_ROOTFS_SEED_URL:-}"
+emit PKG_NIX_GUEST_ROOTFS_SEED_URLS "${PRODUCT_ROOTFS_SEED_URLS}"
