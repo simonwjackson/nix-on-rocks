@@ -1,7 +1,7 @@
 ---
 title: refactor: Add generic product payload contract
 type: refactor
-status: active
+status: completed
 date: 2026-05-26
 ---
 
