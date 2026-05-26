@@ -67,18 +67,18 @@ load_shell_fields() {
 
 scan_package_payload_fields() {
   awk '
-    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*\{/ { in_function = 1 }
-    in_function && /^[[:space:]]*PKG_NIX_GUEST[A-Za-z0-9_]*=/ {
-      print "BAD:" FNR ":" $0
+    /PKG_NIX_GUEST[A-Za-z0-9_]*[+]?=/ {
+      if (!payload_block_ended && $0 ~ /^PKG_NIX_GUEST[A-Za-z0-9_]*=/) {
+        payload_block_started = 1
+        field = $0
+        sub(/=.*/, "", field)
+        print "FIELD:" field
+      } else {
+        print "BAD:" FNR ":" $0
+      }
       next
     }
-    !in_function && /^PKG_NIX_GUEST[A-Za-z0-9_]*=/ {
-      field = $0
-      sub(/=.*/, "", field)
-      print "FIELD:" field
-      next
-    }
-    in_function && /^[[:space:]]*\}[[:space:]]*(#.*)?$/ { in_function = 0 }
+    payload_block_started && $0 !~ /^[[:space:]]*($|#)/ { payload_block_ended = 1 }
   ' "$1"
 }
 

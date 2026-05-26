@@ -140,7 +140,7 @@ if [ -f "${package_mk}" ]; then
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
-  printf '\nPKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  sed -i '/^PKG_NIX_GUEST_ROOTFS_SEED_URLS=/a PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
   expect_verifier_failure "${tmp_work}" "unmodeled product payload package field: PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD"
   rm -rf "${tmp_work}"
 
@@ -159,6 +159,18 @@ if [ -f "${package_mk}" ]; then
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   sed -i '/^post_install() {/a PKG_NIX_GUEST_REV="runtime-mutation"' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  printf '\nif [ "${PROJECT:-}" = "ROCKNIX" ]; then PKG_NIX_GUEST_REV="runtime-mutation"; fi\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  printf '\ndeclare PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
   expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
   rm -rf "${tmp_work}"
 fi
