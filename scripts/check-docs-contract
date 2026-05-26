@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+docs_root="${NIX_ON_ROCKS_DOCS_ROOT:-$repo_root/docs}"
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+[ -d "$docs_root" ] || { echo "check-docs-contract: skipped (no docs root)"; exit 0; }
+
+[ -f "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" ] || fail "missing rootfs seed workflow"
+grep -q 'Retired legacy rootfs seed fallback' "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" \
+  || fail "rootfs seed workflow must document retired legacy fallback"
+grep -q 'nix-on-rocks no longer publishes Korri product/appliance rootfs' "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" \
+  || fail "retired rootfs seed workflow must direct operators to Korri artifacts"
+
+for doc in \
+  contracts/layer6-activation-contract.md \
+  contracts/layer7-app-experiment-contract.md \
+  contracts/layer9-nspawn-guest-contract.md \
+  contracts/layer10-guest-lifecycle-contract.md \
+  contracts/layer11-bridge-contract.md \
+  contracts/layer14-main-space-contract.md \
+  contracts/HOW-TO-FALL-BACK.md; do
+  [ -f "$docs_root/$doc" ] || fail "missing contract doc: $doc"
+done
+
+grep -q '/storage/bin' "$docs_root/contracts/layer6-activation-contract.md" || fail "Layer 6 contract missing storage bin surface"
+grep -q 'standard `nix profile`' "$docs_root/contracts/layer7-app-experiment-contract.md" || fail "Layer 7 contract missing standard nix profile split"
+grep -q '/storage/machines/rocknix-guest' "$docs_root/contracts/layer9-nspawn-guest-contract.md" || fail "Layer 9 contract missing guest root path"
+grep -q 'Fallback does' "$docs_root/contracts/layer9-nspawn-guest-contract.md" || fail "Layer 9 contract missing fallback boundary"
+grep -q '/storage/.config/nix-integration/layer10' "$docs_root/contracts/layer10-guest-lifecycle-contract.md" || fail "Layer 10 contract missing state dir path"
+grep -q -- '--register=no' "$docs_root/contracts/layer10-guest-lifecycle-contract.md" || fail "Layer 10 contract missing no-machined nspawn flag"
+grep -q 'Layer 10b bootable rootfs artifact boundary' "$docs_root/contracts/layer10-guest-lifecycle-contract.md" || fail "Layer 10 contract missing Layer 10b bootable artifact boundary"
+grep -q 'must not depend on binding host `/nix`' "$docs_root/contracts/layer10-guest-lifecycle-contract.md" || fail "Layer 10b contract missing host /nix sharing prohibition"
+grep -q 'no guest SSH, password login, default credentials' "$docs_root/contracts/layer10-guest-lifecycle-contract.md" || fail "Layer 10b contract missing guest SSH/default credential prohibition"
+grep -q '/storage/.config/nix-integration/layer11' "$docs_root/contracts/layer11-bridge-contract.md" || fail "Layer 11 contract missing state dir path"
+grep -q 'one-shot bridges only' "$docs_root/contracts/layer11-bridge-contract.md" || fail "Layer 11 contract missing one-shot scope"
+grep -q 'must not.*guest SSH' "$docs_root/contracts/layer11-bridge-contract.md" || fail "Layer 11 contract missing guest SSH prohibition"
+grep -q 'Cemu compatibility state' "$docs_root/contracts/layer14-main-space-contract.md" || fail "Layer 14 contract must document Cemu compatibility state ownership"
+! grep -q 'THIN_HOST' "$docs_root/contracts/layer14-main-space-contract.md" || fail "Layer 14 contract must not document removed THIN_HOST build flag"
+grep -q 'rocknix-guest.service' "$docs_root/contracts/layer14-main-space-contract.md" || fail "Layer 14 contract must document the guest unit"
+grep -q 'rocknix-guest-promote.service' "$docs_root/contracts/layer14-main-space-contract.md" || fail "Layer 14 contract must document guest promotion service"
+grep -q 'no `ExecStopPost=` fallback/reclaim hook' "$docs_root/contracts/layer14-main-space-contract.md" || fail "Layer 14 contract must document removal of automatic host reclaim"
+grep -q '/flash/rocknix.no-nspawn' "$docs_root/contracts/HOW-TO-FALL-BACK.md" || fail "HOW-TO-FALL-BACK missing flag-file recovery instructions"
+grep -q 'rocknix.safe=1' "$docs_root/contracts/HOW-TO-FALL-BACK.md" || fail "HOW-TO-FALL-BACK missing kernel cmdline recovery instructions"
+
+echo "check-docs-contract: ok"

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+guest_root="$repo_root/guest"
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+[ -f "$repo_root/flake.nix" ] || fail "missing flake.nix"
+[ -f "$repo_root/product-payload.lock" ] || fail "missing generic product payload lock"
+[ -x "$repo_root/scripts/render-product-payload" ] || fail "missing executable product payload renderer"
+[ -x "$repo_root/scripts/verify-product-payload" ] || fail "missing executable product payload verifier"
+[ -x "$repo_root/scripts/tests/product-payload-contract.sh" ] || fail "missing executable product payload contract test"
+
+! grep -q 'korri.url' "$repo_root/flake.nix" \
+  || fail "nix-on-rocks flake must not keep Korri as an input"
+! grep -q 'korri.nixosModules\|korri.packages\|services.korri' "$repo_root/flake.nix" \
+  || fail "nix-on-rocks flake must not compose Korri product modules or packages"
+! grep -q 'KORRI_INPUT' "$guest_root/justfile" "$guest_root/README.md" \
+  || fail "local Korri override workflow must be removed from nix-on-rocks"
+! grep -R 'services\.korri\.nativeBridgeUrl\|nativeBridgeUrl = ' \
+  "$repo_root/flake.nix" "$guest_root/profiles" "$guest_root/modules" "$guest_root/README.md" \
+  || fail "ROCKNIX substrate must not own Korri nativeBridgeUrl configuration"
+! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$guest_root/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base must not write or import Korri product surfaces"
+! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$guest_root/profiles/main-space.nix" \
+  || fail "main-space fallback profile must not compose Korri product surfaces"
+! grep -q 'mainSpaceByCompatibleConfiguration\|mainSpaceConfigurationFor selectDeviceProfileFromCompatible' "$repo_root/flake.nix" \
+  || fail "flake must not restore retired by-compatible product configuration"
+! grep -q '"rootfs-odin2portal"\|"rootfs-thor"\|rootfs = rootfsThor' "$repo_root/flake.nix" \
+  || fail "flake must not restore product rootfs aliases"
+old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
+! grep -R "github:simonwjackson/$old_package_repo\|nix.registry.$old_package_repo\|$old_package_repo.packages" \
+  "$repo_root/flake.nix" "$repo_root/flake.lock" "$guest_root/README.md" "$guest_root/launchers" \
+  || fail "guest repo must not depend on the former external package flake"
+
+! grep -qE 'systemd\.tmpfiles\.rules.*"d /run/user' "$guest_root/modules/session.nix" "$guest_root/profiles/rocknix-guest-base.nix" \
+  || fail "runtime-dir ownership must stay with logind/user-runtime-dir, not tmpfiles"
+! grep -qE 'KillUserProcesses|RemoveIPC' "$guest_root"/modules/*.nix "$guest_root"/profiles/*.nix \
+  || fail "runtime-dir fix must not introduce KillUserProcesses/RemoveIPC logind knobs"
+! grep -qE 'ExecStartPre.*install -d.*/run/user/0' \
+  "$guest_root/profiles/rocknix-guest-base.nix" "$guest_root/modules/audio.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
+  || fail "main-space consumers must not create /run/user/0 with ad-hoc ExecStartPre"
+! grep -qE '^[[:space:]]+XDG_RUNTIME_DIR = "/run/user/0";' \
+  "$guest_root/modules/audio.nix" "$guest_root/modules/lid.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
+  || fail "service environment blocks must parameterize XDG_RUNTIME_DIR"
+! grep -qE '^[[:space:]]+PULSE_SERVER = "unix:/run/user/0/' "$guest_root/modules/audio.nix" "$guest_root/modules/lid.nix" \
+  || fail "audio/lid PULSE_SERVER must parameterize /run/user/<uid>"
+! grep -q 'mknod /dev/uinput c 10 223' "$guest_root/modules/steam.nix" \
+  || fail "Steam uinput prep must not hardcode the live Thor uinput device number"
+! grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$guest_root/modules/steam.nix" \
+  || fail "Steam module must not own pressure-vessel input exposure after runtime capsule refactor"
+! grep -q 'rocknix-steam-prepare-runtime' "$guest_root/modules/steam.nix" \
+  || fail "Steam module must not embed runtime prep implementation"
+! grep -q 'buildFHSEnv' "$guest_root/modules/steam.nix" \
+  || fail "Steam module must not own the FHS Steam run capsule"
+! grep -q 'korri-desktop-device' "$guest_root/profiles/main-space.nix" \
+  || fail "main-space fallback profile must not bind Korri launch"
+! grep -R 'systemctl\|swaymsg\|FEXRootFSFetcher\|gamescope\|/storage' \
+  "$repo_root/packages/steam/package.nix" "$repo_root/packages/steam/scripts" \
+  || fail "Steam package executable logic must not own host/session/storage policy"
+if grep -R -nE '\b(systemctl|swaymsg|gamescope)\b|services\.korri|korri\.' "$repo_root/packages/steam/scripts"; then
+  fail "Steam package scripts must not own system/session/product orchestration"
+fi
+if grep -R -n '/storage' "$repo_root/packages/steam/scripts"; then
+  fail "Steam package scripts must not hardcode guest /storage defaults"
+fi
+
+manifest="$repo_root/packages/steam/manifest.nix"
+grep -q 'steam-guest-runtime-prep' "$manifest" \
+  || fail "Steam manifest must list steam-guest-runtime-prep in the package contract"
+grep -q 'steam-guest-run' "$manifest" \
+  || fail "Steam manifest must list steam-guest-run in the package contract"
+
+echo "check-boundary-lint: ok"
