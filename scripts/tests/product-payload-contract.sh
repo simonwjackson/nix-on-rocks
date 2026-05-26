@@ -114,7 +114,30 @@ case "${PRODUCT_AUTHORITY_REPO}" in
   *) fail "PRODUCT_AUTHORITY_REPO must be an authority/repository pair" ;;
 esac
 
+tmp_work=$(mktemp -d)
+expect_verifier_failure "${tmp_work}" "run scripts/apply-rocknix-patches first"
+rm -rf "${tmp_work}"
+
 if [ -f "${package_mk}" ]; then
+  (
+    product_backup=$(mktemp)
+    cp "${product_lock}" "${product_backup}"
+    trap 'mv "${product_backup}" "${product_lock}"' EXIT
+    sed -i 's/^PRODUCT_ROOTFS_SEED_SHA256=.*/PRODUCT_ROOTFS_SEED_SHA256="deadbeef"/' "${product_lock}"
+    expect_verifier_failure "${work_dir}" "PRODUCT_ROOTFS_SEED_SHA256"
+  )
+
+  (
+    product_backup=$(mktemp)
+    cp "${product_lock}" "${product_backup}"
+    trap 'mv "${product_backup}" "${product_lock}"' EXIT
+    {
+      printf '\nrequire_equal() { :; }\n'
+      printf 'PRODUCT_REV="0000000000000000000000000000000000000000"\n'
+    } >> "${product_lock}"
+    expect_verifier_failure "${work_dir}" "PKG_NIX_GUEST_REV"
+  )
+
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
   printf '\nPKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
@@ -135,7 +158,7 @@ if [ -f "${package_mk}" ]; then
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
-  printf '\n  PKG_NIX_GUEST_REV="runtime-mutation"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  sed -i '/^post_install() {/a PKG_NIX_GUEST_REV="runtime-mutation"' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
   expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
   rm -rf "${tmp_work}"
 fi
