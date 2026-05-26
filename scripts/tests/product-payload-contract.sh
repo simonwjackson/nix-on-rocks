@@ -6,6 +6,8 @@ product_lock="${repo_root}/product-payload.lock"
 guest_lock="${repo_root}/guest.lock"
 renderer="${repo_root}/scripts/render-product-payload"
 verifier="${repo_root}/scripts/verify-product-payload"
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
 
 fail() {
   echo "FAIL: $*" >&2
@@ -28,6 +30,26 @@ require_equal() {
   local actual=$2
   local expected=$3
   [ "${actual}" = "${expected}" ] || fail "${name}: expected '${expected}', got '${actual}'"
+}
+
+copy_package_fixture() {
+  local tmp_work=$1
+  local fixture_package_mk="${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  mkdir -p "$(dirname -- "${fixture_package_mk}")"
+  cp "${package_mk}" "${fixture_package_mk}"
+}
+
+expect_verifier_failure() {
+  local tmp_work=$1
+  local expected=$2
+  local out status
+  set +e
+  out=$(NIX_ON_ROCKS_WORKDIR="${tmp_work}" "${verifier}" 2>&1)
+  status=$?
+  set -e
+  [ "${status}" -ne 0 ] || fail "verify-product-payload should fail for ${expected}"
+  printf '%s\n' "${out}" | grep -q "${expected}" \
+    || fail "verify-product-payload failure should mention ${expected}; output was: ${out}"
 }
 
 require_file "${product_lock}"
@@ -91,5 +113,31 @@ case "${PRODUCT_AUTHORITY_REPO}" in
   */*) : ;;
   *) fail "PRODUCT_AUTHORITY_REPO must be an authority/repository pair" ;;
 esac
+
+if [ -f "${package_mk}" ]; then
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  printf '\nPKG_NIX_GUEST_EXTRA_CONTRACT_FIELD="x"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "unmodeled product payload package field: PKG_NIX_GUEST_EXTRA_CONTRACT_FIELD"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  sed -i '/^PKG_NIX_GUEST_ROOTFS_SEED_URL=/d' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "missing modeled product payload package field: PKG_NIX_GUEST_ROOTFS_SEED_URL"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  sed -i 's/^PKG_NIX_GUEST_SHA256=.*/PKG_NIX_GUEST_SHA256="deadbeef"/' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "PKG_NIX_GUEST_SHA256"
+  rm -rf "${tmp_work}"
+
+  tmp_work=$(mktemp -d)
+  copy_package_fixture "${tmp_work}"
+  printf '\n  PKG_NIX_GUEST_REV="runtime-mutation"\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+  expect_verifier_failure "${tmp_work}" "non-top-level PKG_NIX_GUEST_"
+  rm -rf "${tmp_work}"
+fi
 
 printf 'product-payload-contract: ok\n'

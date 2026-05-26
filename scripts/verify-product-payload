@@ -107,13 +107,25 @@ fi
 mapfile -t package_fields < <(sed -n 's/^\(PKG_NIX_GUEST[A-Za-z0-9_]*\)=.*/\1/p' "${package_mk}" | sort -u)
 [ "${#package_fields[@]}" -gt 0 ] || fail "no top-level PKG_NIX_GUEST_* assignments found in ${package_mk}"
 
+mapfile -t non_top_level_assignments < <(grep -nE '^[[:space:]]+PKG_NIX_GUEST[A-Za-z0-9_]*=' "${package_mk}" || true)
+[ "${#non_top_level_assignments[@]}" -eq 0 ] \
+  || fail "non-top-level PKG_NIX_GUEST_* assignment in ${package_mk}: ${non_top_level_assignments[*]}"
+
 for field in "${package_fields[@]}"; do
   contains_field "${field}" || fail "unmodeled product payload package field: ${field}"
+done
+for field in "${modeled_fields[@]}"; do
+  printf '%s\n' "${package_fields[@]}" | grep -Fxq "${field}" \
+    || fail "missing modeled product payload package field: ${field}"
 done
 
 # package.mk is shell syntax. Source it after collecting rendered values so
 # derived assignments such as PKG_NIX_GUEST_AUTHORITY_NAME and URL expand using
-# the patched package's own definitions.
+# the patched package's own definitions. Clear renderer-populated variables
+# first so removed package assignments cannot be masked by the rendered env.
+for field in "${modeled_fields[@]}"; do
+  unset "${field}"
+done
 # shellcheck source=/dev/null
 # shellcheck disable=SC1090,SC1091
 . "${package_mk}"
