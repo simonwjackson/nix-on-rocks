@@ -56,7 +56,7 @@ Input:
 
 This is the fastest lane for packaging-only changes: manifest verification, update tar/image packaging checks, seed layout checks, docs-adjacent CI guardrails, and other changes that should not require rebuilding the SM8550 base. It downloads the base/build artifacts, reruns the image/update packaging stage, generates a manifest, verifies payload integrity, and uploads `nix-on-rocks-sm8550-image-only-<run_id>`.
 
-Do not use image-only for changes that alter packages, toolchain, kernel, guest source, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only instead.
+Do not use image-only for changes that alter packages, toolchain, kernel, guest source, `product-payload.lock`, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only instead.
 
 Current accepted image-only proof:
 
