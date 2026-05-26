@@ -16,6 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
       - name: Apply patches and verify SM8550 contract
         run: |
           scripts/apply-rocknix-patches
@@ -24,10 +29,14 @@ jobs:
           scripts/verify-product-payload
           scripts/tests/product-payload-contract.sh
 
-      - name: Verify helper scripts
-        run: |
-          bash -n scripts/*
+      - name: Verify Nix contracts
+        run: nix flake check --no-write-lock-file --print-build-logs
 
-      - name: Verify guest tree
-        run: |
-          guest/scripts/static-checks.sh
+      - name: Verify shell smoke
+        run: scripts/check-shell-smoke
+
+      - name: Verify source boundary lint
+        run: scripts/check-boundary-lint
+
+      - name: Verify docs contracts
+        run: scripts/check-docs-contract
