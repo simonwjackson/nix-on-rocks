@@ -106,6 +106,13 @@
         system = targetSystem;
         modules = [ ./guest/profiles/dev-env.nix ];
       };
+      mainSpaceConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/main-space.nix
+          ({ lib, ... }: { networking.hostName = lib.mkForce "rocknix-main-space-contract"; })
+        ];
+      };
       # The rootfs artifact is the production main-space guest: Sway,
       # guest-owned audio/input/display, and guest-native packages. The
       # minimal rocknix-guest configuration remains exposed for evaluation,
@@ -210,7 +217,19 @@
                   ${pkgs.bash}/bin/bash packages/steam/tests/steam-package-contract.sh
                 touch $out
               '';
+          flake-surface-contract = import ./nix/tests/flake-surface-contract.nix {
+            inherit pkgs self system;
+          };
           guest-input-boundary-contract = import ./nix/tests/guest-input-boundary-contract.nix {
+            inherit pkgs baseConfiguration devEnvConfiguration;
+          };
+          guest-profile-contract = import ./nix/tests/guest-profile-contract.nix {
+            inherit pkgs baseConfiguration devEnvConfiguration;
+          };
+          main-space-systemd-contract = import ./nix/tests/main-space-systemd-contract.nix {
+            inherit pkgs mainSpaceConfiguration devEnvConfiguration;
+          };
+          audio-input-systemd-contract = import ./nix/tests/audio-input-systemd-contract.nix {
             inherit pkgs baseConfiguration devEnvConfiguration;
           };
         }
