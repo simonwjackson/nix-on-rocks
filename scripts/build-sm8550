@@ -8,6 +8,7 @@ image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
 "${repo_root}/scripts/apply-rocknix-patches"
 "${repo_root}/scripts/verify-sm8550-contract"
 "${repo_root}/scripts/verify-sm8550-locks"
+"${repo_root}/scripts/verify-product-payload"
 
 docker build -t "${image}" "${work_dir}"
 (
