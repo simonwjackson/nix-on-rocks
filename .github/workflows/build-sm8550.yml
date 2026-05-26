@@ -7,6 +7,9 @@ permissions:
   contents: write
   packages: write
 
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   context:
     runs-on: ubuntu-24.04
@@ -31,6 +34,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -74,6 +78,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Restore toolchain ccache
         run: scripts/restore-ccache toolchain
@@ -147,6 +152,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Download aarch64 toolchain
         uses: actions/download-artifact@v8
@@ -241,6 +247,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Download aarch64 base
         uses: actions/download-artifact@v8

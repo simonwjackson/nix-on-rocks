@@ -6,6 +6,7 @@ product_lock="${repo_root}/product-payload.lock"
 guest_lock="${repo_root}/guest.lock"
 renderer="${repo_root}/scripts/render-product-payload"
 verifier="${repo_root}/scripts/verify-product-payload"
+fetch_verifier="${repo_root}/scripts/verify-product-payload-fetches"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
 package_mk="${package_dir}/package.mk"
@@ -61,6 +62,7 @@ require_file "${product_lock}"
 require_file "${guest_lock}"
 [ -x "${renderer}" ] || fail "missing executable ${renderer}"
 [ -x "${verifier}" ] || fail "missing executable ${verifier}"
+[ -x "${fetch_verifier}" ] || fail "missing executable ${fetch_verifier}"
 
 # shellcheck source=../../product-payload.lock
 # shellcheck disable=SC1090,SC1091
@@ -118,6 +120,36 @@ case "${PRODUCT_AUTHORITY_REPO}" in
   */*) : ;;
   *) fail "PRODUCT_AUTHORITY_REPO must be an authority/repository pair" ;;
 esac
+
+fetch_tmp=$(mktemp -d)
+source_bytes="${fetch_tmp}/source.tar.gz"
+seed_part_a="${fetch_tmp}/seed-a.bin"
+seed_part_b="${fetch_tmp}/seed-b.bin"
+fetch_env="${fetch_tmp}/payload.env"
+printf 'source-bytes' > "${source_bytes}"
+printf 'seed-' > "${seed_part_a}"
+printf 'bytes' > "${seed_part_b}"
+source_sha=$(sha256sum "${source_bytes}" | awk '{print $1}')
+seed_sha=$(cat "${seed_part_a}" "${seed_part_b}" | sha256sum | awk '{print $1}')
+{
+  sed \
+    -e "s|^PKG_NIX_GUEST_SHA256=.*|PKG_NIX_GUEST_SHA256=${source_sha}|" \
+    -e "s|^PKG_NIX_GUEST_URL=.*|PKG_NIX_GUEST_URL=file://${source_bytes}|" \
+    -e "s|^PKG_NIX_GUEST_ROOTFS_SEED_SHA256=.*|PKG_NIX_GUEST_ROOTFS_SEED_SHA256=${seed_sha}|" \
+    -e 's|^PKG_NIX_GUEST_ROOTFS_SEED_URL=.*|PKG_NIX_GUEST_ROOTFS_SEED_URL=|' \
+    -e "s|^PKG_NIX_GUEST_ROOTFS_SEED_URLS=.*|PKG_NIX_GUEST_ROOTFS_SEED_URLS=\"file://${seed_part_a} file://${seed_part_b}\"|" \
+    "${rendered_env}"
+} > "${fetch_env}"
+"${fetch_verifier}" --payload-env "${fetch_env}" >/dev/null
+sed -i 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256=.*/PKG_NIX_GUEST_ROOTFS_SEED_SHA256=deadbeef/' "${fetch_env}"
+set +e
+fetch_out=$("${fetch_verifier}" --payload-env "${fetch_env}" 2>&1)
+fetch_status=$?
+set -e
+[ "${fetch_status}" -ne 0 ] || fail "verify-product-payload-fetches should fail for seed SHA mismatch"
+printf '%s\n' "${fetch_out}" | grep -q "rootfs seed SHA256 mismatch" \
+  || fail "verify-product-payload-fetches failure should mention rootfs seed SHA256 mismatch; output was: ${fetch_out}"
+rm -rf "${fetch_tmp}"
 
 tmp_work=$(mktemp -d)
 expect_verifier_failure "${tmp_work}" "run scripts/apply-rocknix-patches first"
