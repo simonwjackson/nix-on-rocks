@@ -39,12 +39,12 @@ index 0000000000..51ff27c47f
 +# Leave placeholders unset only while developing the substrate; post_install
 +# fails closed until a real URL and SHA256 are provided.
 +PKG_NIX_GUEST_ROOTFS_SEED_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-+PKG_NIX_GUEST_ROOTFS_SEED_DEVICE="thor"
-+PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE="ayn,thor"
-+PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
-+PKG_NIX_GUEST_ROOTFS_SEED_SHA256="0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb"
++PKG_NIX_GUEST_ROOTFS_SEED_DEVICE="odin2portal"
++PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE="ayn,odin2portal"
++PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-d5d00fe4b588.tar.zst"
++PKG_NIX_GUEST_ROOTFS_SEED_SHA256="650dafebc88abdc3581cb67dd05d825b54dc8807930898713b8086f5dda21a1f"
 +PKG_NIX_GUEST_ROOTFS_SEED_URL=""
-+PKG_NIX_GUEST_ROOTFS_SEED_URLS="https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426703720 https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426704444"
++PKG_NIX_GUEST_ROOTFS_SEED_URLS="https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/424322186 https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/424322185"
 +
 +github_token() {
 +  printf '%s' "${GITHUB_TOKEN:-${GH_TOKEN:-}}"
