@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+expected=${1:?'usage: verify-sm8550-base-provenance <provenance.env>'}
+current=$(mktemp)
+trap 'rm -f "${current}"' EXIT
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+[ -f "${expected}" ] || fail "missing base provenance: ${expected}"
+"${repo_root}/scripts/generate-sm8550-base-provenance" "${current}" >/dev/null
+
+fields=(
+  PRODUCT_PAYLOAD_LOCK_SHA256
+  GUEST_LOCK_SHA256
+  RENDERED_PRODUCT_PAYLOAD_SHA256
+  PATCH_SERIES_SHA256
+  UPSTREAM_LOCK_SHA256
+  SUBSTRATE_PACKAGE_MK_SHA256
+)
+
+# shellcheck source=/dev/null
+. "${expected}"
+for field in "${fields[@]}"; do
+  eval "expected_value=\${${field}:-}"
+  [ -n "${expected_value}" ] || fail "base provenance missing ${field}: ${expected}"
+done
+
+while IFS='=' read -r key value; do
+  case " ${fields[*]} " in
+    *" ${key} "*) eval "current_${key}=${value}" ;;
+  esac
+done < "${current}"
+
+for field in "${fields[@]}"; do
+  eval "expected_value=\${${field}}"
+  eval "current_value=\${current_${field}:-}"
+  [ "${current_value}" = "${expected_value}" ] || fail "base provenance mismatch for ${field}: expected ${expected_value}, current ${current_value}"
+done
+
+printf 'Verified SM8550 base provenance matches current payload/patch/upstream state\n'

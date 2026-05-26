@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       base_run_id:
-        description: "Workflow run ID that uploaded 'aarch64 (SM8550)' and 'aarch64 build (SM8550)'"
+        description: "Workflow run ID that uploaded 'aarch64 (SM8550)', 'aarch64 build (SM8550)', and 'sm8550-base-provenance'"
         required: true
         type: string
+      packaging_only_accept_stale_base:
+        description: "Packaging-only override: allow base provenance mismatch. Do not use for first active product-payload cutover."
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -85,6 +90,24 @@ jobs:
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
           scripts/verify-product-payload-fetches
+
+      - name: Download base provenance
+        uses: actions/download-artifact@v8
+        with:
+          name: sm8550-base-provenance
+          run-id: ${{ inputs.base_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: base-provenance
+
+      - name: Verify base provenance
+        if: ${{ !inputs.packaging_only_accept_stale_base }}
+        run: scripts/verify-sm8550-base-provenance base-provenance/sm8550-base-provenance.env
+
+      - name: Acknowledge packaging-only stale-base override
+        if: ${{ inputs.packaging_only_accept_stale_base }}
+        run: |
+          echo "packaging_only_accept_stale_base=true: skipping base provenance match."
+          echo "This override is excluded from first active product-payload cutover proof."
 
       - name: Download aarch64 base
         uses: actions/download-artifact@v8
