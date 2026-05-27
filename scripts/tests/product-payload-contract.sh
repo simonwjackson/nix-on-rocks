@@ -7,6 +7,7 @@ guest_lock="${repo_root}/guest.lock"
 renderer="${repo_root}/scripts/render-product-payload"
 verifier="${repo_root}/scripts/verify-product-payload"
 fetch_verifier="${repo_root}/scripts/verify-product-payload-fetches"
+payload_artifact_verifier="${repo_root}/scripts/verify-sm8550-payloads"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
 package_mk="${package_dir}/package.mk"
@@ -63,6 +64,7 @@ require_file "${guest_lock}"
 [ -x "${renderer}" ] || fail "missing executable ${renderer}"
 [ -x "${verifier}" ] || fail "missing executable ${verifier}"
 [ -x "${fetch_verifier}" ] || fail "missing executable ${fetch_verifier}"
+[ -x "${payload_artifact_verifier}" ] || fail "missing executable ${payload_artifact_verifier}"
 
 # shellcheck source=../../product-payload.lock
 # shellcheck disable=SC1090,SC1091
@@ -153,6 +155,16 @@ set -e
 printf '%s\n' "${fetch_out}" | grep -q "rootfs seed SHA256 mismatch" \
   || fail "verify-product-payload-fetches failure should mention rootfs seed SHA256 mismatch; output was: ${fetch_out}"
 rm -rf "${fetch_tmp}"
+
+empty_payload_dir=$(mktemp -d)
+set +e
+payload_out=$("${payload_artifact_verifier}" --require-full-image "${empty_payload_dir}" 2>&1)
+payload_status=$?
+set -e
+[ "${payload_status}" -ne 0 ] || fail "verify-sm8550-payloads --require-full-image should fail when image artifact is missing"
+printf '%s\n' "${payload_out}" | grep -q "expected exactly one SM8550 full image" \
+  || fail "verify-sm8550-payloads --require-full-image failure should mention missing full image; output was: ${payload_out}"
+rm -rf "${empty_payload_dir}"
 
 tmp_work=$(mktemp -d)
 expect_verifier_failure "${tmp_work}" "run scripts/apply-rocknix-patches first"

@@ -3,6 +3,11 @@ set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+require_full_image=no
+if [ "${1:-}" = "--require-full-image" ]; then
+  require_full_image=yes
+  shift
+fi
 target_dir=${1:-"${work_dir}/target"}
 renderer="${repo_root}/scripts/render-product-payload"
 manifest=${NIX_ON_ROCKS_BUILD_MANIFEST:-"${repo_root}/nix-on-rocks-build-manifest.md"}
@@ -14,6 +19,14 @@ fail() {
 
 [ -d "${target_dir}" ] || fail "missing target directory: ${target_dir}"
 [ -x "${renderer}" ] || fail "missing executable ${renderer}"
+
+shopt -s nullglob
+image_files=("${target_dir}"/ROCKNIX-*.img.gz)
+image_checksums=("${target_dir}"/ROCKNIX-*.img.gz.sha256)
+if [ "${require_full_image}" = yes ]; then
+  [ "${#image_files[@]}" -eq 1 ] || fail "expected exactly one SM8550 full image, found ${#image_files[@]}"
+  [ "${#image_checksums[@]}" -eq 1 ] || fail "expected exactly one SM8550 full image checksum, found ${#image_checksums[@]}"
+fi
 
 payload_env=$(mktemp)
 tar_listing=$(mktemp)
@@ -63,11 +76,10 @@ seed_entry=$(awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if (
 actual_seed_sha=$(tar -xOf "${update_tar}" "${seed_entry}" | sha256sum | awk '{print $1}')
 [ "${actual_seed_sha}" = "${expected_seed_sha}" ] || fail "${update_tar}:${seed_entry} SHA256 mismatch: ${actual_seed_sha} != ${expected_seed_sha}"
 
-shopt -s nullglob
-for image_file in "${target_dir}"/ROCKNIX-*.img.gz; do
+for image_file in "${image_files[@]}"; do
   gzip -t "${image_file}"
 done
-for checksum in "${target_dir}"/ROCKNIX-*.img.gz.sha256 "${target_dir}"/ROCKNIX-*.tar.sha256; do
+for checksum in "${image_checksums[@]}" "${target_dir}"/ROCKNIX-*.tar.sha256; do
   (cd "${target_dir}" && sha256sum -c "$(basename "${checksum}")")
 done
 

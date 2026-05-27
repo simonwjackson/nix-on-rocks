@@ -294,10 +294,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
+          NIX_ON_ROCKS_REQUIRE_FULL_IMAGE: yes
         run: scripts/ci-build-stage image
 
       - name: Verify SM8550 payloads
-        run: scripts/verify-sm8550-payloads
+        run: scripts/verify-sm8550-payloads --require-full-image
 
       - name: Archive image logs
         if: failure()
