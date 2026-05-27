@@ -60,8 +60,8 @@ case "${PKG_NIX_GUEST_URL:-}" in
 esac
 
 case "${PKG_NIX_GUEST_BUILD_TARGET:-}" in
-  ".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel") : ;;
-  *) fail "PKG_NIX_GUEST_BUILD_TARGET must point at Korri's by-compatible RockNix kiosk appliance" ;;
+  ".#nixosConfigurations.korri-rocknix-kiosk-odin2portal.config.system.build.toplevel") : ;;
+  *) fail "PKG_NIX_GUEST_BUILD_TARGET must point at Korri's Odin2Portal RockNix kiosk appliance" ;;
 esac
 
 case "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-} ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" in
@@ -69,7 +69,9 @@ case "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-} ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" in
 esac
 case "${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}}" in
   *api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/*) : ;;
-  *) fail "rootfs seed URLs must use authenticated GitHub release asset API URLs" ;;
+  *github.com/simonwjackson/korri/releases/download/*) : ;;
+  *api.github.com/repos/simonwjackson/korri/releases/assets/*) : ;;
+  *) fail "rootfs seed URLs must use GitHub release asset URLs from the locked product authority" ;;
 esac
 
 case "${GUEST_SEED_ARCHIVE}" in
