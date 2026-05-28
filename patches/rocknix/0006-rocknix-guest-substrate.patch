@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,289 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -109,6 +109,7 @@ index 0000000000..51ff27c47f
 +  cp ${PKG_DIR}/scripts/rocknix-guest-generation-import ${INSTALL}/usr/bin
 +  cp ${PKG_DIR}/scripts/rocknix-guest-generation-switch ${INSTALL}/usr/bin
 +  cp ${PKG_DIR}/scripts/rocknix-guest-activation-audit ${INSTALL}/usr/bin
++  cp ${PKG_DIR}/scripts/rocknix-post-update ${INSTALL}/usr/bin
 +  chmod 0755 \
 +    ${INSTALL}/usr/bin/nix-on-rock-paths \
 +    ${INSTALL}/usr/bin/nix-on-rock-migrate \
@@ -122,7 +123,8 @@ index 0000000000..51ff27c47f
 +    ${INSTALL}/usr/bin/rocknix-guest-wifi-unblock \
 +    ${INSTALL}/usr/bin/rocknix-guest-generation-import \
 +    ${INSTALL}/usr/bin/rocknix-guest-generation-switch \
-+    ${INSTALL}/usr/bin/rocknix-guest-activation-audit
++    ${INSTALL}/usr/bin/rocknix-guest-activation-audit \
++    ${INSTALL}/usr/bin/rocknix-post-update
 +
 +  # Safety-net release: the guest owns InputPlumber, so mask the old host
 +  # unit while leaving its package files installed for SSH rollback.
@@ -269,6 +271,7 @@ index 0000000000..51ff27c47f
 +  enable_service rocknix-guest-wifi-ready.service
 +  enable_service rocknix-guest-promote.service
 +  enable_service rocknix-recovery-toggle.service
++  enable_service rocknix-post-update.service
 +
 +  # Ship the recovery readme to /flash/. Staged into
 +  # ${PKG_DIR}/contract-docs/ by scripts/apply-rocknix-patches so a
@@ -3651,7 +3654,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1437 @@
+@@ -0,0 +1,1485 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -5086,6 +5089,171 @@ index 0000000000..b28ce8fdc0
 +grep -q 'safe_remove ${INSTALL}/usr/lib/systemd/system/systemd-nspawn@.service' "${SYSTEMD_PKG}" || fail "systemd package missing nspawn unit removal fallback"
 +! grep -qE 'enable_service .*nspawn' "${SYSTEMD_PKG}" || fail "systemd package must not enable nspawn services by default"
 +
++# rocknix-post-update.service: Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
++# Recovery boot (rocknix.safe=1 / /flash/rocknix.no-nspawn) keeps the legacy
++# /usr/lib/autostart/common/003-upgrade autostart consumer as the authoritative path.
++check_unit "${PKG_DIR}/system.d/rocknix-post-update.service"
++check_script "${PKG_DIR}/scripts/rocknix-post-update"
++
++post_update_unit="${PKG_DIR}/system.d/rocknix-post-update.service"
++grep -q 'ExecStart=/usr/bin/rocknix-post-update' "${post_update_unit}" \
++  || fail "rocknix-post-update unit has wrong ExecStart"
++grep -q 'ConditionPathExists=/storage/.boot.hint' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must only run when boot.hint is present"
++grep -q 'ConditionKernelCommandLine=!rocknix.safe=1' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must yield to safe-mode recovery"
++grep -q 'ConditionPathExists=!/flash/rocknix.no-nspawn' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must yield to sticky-recovery flag"
++grep -q 'Before=rocknix-guest.service' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must run before the guest service"
++grep -q 'WantedBy=rocknix-main-space.target' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must install under rocknix-main-space.target"
++grep -q 'enable_service rocknix-post-update.service' "${PKG_DIR}/package.mk" \
++  || fail "package.mk must enable rocknix-post-update.service"
++grep -q 'cp ${PKG_DIR}/scripts/rocknix-post-update ${INSTALL}/usr/bin' "${PKG_DIR}/package.mk" \
++  || fail "package.mk must install rocknix-post-update helper"
++[ "$(grep -c rocknix-post-update "${PKG_DIR}/package.mk")" -ge 3 ] \
++  || fail "package.mk must reference rocknix-post-update in cp, chmod, and enable_service"
++
++post_update_script="${PKG_DIR}/scripts/rocknix-post-update"
++grep -q '/storage/.boot.hint' "${post_update_script}" \
++  || fail "rocknix-post-update script must read /storage/.boot.hint"
++grep -q '/usr/share/post-update' "${post_update_script}" \
++  || fail "rocknix-post-update script must call /usr/share/post-update when present"
++grep -q '/var/log/upgrade.log' "${post_update_script}" \
++  || fail "rocknix-post-update script must log to /var/log/upgrade.log"
++grep -q 'exit 0' "${post_update_script}" \
++  || fail "rocknix-post-update script must never block boot with a non-zero exit"
++! grep -q '/usr/lib/autostart/common/003-upgrade' "${post_update_script}" \
++  || fail "rocknix-post-update must not call the legacy autostart consumer"
++
++# The legacy /usr/lib/autostart/common/003-upgrade entry must remain unchanged
++# so recovery boot can still consume the hint via rocknix.target's autostart chain.
++legacy_upgrade_script="${REPO_ROOT}/projects/ROCKNIX/packages/rocknix/autostart/003-upgrade"
++if [ -f "${legacy_upgrade_script}" ]; then
++  grep -q '/storage/.boot.hint' "${legacy_upgrade_script}" \
++    || fail "legacy autostart 003-upgrade entry must still consume /storage/.boot.hint"
++  grep -q '/usr/share/post-update' "${legacy_upgrade_script}" \
++    || fail "legacy autostart 003-upgrade entry must still call /usr/share/post-update"
++fi
++
 +# Old support flags should not be resurrected.
 +! grep -R --exclude='guest-substrate-static-checks.sh' -q 'NIX_INTEGRATION_SUPPORT\|NIX_NSPAWN_SUPPORT\|NIX_DAEMON_SUPPORT\|THIN_HOST' \
 +  "${REPO_ROOT}/projects/ROCKNIX" "${REPO_ROOT}/.github" "${REPO_ROOT}/scripts" || fail "removed support gate still referenced"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-post-update b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-post-update
+new file mode 100755
+index 0000000000..bb9d37719f38067dcbfefa52666a764aafb9723a
+--- /dev/null
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-post-update
+@@ -0,0 +1,75 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++#
++# Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
++#
++# The legacy ROCKNIX autostart consumer for this signal is only reachable
++# from rocknix.target. Layer 14 main-space boot uses rocknix-main-space.target
++# as default.target and does not pull in the autostart chain, so
++# /storage/.boot.hint=UPDATE was never being consumed after a successful
++# update install on the SM8550 NixOS-guest product path.
++#
++# This helper mirrors the same posture as the legacy consumer for the
++# main-space target only:
++#   - read /storage/.boot.hint
++#   - if it is exactly UPDATE, run /usr/share/post-update if present and
++#     append output to /var/log/upgrade.log
++#   - remove the hint on success or after a logged hook failure
++#   - never exit non-zero: boot must not be blocked by post-update work
++#
++# Recovery boot (rocknix.safe=1 or /flash/rocknix.no-nspawn) is routed by
++# libreelec-target-generator to rocknix.target; the legacy autostart entry
++# remains the authoritative consumer there and is not touched by this helper.
++
++set -u
++
++LOG_TAG="rocknix-post-update"
++HINT_FILE="/storage/.boot.hint"
++HOOK_SCRIPT="/usr/share/post-update"
++LOG_FILE="/var/log/upgrade.log"
++
++log() {
++  printf '%s: %s\n' "${LOG_TAG}" "$*"
++}
++
++log_journal_and_file() {
++  message="$*"
++  log "${message}"
++  if [ -w "$(dirname "${LOG_FILE}")" ] || [ -w "${LOG_FILE}" ]; then
++    printf '%s: %s\n' "${LOG_TAG}" "${message}" >> "${LOG_FILE}" 2>/dev/null || true
++  fi
++}
++
++# No hint: nothing to consume. The unit also has ConditionPathExists for
++# this case, so we should normally not be reached, but be a safe no-op.
++if [ ! -f "${HINT_FILE}" ]; then
++  log "no boot hint present, nothing to do"
++  exit 0
++fi
++
++# Read at most a small amount; the hint file is a single token.
++hint_content="$(head -c 4096 "${HINT_FILE}" 2>/dev/null || true)"
++hint_trimmed="$(printf '%s' "${hint_content}" | tr -d ' \t\r\n')"
++
++if [ "${hint_trimmed}" != "UPDATE" ]; then
++  log_journal_and_file "skipping: unexpected hint content (left in place)"
++  exit 0
++fi
++
++log_journal_and_file "consuming UPDATE hint on main-space boot"
++
++if [ -x "${HOOK_SCRIPT}" ] || [ -f "${HOOK_SCRIPT}" ]; then
++  if ! "${HOOK_SCRIPT}" >> "${LOG_FILE}" 2>&1; then
++    log_journal_and_file "post-update hook exited non-zero (continuing)"
++  fi
++else
++  log_journal_and_file "post-update hook missing (${HOOK_SCRIPT})"
++fi
++
++if ! rm -f "${HINT_FILE}"; then
++  log_journal_and_file "failed to remove ${HINT_FILE} (continuing)"
++fi
++
++# Never exit non-zero: boot must not be blocked.
++exit 0
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-post-update.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-post-update.service
+new file mode 100644
+index 0000000000..bc6c6a2a3bb3616682f2bc20dd0ebc308afe2767
+--- /dev/null
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-post-update.service
+@@ -0,0 +1,30 @@
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++#
++# Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
++#
++# Reachable only from rocknix-main-space.target. Recovery boot routes to
++# rocknix.target where the legacy autostart entry
++# /usr/lib/autostart/common/003-upgrade owns the same signal and is left
++# unchanged by this unit.
++
++[Unit]
++Description=ROCKNIX post-update hint consumer (main-space boot)
++Documentation=file:///usr/lib/rocknix-guest-substrate/docs/layer14-main-space-contract.md
++RequiresMountsFor=/storage
++After=local-fs.target
++Before=rocknix-guest.service
++ConditionPathExists=/storage/.boot.hint
++ConditionKernelCommandLine=!rocknix.safe=1
++ConditionPathExists=!/flash/rocknix.no-nspawn
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++ExecStart=/usr/bin/rocknix-post-update
++TimeoutStartSec=2min
++StandardOutput=journal
++StandardError=journal
++
++[Install]
++WantedBy=rocknix-main-space.target
