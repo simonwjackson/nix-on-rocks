@@ -2,13 +2,17 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
 
-"${repo_root}/scripts/apply-rocknix-patches"
+"${repo_root}/scripts/apply-rocknix-patches" --product "${SELECTED_PRODUCT}"
 "${repo_root}/scripts/verify-sm8550-contract"
-"${repo_root}/scripts/verify-sm8550-locks"
-"${repo_root}/scripts/verify-product-payload"
+"${repo_root}/scripts/verify-sm8550-locks" --product "${SELECTED_PRODUCT}"
+"${repo_root}/scripts/verify-product-payload" --product "${SELECTED_PRODUCT}"
 
 docker build -t "${image}" "${work_dir}"
 (
@@ -20,5 +24,5 @@ docker build -t "${image}" "${work_dir}"
     "${image}" bash -lc './scripts/build_distro'
 )
 
-"${repo_root}/scripts/generate-manifest"
-"${repo_root}/scripts/verify-sm8550-payloads"
+"${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
+"${repo_root}/scripts/verify-sm8550-payloads" --product "${SELECTED_PRODUCT}"
