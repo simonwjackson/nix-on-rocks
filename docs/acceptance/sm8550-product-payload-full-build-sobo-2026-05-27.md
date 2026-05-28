@@ -148,7 +148,9 @@ Final ABL checksums remained unchanged from pre-install:
 
 `/storage/.boot.hint` remained `UPDATE` after a successful main-space boot. The hint is the legacy `003-upgrade` autostart trigger under `rocknix.target`, but Layer 14 main-space boot via `rocknix-main-space.target` does not invoke the legacy autostart chain that runs `/usr/share/post-update` and removes the hint.
 
-This was the same residual condition observed at the start of Phase 4. It did not block the update from being applied, the device from booting cleanly, the guest from coming up, or ABL from staying unchanged. It is tracked as update-lifecycle hardening in `docs/plans/2026-05-27-002-fix-main-space-post-update-boot-hint-plan.md`.
+This was the same residual condition observed at the start of Phase 4. It did not block the update from being applied, the device from booting cleanly, the guest from coming up, or ABL from staying unchanged.
+
+**Resolved 2026-05-28:** `rocknix-post-update.service` now consumes the hint on `rocknix-main-space.target` boot while leaving recovery (`/flash/rocknix.no-nspawn` / `rocknix.safe=1`) and the legacy `003-upgrade` autostart entry unchanged. Device acceptance: `docs/acceptance/sm8550-post-update-boot-hint-sobo-2026-05-28.md`. Plan completed: `docs/plans/2026-05-27-002-fix-main-space-post-update-boot-hint-plan.md`.
 
 ## Validation commands
 

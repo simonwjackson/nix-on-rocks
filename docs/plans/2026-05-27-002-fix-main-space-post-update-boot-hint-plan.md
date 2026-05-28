@@ -1,8 +1,10 @@
 ---
 title: "fix: Consume /storage/.boot.hint on Layer 14 main-space post-update boot"
 type: fix
-status: active
+status: completed
 date: 2026-05-27
+completed: 2026-05-28
+acceptance: docs/acceptance/sm8550-post-update-boot-hint-sobo-2026-05-28.md
 ---
 
 # fix: Consume /storage/.boot.hint on Layer 14 main-space post-update boot
