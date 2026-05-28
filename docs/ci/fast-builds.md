@@ -31,10 +31,16 @@ Known-good toolchain source:
 
 - run `26037562850`
 
-Latest accepted Phase 5 checkpoints:
+Latest accepted Phase 4 full-build release-path checkpoints (Sobo / Odin2Portal):
+
+- full-build run `26539625977` rebuilt Docker image, toolchain, base, and SM8550 image end-to-end on product SHA `ea83650`, producing the artifact installed on sobo.
+- continue-from-toolchain confidence run `26534216483` proved base+image on the same product SHA before paying for the full build.
+- Acceptance evidence: `docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md`.
+
+Prior accepted Phase 5 image-only checkpoints (retained as historical evidence, not the current acceptance anchor):
 
 - prepare-base run `26148449934` rebuilt reusable SM8550 base artifacts from toolchain run `26037562850`.
-- image-only run `26152901081` consumed base run `26148449934`, verified payloads, and produced the update installed on `sobo`.
+- image-only run `26152901081` consumed base run `26148449934`, verified payloads, and produced the earlier update installed on `sobo`.
 
 ### Prepare base artifacts
 
@@ -59,7 +65,7 @@ This is the fastest lane for packaging-only changes: manifest verification, upda
 
 Do not use image-only for changes that alter packages, toolchain, kernel, guest source, `product-payload.lock`, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only from that fresh base instead. `build-image-only.yml` compares the downloaded `sm8550-base-provenance` artifact against the current checkout before Docker work and fails closed on product payload, lock, patch-series, upstream, or substrate package drift unless the packaging-only override is explicitly set.
 
-Current accepted image-only proof:
+Current accepted image-only proof (historical Phase 5 reference; the active release-path anchor is the Phase 4 full-build run above):
 
 - base run: `26148449934`
 - image-only run: `26152901081`

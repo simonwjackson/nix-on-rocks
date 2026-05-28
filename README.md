@@ -7,13 +7,13 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 ## Current status
 
 - Repo visibility: public.
-- Accepted checkpoint: `sm8550-phase5-accepted-20260520`.
-- Release: `SM8550 Phase 5 Accepted (2026-05-20)`.
-- Accepted CI lanes:
-  - preflight `26148417386`;
-  - prepare-base `26148449934`;
-  - image-only `26152901081`.
-- Accepted device deployment: `sobo` / Odin2Portal (`ayn,odin2portal`).
+- Accepted checkpoint: Phase 4 full-build release-path proof, sobo / Odin2Portal (`ayn,odin2portal`), 2026-05-27.
+- Authoritative full-build run: `build-sm8550.yml` run `26539625977` on product SHA `ea836506446619b805acc7954a190fdee95be446`.
+- Confidence gate: `continue-sm8550-from-toolchain.yml` run `26534216483` (same product SHA, same payload).
+- Prior accepted Phase 5 checkpoint (image-only refresh, retained as historical): preflight `26148417386`, prepare-base `26148449934`, image-only `26152901081`.
+- `HandsOnAcceptance`: `NotRun/Deferred`. `ReleasePublication`: `NotPublished/Deferred`.
+- Accepted device deployment: `sobo` / Odin2Portal (`ayn,odin2portal`). Thor acceptance remains separate.
+- Known follow-up: `docs/plans/2026-05-27-002-fix-main-space-post-update-boot-hint-plan.md` (stale `/storage/.boot.hint=UPDATE` on Layer 14 main-space boot; not a Phase 4 blocker).
 - Legacy guest repo: `simonwjackson/rocknix-nix-guest` archived after source/docs migration.
 - Upstream strategy: Nix-on-Rocks remains a patch-product queue; these changes are not planned as ROCKNIX upstream PRs.
 
@@ -28,7 +28,8 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Active product payload: see `product-payload.lock`; `scripts/apply-rocknix-patches` renders it into the patched ROCKNIX package-local `product-payload.env`, and `package.mk` consumes that staged env during Docker builds.
 - Accepted guest seed pin: see `guest.lock`; old nix-on-rocks seeds are archived fallback evidence only.
 - Patch queue: `patches/rocknix/series`
-- Latest accepted Phase 5 CI/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
+- Latest accepted Phase 4 release-path proof: `docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md`
+- Prior accepted Phase 5 CI/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
 
 ## Repository layout
 

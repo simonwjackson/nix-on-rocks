@@ -1,7 +1,7 @@
 ---
 title: "feat: Prove SM8550 full-build release path"
 type: feat
-status: active
+status: completed
 date: 2026-05-27
 ---
 
@@ -9,7 +9,19 @@ date: 2026-05-27
 
 ## Summary
 
-Promote the product-payload SM8550 work from Phase 3's refreshed-base image-only proof to a release-path proof. Phase 4 runs two sequential Docker/ROCKNIX gates: first a cheaper `continue-sm8550-from-toolchain.yml` base+image proof, then the authoritative `build-sm8550.yml` full-chain proof if the first gate passes. Artifact verification and Sobo/Odin2Portal device acceptance remain separate gates, and the stale `/storage/.boot.hint=UPDATE` finding is carried as a hardening follow-up rather than a Phase 4 blocker.
+Promote the product-payload SM8550 work from Phase 3's refreshed-base image-only proof to a release-path proof.
+
+## Closeout
+
+Phase 4 closes at `BuildProof + ArtifactVerified + DeviceAccepted` for sobo / Odin2Portal (`ayn,odin2portal`).
+
+- Confidence gate: `continue-sm8550-from-toolchain.yml` run `26534216483` (product SHA `ea836506446619b805acc7954a190fdee95be446`).
+- Authoritative full build: `build-sm8550.yml` run `26539625977` (same product SHA, same payload). Artifact `nix-on-rocks-sm8550-26539625977` verified locally including SM8550 FAT geometry and `--require-full-image`.
+- Device acceptance: `docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md`. Update tar consumed, KERNEL md5 `42386591bf1bda598f54693cda60a82f` and SYSTEM md5 `2fb7374a51673dc5976c29d808fba22c` match Gate 2 expected, ABL unchanged, host running, guest active, zero failed units, substrate revision and seed manifest match the Korri Odin2Portal payload.
+- `HandsOnAcceptance`: `NotRun/Deferred`.
+- `ReleasePublication`: `NotPublished/Deferred`.
+- Update-lifecycle follow-up: `docs/plans/2026-05-27-002-fix-main-space-post-update-boot-hint-plan.md` covers the residual `/storage/.boot.hint=UPDATE` on Layer 14 main-space boot.
+ Phase 4 runs two sequential Docker/ROCKNIX gates: first a cheaper `continue-sm8550-from-toolchain.yml` base+image proof, then the authoritative `build-sm8550.yml` full-chain proof if the first gate passes. Artifact verification and Sobo/Odin2Portal device acceptance remain separate gates, and the stale `/storage/.boot.hint=UPDATE` finding is carried as a hardening follow-up rather than a Phase 4 blocker.
 
 ---
 

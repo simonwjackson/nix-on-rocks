@@ -8,9 +8,12 @@ The Nix-on-ROCK product lane separates CI build evidence from on-device acceptan
 
 Latest accepted evidence:
 
+- 2026-05-27 sobo/Odin2Portal full-build release-path proof: `docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md` (authoritative current Sobo Phase 4 acceptance — full `build-sm8550.yml` run `26539625977`, `HandsOnAcceptance: NotRun/Deferred`, `ReleasePublication: NotPublished/Deferred`)
 - 2026-05-22 Thor/bandai device proof: `docs/acceptance/sm8550-device-acceptance-2026-05-22-thor.md`
 - 2026-05-20 Phase 5 CI/image-only/device proof: `docs/acceptance/sm8550-phase5-ci-and-device-acceptance-2026-05-20.md`
 - 2026-05-19 external product-lane and Phase 2 proof: `docs/acceptance/sm8550-device-acceptance-2026-05-19.md`
+
+Known follow-up: `docs/plans/2026-05-27-002-fix-main-space-post-update-boot-hint-plan.md` (Layer 14 main-space stale `/storage/.boot.hint=UPDATE` consumer; not a Phase 4 blocker).
 
 ## BuildProof evidence
 
