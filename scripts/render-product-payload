@@ -2,7 +2,10 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
-product_lock="${repo_root}/product-payload.lock"
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+product_lock=${PRODUCT_LOCK}
 
 fail() {
   echo "FAIL: $*" >&2
@@ -34,8 +37,6 @@ load_shell_fields() {
     done
   ' bash "${file}" "$@"
 }
-
-[ -f "${product_lock}" ] || fail "missing product payload lock: ${product_lock}"
 
 product_fields=(
   PRODUCT_AUTHORITY_REPO

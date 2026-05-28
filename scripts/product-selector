@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+
+product_selector_fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+product_selector_require_safe_id() {
+  local product=$1
+  [[ "${product}" =~ ^[a-z0-9][a-z0-9-]*$ ]] || product_selector_fail "invalid product selector: ${product}"
+}
+
+select_product_locks() {
+  local repo_root=$1
+  shift
+
+  SELECTED_PRODUCT=""
+  PRODUCT_SELECTOR_ARGS=()
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --product)
+        [ "$#" -ge 2 ] || product_selector_fail "--product requires a value"
+        SELECTED_PRODUCT=$2
+        shift 2
+        ;;
+      --product=*)
+        SELECTED_PRODUCT=${1#--product=}
+        shift
+        ;;
+      *)
+        PRODUCT_SELECTOR_ARGS+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  [ -n "${SELECTED_PRODUCT}" ] || product_selector_fail "no product selected; pass --product <id>"
+  product_selector_require_safe_id "${SELECTED_PRODUCT}"
+
+  PRODUCT_LOCK="${repo_root}/product-payload-${SELECTED_PRODUCT}.lock"
+  GUEST_LOCK="${repo_root}/guest-${SELECTED_PRODUCT}.lock"
+
+  [ -f "${PRODUCT_LOCK}" ] || product_selector_fail "missing product payload lock for '${SELECTED_PRODUCT}': ${PRODUCT_LOCK}"
+  [ -f "${GUEST_LOCK}" ] || product_selector_fail "missing guest lock for '${SELECTED_PRODUCT}': ${GUEST_LOCK}"
+}

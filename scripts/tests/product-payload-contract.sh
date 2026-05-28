@@ -2,8 +2,12 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/../.." && pwd)
-product_lock="${repo_root}/product-payload.lock"
-guest_lock="${repo_root}/guest.lock"
+# shellcheck source=../product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
+product_lock=${PRODUCT_LOCK}
+guest_lock=${GUEST_LOCK}
 renderer="${repo_root}/scripts/render-product-payload"
 verifier="${repo_root}/scripts/verify-product-payload"
 fetch_verifier="${repo_root}/scripts/verify-product-payload-fetches"
@@ -41,9 +45,7 @@ copy_package_fixture() {
   local fixture_package_dir="${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
   mkdir -p "${fixture_package_dir}"
   cp "${package_mk}" "${fixture_package_dir}/package.mk"
-  if [ -f "${staged_payload_env}" ]; then
-    cp "${staged_payload_env}" "${fixture_package_dir}/product-payload.env"
-  fi
+  "${renderer}" --product "${SELECTED_PRODUCT}" > "${fixture_package_dir}/product-payload.env"
 }
 
 expect_verifier_failure() {
@@ -51,7 +53,7 @@ expect_verifier_failure() {
   local expected=$2
   local out status
   set +e
-  out=$(NIX_ON_ROCKS_WORKDIR="${tmp_work}" "${verifier}" 2>&1)
+  out=$(NIX_ON_ROCKS_WORKDIR="${tmp_work}" "${verifier}" --product "${SELECTED_PRODUCT}" 2>&1)
   status=$?
   set -e
   [ "${status}" -ne 0 ] || fail "verify-product-payload should fail for ${expected}"
@@ -101,7 +103,7 @@ esac
 
 rendered_env=$(mktemp)
 trap 'rm -f "${rendered_env}"' EXIT
-"${renderer}" > "${rendered_env}"
+"${renderer}" --product "${SELECTED_PRODUCT}" > "${rendered_env}"
 # shellcheck source=/dev/null
 # shellcheck disable=SC1090
 . "${rendered_env}"
@@ -158,7 +160,7 @@ rm -rf "${fetch_tmp}"
 
 empty_payload_dir=$(mktemp -d)
 set +e
-payload_out=$("${payload_artifact_verifier}" --require-full-image "${empty_payload_dir}" 2>&1)
+payload_out=$("${payload_artifact_verifier}" --product "${SELECTED_PRODUCT}" --require-full-image "${empty_payload_dir}" 2>&1)
 payload_status=$?
 set -e
 [ "${payload_status}" -ne 0 ] || fail "verify-sm8550-payloads --require-full-image should fail when image artifact is missing"
@@ -171,8 +173,14 @@ expect_verifier_failure "${tmp_work}" "run scripts/apply-rocknix-patches first"
 rm -rf "${tmp_work}"
 
 if [ -f "${package_mk}" ]; then
-  require_file "${staged_payload_env}"
-  require_equal product-payload.env "$("${renderer}")" "$(cat "${staged_payload_env}")"
+  staged_payload_matches_selected=no
+  if [ -f "${staged_payload_env}" ]; then
+    staged_device=$(env -i bash -c '. "$1"; printf "%s" "${PKG_NIX_GUEST_ROOTFS_SEED_DEVICE:-}"' bash "${staged_payload_env}")
+    if [ "${staged_device}" = "${SELECTED_PRODUCT}" ]; then
+      staged_payload_matches_selected=yes
+      require_equal product-payload.env "$("${renderer}" --product "${SELECTED_PRODUCT}")" "$(cat "${staged_payload_env}")"
+    fi
+  fi
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"
@@ -180,24 +188,26 @@ if [ -f "${package_mk}" ]; then
   expect_verifier_failure "${tmp_work}" "missing staged product payload environment"
   rm -rf "${tmp_work}"
 
-  (
-    product_backup=$(mktemp)
-    cp "${product_lock}" "${product_backup}"
-    trap 'mv "${product_backup}" "${product_lock}"' EXIT
-    sed -i 's/^PRODUCT_ROOTFS_SEED_SHA256=.*/PRODUCT_ROOTFS_SEED_SHA256="deadbeef"/' "${product_lock}"
-    expect_verifier_failure "${work_dir}" "PRODUCT_ROOTFS_SEED_SHA256"
-  )
+  if [ "${staged_payload_matches_selected}" = yes ]; then
+    (
+      product_backup=$(mktemp)
+      cp "${product_lock}" "${product_backup}"
+      trap 'mv "${product_backup}" "${product_lock}"' EXIT
+      sed -i 's/^PRODUCT_ROOTFS_SEED_SHA256=.*/PRODUCT_ROOTFS_SEED_SHA256="deadbeef"/' "${product_lock}"
+      expect_verifier_failure "${work_dir}" "PRODUCT_ROOTFS_SEED_SHA256"
+    )
 
-  (
-    product_backup=$(mktemp)
-    cp "${product_lock}" "${product_backup}"
-    trap 'mv "${product_backup}" "${product_lock}"' EXIT
-    {
-      printf '\nrequire_equal() { :; }\n'
-      printf 'PRODUCT_REV="0000000000000000000000000000000000000000"\n'
-    } >> "${product_lock}"
-    expect_verifier_failure "${work_dir}" "staged product payload environment is stale"
-  )
+    (
+      product_backup=$(mktemp)
+      cp "${product_lock}" "${product_backup}"
+      trap 'mv "${product_backup}" "${product_lock}"' EXIT
+      {
+        printf '\nrequire_equal() { :; }\n'
+        printf 'PRODUCT_REV="0000000000000000000000000000000000000000"\n'
+      } >> "${product_lock}"
+      expect_verifier_failure "${work_dir}" "staged product payload environment is stale"
+    )
+  fi
 
   tmp_work=$(mktemp -d)
   copy_package_fixture "${tmp_work}"

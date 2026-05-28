@@ -1,12 +1,1 @@
-PRODUCT_AUTHORITY_REPO="simonwjackson/korri"
-PRODUCT_REV="a3fabfd8a35190cd23d027f4f8569bc11344a3d5"
-PRODUCT_SOURCE_SHA256="0dea10b50a12d2a96944d44d401d4786f95768d4e79df7a13a237d4fcef0f80d"
-PRODUCT_SOURCE_SUBDIR="."
-PRODUCT_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-odin2portal.config.system.build.toplevel"
-PRODUCT_ROOTFS_SEED_REV="a3fabfd8a35190cd23d027f4f8569bc11344a3d5"
-PRODUCT_ROOTFS_SEED_DEVICE="odin2portal"
-PRODUCT_ROOTFS_SEED_COMPATIBLE="ayn,odin2portal"
-PRODUCT_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-a3fabfd8a351.tar.zst"
-PRODUCT_ROOTFS_SEED_SHA256="bdfe9a73acc327c77b3c813d7c284bfc4c182b930b436b24cdcfa878d73ccd0a"
-PRODUCT_ROOTFS_SEED_URL="https://github.com/simonwjackson/korri/releases/download/rocknix-product-payload-a3fabfd8a351/rocknix-guest-rootfs-odin2portal-a3fabfd8a351.tar.zst.part-00"
-PRODUCT_ROOTFS_SEED_URLS="https://github.com/simonwjackson/korri/releases/download/rocknix-product-payload-a3fabfd8a351/rocknix-guest-rootfs-odin2portal-a3fabfd8a351.tar.zst.part-00 https://github.com/simonwjackson/korri/releases/download/rocknix-product-payload-a3fabfd8a351/rocknix-guest-rootfs-odin2portal-a3fabfd8a351.tar.zst.part-01"
+product-payload-odin2portal.lock

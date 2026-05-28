@@ -2,12 +2,16 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
 package_mk="${package_dir}/package.mk"
 staged_payload_env="${package_dir}/product-payload.env"
-product_lock="${repo_root}/product-payload.lock"
-guest_lock="${repo_root}/guest.lock"
+product_lock=${PRODUCT_LOCK}
+guest_lock=${GUEST_LOCK}
 renderer="${repo_root}/scripts/render-product-payload"
 
 fail() {
@@ -137,7 +141,7 @@ require_equal PRODUCT_ROOTFS_SEED_SHA256 "${PRODUCT_ROOTFS_SEED_SHA256:-}" "${GU
 
 rendered_env=$(mktemp)
 trap 'rm -f "${rendered_env}"' EXIT
-"${renderer}" > "${rendered_env}"
+"${renderer}" --product "${SELECTED_PRODUCT}" > "${rendered_env}"
 
 if ! cmp -s "${rendered_env}" "${staged_payload_env}"; then
   fail "staged product payload environment is stale: ${staged_payload_env}"
