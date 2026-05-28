@@ -15,6 +15,7 @@ fail() {
 "${repo_root}/scripts/generate-sm8550-base-provenance" "${current}" >/dev/null
 
 fields=(
+  PRODUCT_SELECTOR
   PRODUCT_PAYLOAD_LOCK_SHA256
   GUEST_LOCK_SHA256
   RENDERED_PRODUCT_PAYLOAD_SHA256

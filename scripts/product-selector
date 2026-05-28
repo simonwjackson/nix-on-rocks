@@ -14,7 +14,7 @@ select_product_locks() {
   local repo_root=$1
   shift
 
-  SELECTED_PRODUCT=""
+  SELECTED_PRODUCT=${NIX_ON_ROCKS_PRODUCT:-}
   PRODUCT_SELECTOR_ARGS=()
 
   while [ "$#" -gt 0 ]; do

@@ -2,9 +2,15 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
-work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
 stage=${1:?"usage: ci-build-stage <toolchain|base|image>"}
+shift
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
+export NIX_ON_ROCKS_PRODUCT=${SELECTED_PRODUCT}
 
 export JAVA_HOME=${JAVA_HOME:-/usr}
 export PROJECT=${PROJECT:-ROCKNIX}
@@ -57,7 +63,7 @@ verify_sm8550_payloads() {
   if [ "${NIX_ON_ROCKS_REQUIRE_FULL_IMAGE:-no}" = "yes" ]; then
     args+=(--require-full-image)
   fi
-  "${repo_root}/scripts/verify-sm8550-payloads" "${args[@]}" "${work_dir}/target"
+  "${repo_root}/scripts/verify-sm8550-payloads" --product "${SELECTED_PRODUCT}" "${args[@]}" "${work_dir}/target"
 }
 
 case "${stage}" in
@@ -91,11 +97,11 @@ case "${stage}" in
     export OFFICIAL=${OFFICIAL:-no}
     run_in_container './scripts/build_distro'
     verify_sm8550_payloads
-    "${repo_root}/scripts/generate-manifest"
+    "${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
     ;;
   manifest)
     verify_sm8550_payloads
-    "${repo_root}/scripts/generate-manifest"
+    "${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
     ;;
   *)
     echo "unknown stage: ${stage}" >&2

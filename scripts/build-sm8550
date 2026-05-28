@@ -8,6 +8,7 @@ select_product_locks "${repo_root}" "$@"
 set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
+export NIX_ON_ROCKS_PRODUCT=${SELECTED_PRODUCT}
 
 "${repo_root}/scripts/apply-rocknix-patches" --product "${SELECTED_PRODUCT}"
 "${repo_root}/scripts/verify-sm8550-contract"
