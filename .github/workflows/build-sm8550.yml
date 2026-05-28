@@ -2,6 +2,15 @@ name: Build SM8550
 
 on:
   workflow_dispatch:
+    inputs:
+      product:
+        description: "Product payload lock to consume"
+        required: true
+        type: choice
+        default: odin2portal
+        options:
+          - odin2portal
+          - thor
 
 permissions:
   contents: write
@@ -9,6 +18,7 @@ permissions:
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NIX_ON_ROCKS_PRODUCT: ${{ inputs.product }}
 
 jobs:
   context:
@@ -312,7 +322,7 @@ jobs:
       - name: Upload SM8550 payloads
         uses: actions/upload-artifact@v7
         with:
-          name: nix-on-rocks-sm8550-${{ github.run_id }}
+          name: nix-on-rocks-sm8550-${{ inputs.product }}-${{ github.run_id }}
           path: |
             work/rocknix/target/ROCKNIX-*SM8550*
             nix-on-rocks-build-manifest.md

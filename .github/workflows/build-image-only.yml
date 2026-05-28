@@ -7,6 +7,14 @@ on:
         description: "Workflow run ID that uploaded 'aarch64 (SM8550)', 'aarch64 build (SM8550)', and 'sm8550-base-provenance'"
         required: true
         type: string
+      product:
+        description: "Product payload lock to consume"
+        required: true
+        type: choice
+        default: odin2portal
+        options:
+          - odin2portal
+          - thor
       packaging_only_accept_stale_base:
         description: "Packaging-only override: allow base provenance mismatch. Do not use for first active product-payload cutover."
         required: true
@@ -20,6 +28,7 @@ permissions:
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NIX_ON_ROCKS_PRODUCT: ${{ inputs.product }}
 
 jobs:
   context:
@@ -165,7 +174,7 @@ jobs:
       - name: Upload SM8550 payloads
         uses: actions/upload-artifact@v7
         with:
-          name: nix-on-rocks-sm8550-image-only-${{ github.run_id }}
+          name: nix-on-rocks-sm8550-${{ inputs.product }}-image-only-${{ github.run_id }}
           path: |
             work/rocknix/target/ROCKNIX-*SM8550*
             nix-on-rocks-build-manifest.md
