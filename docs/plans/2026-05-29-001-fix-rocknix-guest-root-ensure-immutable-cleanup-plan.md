@@ -1,7 +1,7 @@
 ---
 title: "fix: rocknix-guest-root-ensure must clear helper-owned immutable bits before deleting stale previous root"
 type: fix
-status: draft
+status: active
 date: 2026-05-29
 related-acceptance: docs/acceptance/sm8550-product-payload-thor-bandai-2026-05-29.md
 related-ops: docs/ops/sm8550-full-install-safety-audit-2026-05-20.md
