@@ -172,7 +172,10 @@
       # main-space.nix and the device profiles still resolve relative to this
       # store path.
       nixosModules = {
-        sm8550 = ./guest/modules/device.nix;
+        # Collapsed SM8550 chipset surface (device options + neutral
+        # audio/video capability imports). Replaces the legacy flat
+        # `./guest/modules/device.nix` module.
+        sm8550 = ./guest/modules/chipsets/sm8550;
         rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix;
         odin2portal = ./guest/profiles/devices/odin2portal.nix;
         thor = ./guest/profiles/devices/thor.nix;

@@ -62,15 +62,24 @@ in
   imports = [
     ../modules/base.nix
     ../modules/udev.nix
-    ../modules/device.nix
+    # SM8550 chipset surface: device options + neutral audio/video
+    # capabilities. The chipset folder collapses what was previously a
+    # flat device.nix / audio.nix pair so substrate facts live in one
+    # place and downstream consumers do not need to know the legacy
+    # layout.
+    ../modules/chipsets/sm8550
     ../modules/tools.nix
     ../modules/ssh.nix
     ../modules/display.nix
-    ../modules/audio.nix
     ../modules/input.nix
     ../modules/network.nix
     ../modules/lid.nix
     ../modules/steam.nix
+    # `moonlight.nix` is product-leaning (it installs a client choice).
+    # Kept in the substrate import path for now so currently-pinned Korri
+    # checkouts that still set `rocknix.sm8550.moonlight.*` continue to
+    # evaluate; scheduled removal once downstream product flakes consume
+    # neutral SM8550 video/audio capabilities and drop the option setter.
     ../modules/moonlight.nix
     ../modules/session.nix
   ];
