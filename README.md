@@ -92,7 +92,10 @@ this repo today, so there are no `*.test.ts` checks to run.
 Retained manual/targeted builds and proofs:
 
 ```sh
-scripts/verify-korri-promotion-proof
+# Per-product payload contract proof (replaces verify-korri-promotion-proof):
+scripts/tests/product-payload-contract.sh --product odin2portal
+scripts/tests/product-payload-contract.sh --product thor
+
 nix build .#nixosConfigurations.rocknix-guest.config.system.build.toplevel
 nix build .#nixosConfigurations.rocknix-guest-dev-env.config.system.build.toplevel
 nix build .#cemu
