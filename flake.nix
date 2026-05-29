@@ -106,6 +106,38 @@
         system = targetSystem;
         modules = [ ./guest/profiles/dev-env.nix ];
       };
+      # Per-device evaluations expose substrate capabilities composed with
+      # the form-factor profiles. They exist solely as contract surfaces
+      # so the SM8550 substrate can be asserted under each shipped device
+      # without a downstream product flake.
+      thorConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/rocknix-guest-base.nix
+          ./guest/profiles/devices/thor.nix
+        ];
+      };
+      odin2portalConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/rocknix-guest-base.nix
+          ./guest/profiles/devices/odin2portal.nix
+        ];
+      };
+      # Synthetic per-device override: proves the SM8550 video decode
+      # backend can be overridden by a device profile without editing the
+      # shared chipset module or the product layer.
+      videoOverrideConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/rocknix-guest-base.nix
+          ./guest/profiles/devices/thor.nix
+          ({ lib, ... }: {
+            networking.hostName = lib.mkForce "rocknix-video-override-contract";
+            rocknix.sm8550.video.decodeBackend = lib.mkForce "sdl";
+          })
+        ];
+      };
       mainSpaceConfiguration = nixpkgs.lib.nixosSystem {
         system = targetSystem;
         modules = [
@@ -218,7 +250,9 @@
             inherit pkgs baseConfiguration devEnvConfiguration;
           };
           guest-profile-contract = import ./nix/tests/guest-profile-contract.nix {
-            inherit pkgs baseConfiguration devEnvConfiguration;
+            inherit pkgs baseConfiguration devEnvConfiguration
+              thorConfiguration odin2portalConfiguration
+              videoOverrideConfiguration;
           };
           main-space-systemd-contract = import ./nix/tests/main-space-systemd-contract.nix {
             inherit pkgs mainSpaceConfiguration devEnvConfiguration;
