@@ -1,15 +1,15 @@
 # Thor product-payload selector lock.
-# TODO: replace PRODUCT_SOURCE_SHA256 / PRODUCT_ROOTFS_SEED_URLS with finalized
-# CI release facts before cutting a Thor image build.
+# TODO: replace PRODUCT_ROOTFS_SEED_URLS with finalized release asset URLs before
+# cutting a Thor image build.
 PRODUCT_AUTHORITY_REPO="simonwjackson/korri"
 PRODUCT_REV="120b8d0d857e6a34c346975a07b6945dd87625c0"
-PRODUCT_SOURCE_SHA256="cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+PRODUCT_SOURCE_SHA256="83111884ffe60d40392f9b366312172e9e0da77eb4fd0124984c5b9c507b13d4"
 PRODUCT_SOURCE_SUBDIR="."
 PRODUCT_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-thor.config.system.build.toplevel"
 PRODUCT_ROOTFS_SEED_REV="120b8d0d857e6a34c346975a07b6945dd87625c0"
 PRODUCT_ROOTFS_SEED_DEVICE="thor"
 PRODUCT_ROOTFS_SEED_COMPATIBLE="ayn,thor"
 PRODUCT_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-thor-120b8d0d857e.tar.zst"
-PRODUCT_ROOTFS_SEED_SHA256="dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+PRODUCT_ROOTFS_SEED_SHA256="7c64da76e49d38629dee7292dcf492ff736c9e957d69483c93ef18f0e4601a65"
 PRODUCT_ROOTFS_SEED_URL="https://github.com/simonwjackson/korri/releases/download/rocknix-product-payload-120b8d0d857e/rocknix-guest-rootfs-thor-120b8d0d857e.tar.zst.part-00"
 PRODUCT_ROOTFS_SEED_URLS="https://github.com/simonwjackson/korri/releases/download/rocknix-product-payload-120b8d0d857e/rocknix-guest-rootfs-thor-120b8d0d857e.tar.zst.part-00 https://github.com/simonwjackson/korri/releases/download/rocknix-product-payload-120b8d0d857e/rocknix-guest-rootfs-thor-120b8d0d857e.tar.zst.part-01"
