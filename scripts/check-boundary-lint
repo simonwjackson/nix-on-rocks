@@ -6,7 +6,9 @@ guest_root="$repo_root/guest"
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 [ -f "$repo_root/flake.nix" ] || fail "missing flake.nix"
-[ -f "$repo_root/product-payload.lock" ] || fail "missing generic product payload lock"
+# Per-product locks (product-payload-<id>.lock and guest-<id>.lock) are
+# enforced by scripts/product-selector at invocation time; we no longer
+# require a generic product-payload.lock alias here.
 [ -x "$repo_root/scripts/render-product-payload" ] || fail "missing executable product payload renderer"
 [ -x "$repo_root/scripts/verify-product-payload" ] || fail "missing executable product payload verifier"
 [ -x "$repo_root/scripts/tests/product-payload-contract.sh" ] || fail "missing executable product payload contract test"

@@ -68,10 +68,10 @@ require_file "${guest_lock}"
 [ -x "${fetch_verifier}" ] || fail "missing executable ${fetch_verifier}"
 [ -x "${payload_artifact_verifier}" ] || fail "missing executable ${payload_artifact_verifier}"
 
-# shellcheck source=../../product-payload.lock
+# shellcheck source=../../product-payload-odin2portal.lock
 # shellcheck disable=SC1090,SC1091
 . "${product_lock}"
-# shellcheck source=../../guest.lock
+# shellcheck source=../../guest-odin2portal.lock
 # shellcheck disable=SC1090,SC1091
 . "${guest_lock}"
 
