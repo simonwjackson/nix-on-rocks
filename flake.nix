@@ -258,7 +258,8 @@
             inherit pkgs mainSpaceConfiguration devEnvConfiguration;
           };
           audio-input-systemd-contract = import ./nix/tests/audio-input-systemd-contract.nix {
-            inherit pkgs baseConfiguration devEnvConfiguration;
+            inherit pkgs baseConfiguration devEnvConfiguration
+              thorConfiguration odin2portalConfiguration;
           };
         }
       );

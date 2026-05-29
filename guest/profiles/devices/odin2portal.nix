@@ -27,5 +27,13 @@
       # until its kernel name is made stable.
       input type:touch map_to_output DSI-1
     '';
+
+    # Odin 2 Portal audio path has not yet been physically validated end
+    # to end. Leave `audio.defaultSink.pcm` at its `null` default so the
+    # substrate does not silently inherit Thor's speaker PCM, UCM verb,
+    # or sink name. WirePlumber's `auto_null` fallback remains the
+    # default sink until live evidence promotes a measured route into
+    # this profile.
+    audio.defaultSink.pcm = null;
   };
 }

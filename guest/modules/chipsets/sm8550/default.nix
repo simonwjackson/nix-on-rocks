@@ -104,10 +104,94 @@ in
       };
     };
 
-    audio.ucmPackage = mkOption {
-      type = types.package;
-      default = aynOdin2Ucm;
-      description = "ALSA UCM package used by the guest-owned audio stack.";
+    audio = {
+      ucmPackage = mkOption {
+        type = types.package;
+        default = aynOdin2Ucm;
+        description = "ALSA UCM package used by the guest-owned audio stack.";
+      };
+
+      api = mkOption {
+        type = types.enum [ "pulseaudio" ];
+        default = "pulseaudio";
+        description = ''
+          Neutral audio API the SM8550 substrate exposes to user-space.
+          Product layers translate this into client-specific environment
+          (e.g. `SDL_AUDIODRIVER=pulseaudio`); the substrate itself only
+          guarantees that a PulseAudio-compatible socket is reachable
+          via `$PULSE_SERVER` because the main-space audio graph runs
+          PipeWire's PulseAudio compatibility module.
+        '';
+      };
+
+      card = mkOption {
+        type = types.str;
+        default = "AYNOdin2";
+        description = ''
+          ALSA card name used to drive UCM verbs and the default sink
+          bootstrap. The SM8550 chipset ships with the AYNOdin2 UCM
+          tree by default; per-device profiles may override when a
+          different card name is exposed by the kernel.
+        '';
+      };
+
+      defaultSink = {
+        pcm = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "hw:0,0";
+          description = ''
+            ALSA PCM device backing the substrate-bootstrapped default
+            PulseAudio sink. When null, the substrate does not create a
+            sink and the system falls back to whatever WirePlumber
+            auto-discovers (typically `auto_null` on devices where the
+            UCM speaker path is not yet active).
+
+            Setting this on a device profile is the supported way to
+            promise a non-dummy default sink before product launches.
+          '';
+        };
+
+        name = mkOption {
+          type = types.str;
+          default = "main_speaker";
+          description = ''
+            PulseAudio sink name created when `defaultSink.pcm` is set.
+            Used both as the `pactl load-module` `sink_name` and as the
+            argument to `pactl set-default-sink`.
+          '';
+        };
+
+        description = mkOption {
+          type = types.str;
+          default = "Main speaker";
+          description = ''
+            Human-readable description applied to the bootstrapped sink
+            via `device.description`.
+          '';
+        };
+
+        ucmVerb = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "HiFi";
+          description = ''
+            UCM verb to activate via `alsaucm` before loading the PCM
+            sink. Skipped when null. Required on devices where the
+            speaker output is gated behind an explicit UCM verb.
+          '';
+        };
+
+        ucmDevice = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          example = "Speaker";
+          description = ''
+            UCM device to enable (`_enadev`) after the verb is set.
+            Skipped when null.
+          '';
+        };
+      };
     };
 
     performance.cemuAffinityMask = mkOption {
