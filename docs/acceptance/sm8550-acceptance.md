@@ -8,6 +8,7 @@ The Nix-on-ROCK product lane separates CI build evidence from on-device acceptan
 
 Latest accepted evidence:
 
+- 2026-05-29 bandai/Thor product-payload full-build proof: `docs/acceptance/sm8550-product-payload-thor-bandai-2026-05-29.md` (full `build-sm8550.yml` run `26616457343`; Thor product selector; activation audit/runtime smoke/quick soak passed; recovery boundary verified)
 - 2026-05-28 sobo/Odin2Portal post-update boot-hint hardening: `docs/acceptance/sm8550-post-update-boot-hint-sobo-2026-05-28.md` (image-only run `26551856521`; resolves the Phase 4 `/storage/.boot.hint=UPDATE` lifecycle caveat)
 - 2026-05-27 sobo/Odin2Portal full-build release-path proof: `docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md` (authoritative current Sobo Phase 4 acceptance — full `build-sm8550.yml` run `26539625977`, `HandsOnAcceptance: NotRun/Deferred`, `ReleasePublication: NotPublished/Deferred`)
 - 2026-05-22 Thor/bandai device proof: `docs/acceptance/sm8550-device-acceptance-2026-05-22-thor.md`
