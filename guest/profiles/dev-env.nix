@@ -49,9 +49,8 @@ in
     ../modules/udev.nix
     ../modules/tools.nix
     ../modules/ssh.nix
-    ../modules/device.nix
+    ../modules/chipsets/sm8550
     ../modules/display.nix
-    ../modules/audio.nix
     ../modules/network.nix
     ../modules/lid.nix
     ../modules/session.nix

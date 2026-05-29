@@ -1,17 +1,32 @@
-# Shared SM8550 device policy with small per-device overrides.
+# Collapsed SM8550 chipset substrate.
+#
+# This module is the single import surface for SM8550 chipset facts. It owns:
+#
+#   - chipsets/sm8550/default.nix : shared chipset/device options, form-factor
+#                                    overrides, and main-space audio/video imports.
+#   - chipsets/sm8550/audio.nix   : PipeWire/PulseAudio/WirePlumber substrate
+#                                    + neutral audio API capability.
+#   - chipsets/sm8550/video.nix   : neutral SM8550 video decode capability.
 #
 # The default remains the hardware-validated Thor behavior. Additional
-# devices (Odin 2 Portal, etc.) should override only the measured differences: display
-# layout, input event names, audio UCM package/card names, and performance
-# policy. Main-space modules consume these options instead of hardcoding Thor
-# assumptions inline.
+# devices (Odin 2 Portal, etc.) should override only the measured differences:
+# display layout, input event names, audio UCM package/card/sink names, and
+# performance policy. Substrate modules consume these options instead of
+# hardcoding Thor assumptions inline. The product/appliance layer reads the
+# neutral video/audio capabilities to compose its launch environment without
+# learning RockNix-specific option paths.
 { config, lib, pkgs, ... }:
 
 let
   inherit (lib) mkOption types;
-  aynOdin2Ucm = pkgs.callPackage ../../devices/sm8550/audio/ayn-odin2-ucm { };
+  aynOdin2Ucm = pkgs.callPackage ../../../../devices/sm8550/audio/ayn-odin2-ucm { };
 in
 {
+  imports = [
+    ./audio.nix
+    ./video.nix
+  ];
+
   options.rocknix.sm8550 = {
     deviceId = mkOption {
       type = types.enum [ "thor" "odin2portal" ];
