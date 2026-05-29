@@ -1494,7 +1494,7 @@ new file mode 100755
 index 0000000000..208ad2b686
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
-@@ -0,0 +1,560 @@
+@@ -0,0 +1,573 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -1564,6 +1564,17 @@ index 0000000000..208ad2b686
 +is_empty_dir() {
 +  [ -d "$1" ] || return 1
 +  [ -z "$(find "$1" -mindepth 1 -maxdepth 1 2>/dev/null | sed -n '1p')" ]
++}
++
++# Recursively clear the immutable bit under $1. Best-effort: chattr may
++# be missing on some reuse paths, in which case this is a no-op and the
++# caller will still attempt rm -rf and fail closed on its own. Must be
++# called only after the helper-ownership guard for ${target} has run.
++clear_helper_immutable() {
++  target="$1"
++  [ -e "${target}" ] || return 0
++  command -v chattr >/dev/null 2>&1 || return 0
++  chattr -R -i "${target}" >/dev/null 2>&1 || true
 +}
 +
 +is_symlink_path() {
@@ -1725,6 +1736,7 @@ index 0000000000..208ad2b686
 +        fail "unowned temp root exists; refusing cleanup: ${tmp_root}"
 +      fi
 +    fi
++    clear_helper_immutable "${tmp_root}"
 +    rm -rf "${tmp_root}"
 +  fi
 +}
@@ -1973,6 +1985,7 @@ index 0000000000..208ad2b686
 +    if ! ( validate_rootfs "${previous_root}" no ) && [ ! -f "${previous_root}/${SEED_COMPLETE_MARKER}" ]; then
 +      fail "previous guest root exists and is neither valid nor helper-owned: ${previous_root}"
 +    fi
++    clear_helper_immutable "${previous_root}"
 +    rm -rf "${previous_root}" || fail "failed to remove previous guest root: ${previous_root}"
 +  fi
 +
@@ -3654,7 +3667,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1485 @@
+@@ -0,0 +1,1493 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3866,6 +3879,14 @@ index 0000000000..b28ce8fdc0
 +grep -q 'manual_generation_hold_active' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must respect manual generation hold before auto-reseed"
 +grep -q 'guest root mutation lock is held' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must fail closed on concurrent mutation"
 +grep -q 'is a symlink' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must reject symlinked storage paths"
++# Plan 2026-05-29-001: substrate must clear helper-owned immutable bits before
++# rm -rf so first-time reseed after a packaged-seed bump does not abort on
++# /storage that previously had chattr +i set.
++grep -q '^clear_helper_immutable() {' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must define clear_helper_immutable"
++grep -B1 'rm -rf "${previous_root}"' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" | grep -q 'clear_helper_immutable "${previous_root}"' || fail "root ensure helper must clear immutable bits before deleting previous root"
++grep -B1 'rm -rf "${tmp_root}"' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" | grep -q 'clear_helper_immutable "${tmp_root}"' || fail "root ensure helper must clear immutable bits before deleting failed-candidate temp root"
++! grep -F 'clear_helper_immutable "${GUEST_ROOT}"' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "clear_helper_immutable must never target the live guest root"
++awk '/previous guest root exists and is neither valid nor helper-owned/{seen=1} seen && /clear_helper_immutable "\${previous_root}"/{found=1} END{exit found?0:1}' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "ownership guard for previous root must still run before clear_helper_immutable"
 +
 +guest_unit="${PKG_DIR}/system.d/rocknix-guest.service"
 +grep -q 'RequiresMountsFor=/storage /flash' "${guest_unit}" || fail "guest unit must require storage and flash"
