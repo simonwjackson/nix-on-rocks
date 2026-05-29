@@ -23,11 +23,13 @@ jobs:
 
       - name: Apply patches and verify SM8550 contract
         run: |
-          scripts/apply-rocknix-patches
-          scripts/verify-sm8550-contract
-          scripts/verify-sm8550-locks
-          scripts/verify-product-payload
-          scripts/tests/product-payload-contract.sh
+          for product in odin2portal thor; do
+            scripts/apply-rocknix-patches --product "${product}"
+            scripts/verify-sm8550-contract
+            scripts/verify-sm8550-locks --product "${product}"
+            scripts/verify-product-payload --product "${product}"
+            scripts/tests/product-payload-contract.sh --product "${product}"
+          done
 
       - name: Verify Nix contracts
         run: nix flake check --no-write-lock-file --print-build-logs
