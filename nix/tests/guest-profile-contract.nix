@@ -1,10 +1,19 @@
-{ pkgs, baseConfiguration, devEnvConfiguration }:
+{ pkgs
+, baseConfiguration
+, devEnvConfiguration
+, thorConfiguration
+, odin2portalConfiguration
+, videoOverrideConfiguration
+}:
 
 let
   helpers = import ./helpers.nix { inherit pkgs; };
   assertContract = helpers.assertContract "guest profile contract";
   cfg = baseConfiguration.config;
   devCfg = devEnvConfiguration.config;
+  thorCfg = thorConfiguration.config;
+  odinCfg = odin2portalConfiguration.config;
+  overrideCfg = videoOverrideConfiguration.config;
 in
 helpers.runAssertions "rocknix-guest-profile-contract" [
   (assertContract cfg.boot.isContainer "rocknix-guest-base evaluates as a container rootfs")
@@ -24,5 +33,10 @@ helpers.runAssertions "rocknix-guest-profile-contract" [
   (assertContract cfg.services.tailscale.enable "guest substrate owns Tailscale")
   (assertContract (cfg.services.tailscale.useRoutingFeatures == "client") "Tailscale uses client routing features")
   (assertContract (cfg.rocknix.session.runtimeDir.uid == 0) "main-space runtime-dir uid defaults to root")
+  (assertContract (cfg.rocknix.sm8550.video.decodeBackend == "v4l2m2m") "SM8550 substrate exposes v4l2m2m as the default video decode backend")
+  (assertContract (devCfg.rocknix.sm8550.video.decodeBackend == "v4l2m2m") "dev-env substrate exposes the same SM8550 video decode backend as main-space")
+  (assertContract (thorCfg.rocknix.sm8550.video.decodeBackend == "v4l2m2m") "Thor substrate exposes v4l2m2m as its video decode backend")
+  (assertContract (odinCfg.rocknix.sm8550.video.decodeBackend == "v4l2m2m") "Odin 2 Portal substrate inherits the same video decode backend without duplicating the value")
+  (assertContract (overrideCfg.rocknix.sm8550.video.decodeBackend == "sdl") "A per-device profile can override the SM8550 video decode backend without editing the shared chipset module")
   (assertContract (devCfg.programs.sway.enable or false) "dev-env profile keeps display stack evaluable")
 ]
