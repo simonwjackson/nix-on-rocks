@@ -5,6 +5,29 @@
 # display/audio/input/network/lid modules, Steam runtime plumbing, and app
 # package helpers. Product composition (Korri client/server/kiosk selection,
 # Home-chord app launch policy, rootfs authority) lives downstream.
+#
+# Ownership rule:
+#
+#   - nix-on-rocks says: "this device/chipset exposes these Linux
+#     capabilities and routes audio/video here."
+#   - Downstream product (e.g. Korri) says: "for this appliance, use those
+#     capabilities with the chosen client (Moonlight, sessiond, kiosk)."
+#
+# Where SM8550 facts live:
+#
+#   - `../modules/chipsets/sm8550/default.nix` : shared chipset/device
+#     options (deviceId, display fragment, input event names, UCM
+#     package/card, performance policy) and form-factor overrides.
+#   - `../modules/chipsets/sm8550/video.nix`   : neutral video decode
+#     capability (`rocknix.sm8550.video.decodeBackend`).
+#   - `../modules/chipsets/sm8550/audio.nix`   : main-space audio graph
+#     (PipeWire/PulseAudio/WirePlumber) plus a per-device
+#     default-sink bootstrap when `rocknix.sm8550.audio.defaultSink.pcm`
+#     is set on the device profile.
+#
+# Anything Moonlight-, Korri-, or appliance-specific (CLI argv, persistent
+# `KORRI_*` env, kiosk service environment, controller mapping file paths)
+# is downstream product policy and does not belong in this substrate.
 { config
 , pkgs
 , ...
