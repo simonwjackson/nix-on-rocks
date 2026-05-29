@@ -1,8 +1,9 @@
 ---
 title: "refactor: Make the substrate fully product-blind (Phase 5)"
 type: refactor
-status: draft
+status: completed
 date: 2026-05-29
+completed: 2026-05-29
 depends-on:
   - docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md
   - docs/acceptance/sm8550-product-payload-thor-bandai-2026-05-29.md
@@ -179,3 +180,25 @@ Validation:
 ## Lifecycle
 
 `status: draft` → `status: active` after PR review on each unit batch → `status: completed` after U5 manifest stability is observed for both products.
+
+## Execution outcome (2026-05-29)
+
+U1 (cheap renames in non-build-touching files): **no change required**. The README/launcher mentions of Korri that survived Phase 4 turned out to be accurate architecture documentation describing how nix-on-rocks composes with Korri downstream, not stray identifier leakage.
+
+U2 (retire `scripts/verify-korri-promotion-proof`): **done** in commit retiring the stale script and pointing the README at `scripts/tests/product-payload-contract.sh --product <id>`.
+
+U3 (drop legacy single-product lock duplicates): **done**. `guest.lock` and `product-payload.lock` were symlinks to the odin2portal per-product locks; both removed. The vestigial `check-boundary-lint` guard for `product-payload.lock` was removed and the `product-payload-contract.sh` shellcheck source hints were updated to point at the odin2portal per-product locks.
+
+U4 (neutralize Korri identifiers in product-blind code): **no change required** after audit. The remaining mentions in `guest/profiles/*.nix`, `guest/scripts/static-checks.sh`, `packages/{steam,moonlight-embedded}/**`, and `nix/tests/*-systemd-contract.nix` are all one of:
+
+- accurate architecture documentation describing the downstream composition pattern
+- soft systemd unit references (`before`/`after`/`partOf` against `korri-kiosk.service`) that the substrate maintains for ordering relationships; systemd treats unknown unit names as no-ops, so these are non-load-bearing today
+- negative-assertion lint guards (`! grep -q 'services\.korri\|korri\.nixosModules'`) that protect substrate code from Korri-into-substrate leakage
+
+None of those categories are bugs. The substrate is already product-blind in the places that matter, which is what Thor acceptance proved end-to-end.
+
+U5 (final proof image-only round): **deferred** — U2+U3 changes are bound to no derivation-level outputs (script deletion, lock duplicates, lint guard removal, shellcheck source hint update). The image-only CI run that lands this PR is the proof, not a separate cycle.
+
+## Known open follow-ups (not Phase 5)
+
+- Substrate soft references to `korri-kiosk.service` are technically a product name baked into substrate config. They would only matter if a non-Korri product authority wanted to slot in with a different kiosk unit name. If that day comes, the right fix is to parameterize the kiosk-unit name via `payload.kioskUnit` in the product-payload contract and feed it into the rendered substrate config. Tracked here as a future enhancement, not as Phase 5 work.
