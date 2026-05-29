@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+while IFS= read -r script; do
+  bash -n "$script" || fail "script has syntax errors: ${script#$repo_root/}"
+done < <(find "$repo_root/scripts" -maxdepth 2 -type f ! -path '*/.git/*' | sort)
+
+if [ -d "$repo_root/guest/launchers" ]; then
+  while IFS= read -r launcher; do
+    bash -n "$launcher" || fail "launcher has syntax errors: ${launcher#$repo_root/}"
+  done < <(find "$repo_root/guest/launchers" -maxdepth 1 -type f -name '*.sh' | sort)
+fi
+
+if command -v shellcheck >/dev/null 2>&1; then
+  shellcheck \
+    "$repo_root/packages/steam/scripts/steam-arm64-bootstrap" \
+    "$repo_root/packages/steam/scripts/steam-arm64-seed" \
+    "$repo_root/packages/steam/scripts/steam-guest-native" \
+    "$repo_root/packages/steam/scripts/steam-guest-runtime-prep" \
+    "$repo_root/packages/steam/scripts/steam-guest-run"
+fi
+
+bash "$repo_root/packages/steam/tests/steam-package-contract.sh"
+bash "$repo_root/packages/steam/tests/steam-guest-runtime-prep-smoke.sh"
+bash "$repo_root/packages/steam/tests/steam-guest-run-smoke.sh"
+
+echo "check-shell-smoke: ok"

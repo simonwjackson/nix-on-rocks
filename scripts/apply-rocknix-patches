@@ -2,6 +2,10 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 series="${repo_root}/patches/rocknix/series"
 
@@ -36,3 +40,8 @@ for doc in layer14-main-space-contract.md layer14-soak-checklist.md HOW-TO-FALL-
   cp "${src}" "${contract_docs_dest}/${doc}"
 done
 printf 'Staged Nix-on-Rocks contract docs into %s\n' "${contract_docs_dest}"
+
+payload_env_dest="${substrate_pkg_dir}/product-payload.env"
+"${repo_root}/scripts/render-product-payload" --product "${SELECTED_PRODUCT}" > "${payload_env_dest}.tmp"
+mv "${payload_env_dest}.tmp" "${payload_env_dest}"
+printf 'Staged rendered %s product payload environment into %s\n' "${SELECTED_PRODUCT}" "${payload_env_dest}"

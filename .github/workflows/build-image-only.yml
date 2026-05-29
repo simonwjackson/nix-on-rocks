@@ -4,14 +4,31 @@ on:
   workflow_dispatch:
     inputs:
       base_run_id:
-        description: "Workflow run ID that uploaded 'aarch64 (SM8550)' and 'aarch64 build (SM8550)'"
+        description: "Workflow run ID that uploaded 'aarch64 (SM8550)', 'aarch64 build (SM8550)', and 'sm8550-base-provenance'"
         required: true
         type: string
+      product:
+        description: "Product payload lock to consume"
+        required: true
+        type: choice
+        default: odin2portal
+        options:
+          - odin2portal
+          - thor
+      packaging_only_accept_stale_base:
+        description: "Packaging-only override: allow base provenance mismatch. Do not use for first active product-payload cutover."
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
   actions: read
   packages: write
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NIX_ON_ROCKS_PRODUCT: ${{ inputs.product }}
 
 jobs:
   context:
@@ -37,6 +54,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -80,6 +98,25 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
+
+      - name: Download base provenance
+        uses: actions/download-artifact@v8
+        with:
+          name: sm8550-base-provenance
+          run-id: ${{ inputs.base_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: base-provenance
+
+      - name: Verify base provenance
+        if: ${{ !inputs.packaging_only_accept_stale_base }}
+        run: scripts/verify-sm8550-base-provenance base-provenance/sm8550-base-provenance.env
+
+      - name: Acknowledge packaging-only stale-base override
+        if: ${{ inputs.packaging_only_accept_stale_base }}
+        run: |
+          echo "packaging_only_accept_stale_base=true: skipping base provenance match."
+          echo "This override is excluded from first active product-payload cutover proof."
 
       - name: Download aarch64 base
         uses: actions/download-artifact@v8
@@ -137,7 +174,7 @@ jobs:
       - name: Upload SM8550 payloads
         uses: actions/upload-artifact@v7
         with:
-          name: nix-on-rocks-sm8550-image-only-${{ github.run_id }}
+          name: nix-on-rocks-sm8550-${{ inputs.product }}-image-only-${{ github.run_id }}
           path: |
             work/rocknix/target/ROCKNIX-*SM8550*
             nix-on-rocks-build-manifest.md

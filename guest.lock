@@ -1,9 +1,1 @@
-# Accepted guest rootfs seed for the SM8550 Thor/Bandai device-acceptance branch.
-# The single SM8550 update artifact carries one bootable first-boot seed at a time;
-# Bandai requires the Thor-compatible seed so the initramfs update guard can stage
-# the seed before writing SYSTEM/KERNEL.
-GUEST_DEVICE="thor"
-GUEST_COMPATIBLE="ayn,thor"
-GUEST_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
-GUEST_SEED_SHA256="0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb"
+guest-odin2portal.lock

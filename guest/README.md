@@ -22,7 +22,7 @@ ROCKNIX remains the base OS, boot/recovery plane, and host-side nspawn importer/
 - `packages/steam/` contains guest-native Steam ARM64 bootstrap/seed/launch helpers.
 - `packages/` also contains InputPlumber, Moonlight, and UCM derivations.
 - `launchers/` contains helper scripts used by the Layer 14 Cemu validation path.
-- `scripts/static-checks.sh` is the repo-local structural check suite.
+- `scripts/static-checks.sh` is the packaged compatibility smoke entry point; repo-local source contracts live in `nix/tests/*.nix` and repo-root `scripts/check-*` commands.
 
 ## Flake outputs
 
@@ -98,11 +98,20 @@ Guest modules and launch adapters own device/session policy:
 
 ## Validation
 
-Run local structural checks:
+Run local source and smoke checks from the repo root:
 
 ```sh
-./guest/scripts/static-checks.sh
+nix flake check --no-write-lock-file --print-build-logs
+scripts/check-shell-smoke
+scripts/check-boundary-lint
+scripts/check-docs-contract
 ```
+
+`guest/scripts/static-checks.sh` remains as a compatibility entry point for the
+packaged ROCKNIX substrate and delegates to the split checks when the full repo
+is present. New Nix/build invariants belong in `nix/tests/*.nix`; new shell
+checks should exercise real shell/runtime behavior rather than grepping Nix
+source spelling.
 
 Evaluate and dry-run retained substrate closures:
 

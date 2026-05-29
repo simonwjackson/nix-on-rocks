@@ -8,11 +8,16 @@ guest-owned mutable state and `steam-guest-native` executes that client from the
 guest. Host Steam/FEX fallback, display bridging from host to guest, and
 ROCKNIX-specific session control are intentionally not part of this package.
 
-## Build
+## Build and checks
 
 ```sh
 nix build .#steam --print-build-logs
+nix build .#checks.$(nix eval --raw --impure --expr builtins.currentSystem).steam-package-contract --no-write-lock-file --print-build-logs
+scripts/check-shell-smoke
 ```
+
+The flake check owns built package output/evidence assertions. The shell smoke
+path owns runtime behavior of the helper scripts against fixture directories.
 
 This v1 package does not place Valve Steam client/runtime payloads in the Nix
 store. Those mutable payloads are fetched into caller-provided guest state by

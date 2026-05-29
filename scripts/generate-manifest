@@ -3,17 +3,26 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 out=${1:-"${repo_root}/nix-on-rocks-build-manifest.md"}
 # shellcheck source=../upstream.lock
 # shellcheck disable=SC1091,SC2016
 . "${repo_root}/upstream.lock"
-# shellcheck source=../guest.lock
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091,SC2016
-. "${repo_root}/guest.lock"
+. "${GUEST_LOCK}"
+# shellcheck source=/dev/null
+# shellcheck disable=SC1091,SC2016
+. "${PRODUCT_LOCK}"
 
 patch_hash=$(sha256sum "${repo_root}/patches/rocknix/series" "${repo_root}"/patches/rocknix/*.patch | sha256sum | awk '{print $1}')
+rendered_payload_hash=$("${repo_root}/scripts/render-product-payload" --product "${SELECTED_PRODUCT}" | sha256sum | awk '{print $1}')
 product_sha=$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || echo unknown)
+seed_url_authority=${PRODUCT_ROOTFS_SEED_URL:-${PRODUCT_ROOTFS_SEED_URLS%% *}}
 
 {
   printf '# Nix-on-Rocks SM8550 Build Manifest\n\n'
@@ -22,10 +31,24 @@ product_sha=$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || echo unknown)
   printf -- '- **Upstream SHA:** `%s`\n' "${UPSTREAM_SHA}"
   printf -- '- **Source branch SHA:** `%s`\n' "${SOURCE_BRANCH_SHA:-unknown}"
   printf -- '- **Patch-series hash:** `%s`\n' "${patch_hash}"
+  printf -- '- **Rendered product payload hash:** `%s`\n' "${rendered_payload_hash}"
+  printf -- '- **Product selector:** `%s`\n' "${SELECTED_PRODUCT}"
   printf -- '- **Device:** `SM8550`\n'
   printf -- '- **Accepted compatible:** `%s`\n' "${GUEST_COMPATIBLE}"
   printf -- '- **Guest seed:** `%s`\n' "${GUEST_SEED_ARCHIVE}"
   printf -- '- **Guest seed SHA256:** `%s`\n\n' "${GUEST_SEED_SHA256}"
+  printf '## Product Payload\n\n'
+  printf -- '- **Authority repo:** `%s`\n' "${PRODUCT_AUTHORITY_REPO}"
+  printf -- '- **Product revision:** `%s`\n' "${PRODUCT_REV}"
+  printf -- '- **Product source SHA256:** `%s`\n' "${PRODUCT_SOURCE_SHA256}"
+  printf -- '- **Product source subdir:** `%s`\n' "${PRODUCT_SOURCE_SUBDIR}"
+  printf -- '- **Build target:** `%s`\n' "${PRODUCT_BUILD_TARGET}"
+  printf -- '- **Seed revision:** `%s`\n' "${PRODUCT_ROOTFS_SEED_REV}"
+  printf -- '- **Seed device:** `%s`\n' "${PRODUCT_ROOTFS_SEED_DEVICE}"
+  printf -- '- **Seed compatible:** `%s`\n' "${PRODUCT_ROOTFS_SEED_COMPATIBLE}"
+  printf -- '- **Seed archive:** `%s`\n' "${PRODUCT_ROOTFS_SEED_ARCHIVE}"
+  printf -- '- **Seed SHA256:** `%s`\n' "${PRODUCT_ROOTFS_SEED_SHA256}"
+  printf -- '- **Seed URL authority:** `%s`\n\n' "${seed_url_authority}"
   printf '## Payloads\n\n'
   if [ -d "${work_dir}/target" ]; then
     find "${work_dir}/target" -maxdepth 1 -type f \( -name 'ROCKNIX-*SM8550*' -o -name '*.sha256' \) -print | sort | while IFS= read -r file; do

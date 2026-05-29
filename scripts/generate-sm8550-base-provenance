@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+out=${1:-"${repo_root}/sm8550-base-provenance.env"}
+
+hash_file() {
+  sha256sum "$1" | awk '{print $1}'
+}
+
+hash_stream() {
+  sha256sum | awk '{print $1}'
+}
+
+rendered_payload_hash=$("${repo_root}/scripts/render-product-payload" --product "${SELECTED_PRODUCT}" | hash_stream)
+patch_series_hash=$(sha256sum "${repo_root}/patches/rocknix/series" "${repo_root}"/patches/rocknix/*.patch | hash_stream)
+package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+[ -f "${package_mk}" ] || { echo "missing patched package.mk: ${package_mk}" >&2; exit 1; }
+
+{
+  printf 'SM8550_BASE_PROVENANCE_VERSION=%q\n' "1"
+  printf 'PRODUCT_SELECTOR=%q\n' "${SELECTED_PRODUCT}"
+  printf 'PRODUCT_PAYLOAD_LOCK_SHA256=%q\n' "$(hash_file "${PRODUCT_LOCK}")"
+  printf 'GUEST_LOCK_SHA256=%q\n' "$(hash_file "${GUEST_LOCK}")"
+  printf 'RENDERED_PRODUCT_PAYLOAD_SHA256=%q\n' "${rendered_payload_hash}"
+  printf 'PATCH_SERIES_SHA256=%q\n' "${patch_series_hash}"
+  printf 'UPSTREAM_LOCK_SHA256=%q\n' "$(hash_file "${repo_root}/upstream.lock")"
+  printf 'SUBSTRATE_PACKAGE_MK_SHA256=%q\n' "$(hash_file "${package_mk}")"
+} > "${out}"
+
+printf 'Wrote %s\n' "${out}"

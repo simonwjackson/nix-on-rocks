@@ -1,0 +1,6 @@
+# Accepted guest rootfs seed for the SM8550 Thor product payload image path.
+GUEST_DEVICE="thor"
+GUEST_COMPATIBLE="ayn,thor"
+GUEST_REV="120b8d0d857e6a34c346975a07b6945dd87625c0"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-thor-120b8d0d857e.tar.zst"
+GUEST_SEED_SHA256="7c64da76e49d38629dee7292dcf492ff736c9e957d69483c93ef18f0e4601a65"

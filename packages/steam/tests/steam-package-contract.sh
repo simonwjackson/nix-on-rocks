@@ -52,28 +52,4 @@ expect_missing_env_failure() {
 expect_missing_env_failure steam-guest-runtime-prep STEAM_HOME
 expect_missing_env_failure steam-guest-run STEAM_HOME
 
-if [ -n "${PACKAGE_OUT:-}" ]; then
-  [ -x "$PACKAGE_OUT/bin/steam-arm64-bootstrap" ] || fail "built package missing steam-arm64-bootstrap"
-  [ -x "$PACKAGE_OUT/bin/steam-arm64-seed" ] || fail "built package missing steam-arm64-seed"
-  [ -x "$PACKAGE_OUT/bin/steam-guest-native" ] || fail "built package missing steam-guest-native"
-  [ -x "$PACKAGE_OUT/bin/steam-guest-runtime-prep" ] || fail "built package missing steam-guest-runtime-prep"
-  [ -x "$PACKAGE_OUT/bin/steam-guest-run" ] || fail "built package missing steam-guest-run"
-  grep -q 'steam-runtime-prep-helper=bin/steam-guest-runtime-prep' "$PACKAGE_OUT/nix-support/rocknix-steam-bootstrap/manifest.txt" \
-    || fail "built package evidence missing runtime prep helper"
-  grep -q 'steam-run-capsule=' "$PACKAGE_OUT/nix-support/rocknix-steam-bootstrap/manifest.txt" \
-    || fail "built package evidence missing run capsule entry"
-  if grep -q 'steam-run-capsule=bin/steam-arm64-fhs' "$PACKAGE_OUT/nix-support/rocknix-steam-bootstrap/manifest.txt"; then
-    [ -x "$PACKAGE_OUT/bin/steam-arm64-fhs" ] || fail "aarch64 package evidence claims missing steam-arm64-fhs"
-  fi
-
-  tmp="$(mktemp -d)"
-  trap 'rm -rf "$tmp"' EXIT
-  mkdir -p "$tmp/Steam/steamrtarm64"
-  : > "$tmp/Steam/steamrtarm64/steam"
-  chmod 755 "$tmp/Steam/steamrtarm64/steam"
-  STEAM_HOME="$tmp/Steam" FEX_ROOTFS="$tmp/fex" \
-    "$PACKAGE_OUT/bin/steam-guest-run" --check >/tmp/steam-guest-run-built-check.out
-  [ ! -e "$tmp/Steam/prep-applied" ] || fail "built steam-guest-run --check must not apply mutable prep"
-fi
-
 echo "steam-package-contract: ok"

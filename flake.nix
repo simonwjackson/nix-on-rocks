@@ -106,6 +106,13 @@
         system = targetSystem;
         modules = [ ./guest/profiles/dev-env.nix ];
       };
+      mainSpaceConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/main-space.nix
+          ({ lib, ... }: { networking.hostName = lib.mkForce "rocknix-main-space-contract"; })
+        ];
+      };
       # The rootfs artifact is the production main-space guest: Sway,
       # guest-owned audio/input/display, and guest-native packages. The
       # minimal rocknix-guest configuration remains exposed for evaluation,
@@ -191,56 +198,31 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          static =
-            pkgs.runCommand "nix-on-rocks-guest-static-checks"
-              {
-                nativeBuildInputs = [ pkgs.shellcheck ];
-              }
-              ''
-                cd ${self}
-                ${pkgs.bash}/bin/bash guest/scripts/static-checks.sh
-                touch $out
-              '';
-          steam-package-contract =
-            pkgs.runCommand "rocknix-steam-package-contract"
-              { }
-              ''
-                cd ${self}
-                PACKAGE_OUT=${self.packages.${system}.steam} \
-                  ${pkgs.bash}/bin/bash packages/steam/tests/steam-package-contract.sh
-                touch $out
-              '';
-          guest-input-boundary-contract =
-            let
-              assertContract = condition: message:
-                if condition then message else builtins.throw "guest input boundary contract failed: ${message}";
-              cfg = baseConfiguration.config;
-              devCfg = devEnvConfiguration.config;
-              inputplumber = cfg.systemd.services.inputplumber;
-              wireplumber = cfg.systemd.services.main-space-wireplumber;
-              devWireplumber = devCfg.systemd.services.main-space-wireplumber;
-              contract = builtins.toFile "guest-input-boundary-contract.json" (builtins.toJSON [
-                (assertContract cfg.services.udev.enable "services.udev.enable")
-                (assertContract (builtins.elem "systemd-udev-trigger.service" cfg.systemd.additionalUpstreamSystemUnits) "udev-trigger upstream unit restored")
-                (assertContract cfg.systemd.services.systemd-udevd.enable "systemd-udevd enabled")
-                (assertContract cfg.systemd.services.systemd-udev-trigger.enable "systemd-udev-trigger enabled")
-                (assertContract cfg.systemd.services.systemd-udev-settle.enable "systemd-udev-settle enabled")
-                (assertContract (builtins.length cfg.services.udev.packages > 0) "InputPlumber udev package installed")
-                (assertContract (inputplumber.environment.HIDE_DEVICES_FROM_ROOT or "" == "1") "InputPlumber hides from root")
-                (assertContract (builtins.elem "systemd-udev-settle.service" (inputplumber.after or [ ])) "InputPlumber orders after udev-settle")
-                (assertContract (builtins.elem "L /dev/inputplumber - - - - /dev/input/.inputplumber" cfg.systemd.tmpfiles.rules) "/dev/inputplumber symlink tmpfiles rule")
-                (assertContract (builtins.elem "d /run/udev/rules.d 0755 root root -" cfg.systemd.tmpfiles.rules) "/run/udev/rules.d tmpfiles rule")
-                (assertContract (builtins.elem "systemd-udev-settle.service" (wireplumber.wants or [ ])) "WirePlumber pulls in udev-settle")
-                (assertContract (builtins.elem "systemd-udev-settle.service" (wireplumber.after or [ ])) "WirePlumber orders after udev-settle")
-                (assertContract (builtins.elem "systemd-udev-settle.service" (devWireplumber.wants or [ ])) "dev-env WirePlumber pulls in udev-settle")
-              ]);
-            in
-            pkgs.runCommand "rocknix-guest-input-boundary-contract"
-              { }
-              ''
-                cat ${contract} >/dev/null
-                touch $out
-              '';
+          # Compatibility attr name for callers that used the old monolithic
+          # static check. Keep the flake check surface Nix-owned; shell smoke,
+          # boundary lint, and docs contracts run through named scripts/ steps.
+          static = import ./nix/tests/flake-surface-contract.nix {
+            inherit pkgs self system;
+          };
+          steam-package-contract = import ./nix/tests/steam-package-output-contract.nix {
+            inherit pkgs;
+            steamPackage = self.packages.${system}.steam;
+          };
+          flake-surface-contract = import ./nix/tests/flake-surface-contract.nix {
+            inherit pkgs self system;
+          };
+          guest-input-boundary-contract = import ./nix/tests/guest-input-boundary-contract.nix {
+            inherit pkgs baseConfiguration devEnvConfiguration;
+          };
+          guest-profile-contract = import ./nix/tests/guest-profile-contract.nix {
+            inherit pkgs baseConfiguration devEnvConfiguration;
+          };
+          main-space-systemd-contract = import ./nix/tests/main-space-systemd-contract.nix {
+            inherit pkgs mainSpaceConfiguration devEnvConfiguration;
+          };
+          audio-input-systemd-contract = import ./nix/tests/audio-input-systemd-contract.nix {
+            inherit pkgs baseConfiguration devEnvConfiguration;
+          };
         }
       );
       formatter = forAllHostSystems (system: nixpkgs.legacyPackages.${system}.nixpkgs-fmt);

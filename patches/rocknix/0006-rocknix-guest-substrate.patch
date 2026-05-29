@@ -3,7 +3,7 @@ new file mode 100644
 index 0000000000..51ff27c47f
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -0,0 +1,280 @@
+@@ -0,0 +1,289 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -16,35 +16,40 @@ index 0000000000..51ff27c47f
 +PKG_LONGDESC="rocknix-guest-substrate: SM8550 main-space guest substrate for ROCKNIX"
 +PKG_TOOLCHAIN="manual"
 +
-+# Pinned source of the NixOS main-space guest. The host repo carries
-+# only the substrate plumbing for the guest; the product appliance source lives
-+# in Korri and is fetched from a pinned product commit at build time.
-+# Bump PKG_NIX_GUEST_REV (and the accompanying
-+# SHA256 of the GitHub-rendered tarball) to roll the host to a newer guest
-+# release. The closure layout dropped into /usr/lib/rocknix-guest-substrate/guest/
-+# remains the same; only the product authority source moved to Korri.
-+PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"
-+PKG_NIX_GUEST_AUTHORITY_NAME="${PKG_NIX_GUEST_AUTHORITY_REPO##*/}"
-+PKG_NIX_GUEST_REV="e04962162702a22cb834545e008c7c9c987565b1"
-+PKG_NIX_GUEST_SHA256="c92e75f5cb093cc8dcb85d8052ca6daa0de5f13c6d08e455ad496783356bb701"
-+PKG_NIX_GUEST_URL="https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}"
-+PKG_NIX_GUEST_SOURCE_SUBDIR="."
-+PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"
++# Product/source/seed facts are rendered by nix-on-rocks from
++# product-payload.lock during scripts/apply-rocknix-patches and staged into
++# this package directory. Docker/ROCKNIX builds consume only the package-local
++# env file so the build context is self-contained and never reaches back to the
++# nix-on-rocks repository root.
++PKG_PRODUCT_PAYLOAD_ENV="${PKG_DIR}/product-payload.env"
++if [ ! -r "${PKG_PRODUCT_PAYLOAD_ENV}" ]; then
++  echo "rocknix-guest-substrate: missing staged product payload environment: ${PKG_PRODUCT_PAYLOAD_ENV}" >&2
++  echo "rocknix-guest-substrate: run scripts/apply-rocknix-patches before building" >&2
++  exit 1
++fi
++# shellcheck source=/dev/null
++. "${PKG_PRODUCT_PAYLOAD_ENV}"
 +
-+# Bootable first-boot guest rootfs seed. This is intentionally distinct from
-+# PKG_NIX_GUEST_URL: packaged Korri source can be promoted by a running guest,
-+# but fresh /storage needs a prebuilt bootable rootfs seed before
-+# rocknix-guest.service can start. Until Korri publishes canonical seed assets,
-+# this lock records the archived fallback seed revision and SHA explicitly.
-+# Leave placeholders unset only while developing the substrate; post_install
-+# fails closed until a real URL and SHA256 are provided.
-+PKG_NIX_GUEST_ROOTFS_SEED_REV="d5d00fe4b58822da8ab0a0c21ea4306a92c65c2a"
-+PKG_NIX_GUEST_ROOTFS_SEED_DEVICE="thor"
-+PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE="ayn,thor"
-+PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="rocknix-guest-rootfs-thor-d5d00fe4b588.tar.zst"
-+PKG_NIX_GUEST_ROOTFS_SEED_SHA256="0ff2b8c4bbe400d4f9445c6f4350f126d826fa7321f6f9e11d97f32987c8d9bb"
-+PKG_NIX_GUEST_ROOTFS_SEED_URL=""
-+PKG_NIX_GUEST_ROOTFS_SEED_URLS="https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426703720 https://api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/426704444"
++for required_payload_field in \
++  PKG_NIX_GUEST_AUTHORITY_REPO \
++  PKG_NIX_GUEST_AUTHORITY_NAME \
++  PKG_NIX_GUEST_REV \
++  PKG_NIX_GUEST_SHA256 \
++  PKG_NIX_GUEST_URL \
++  PKG_NIX_GUEST_SOURCE_SUBDIR \
++  PKG_NIX_GUEST_BUILD_TARGET \
++  PKG_NIX_GUEST_ROOTFS_SEED_REV \
++  PKG_NIX_GUEST_ROOTFS_SEED_DEVICE \
++  PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE \
++  PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE \
++  PKG_NIX_GUEST_ROOTFS_SEED_SHA256 \
++  PKG_NIX_GUEST_ROOTFS_SEED_URLS; do
++  eval "required_payload_value=\${${required_payload_field}:-}"
++  if [ -z "${required_payload_value}" ]; then
++    echo "rocknix-guest-substrate: staged product payload field is empty: ${required_payload_field}" >&2
++    exit 1
++  fi
++done
 +
 +github_token() {
 +  printf '%s' "${GITHUB_TOKEN:-${GH_TOKEN:-}}"
@@ -104,6 +109,7 @@ index 0000000000..51ff27c47f
 +  cp ${PKG_DIR}/scripts/rocknix-guest-generation-import ${INSTALL}/usr/bin
 +  cp ${PKG_DIR}/scripts/rocknix-guest-generation-switch ${INSTALL}/usr/bin
 +  cp ${PKG_DIR}/scripts/rocknix-guest-activation-audit ${INSTALL}/usr/bin
++  cp ${PKG_DIR}/scripts/rocknix-post-update ${INSTALL}/usr/bin
 +  chmod 0755 \
 +    ${INSTALL}/usr/bin/nix-on-rock-paths \
 +    ${INSTALL}/usr/bin/nix-on-rock-migrate \
@@ -117,7 +123,8 @@ index 0000000000..51ff27c47f
 +    ${INSTALL}/usr/bin/rocknix-guest-wifi-unblock \
 +    ${INSTALL}/usr/bin/rocknix-guest-generation-import \
 +    ${INSTALL}/usr/bin/rocknix-guest-generation-switch \
-+    ${INSTALL}/usr/bin/rocknix-guest-activation-audit
++    ${INSTALL}/usr/bin/rocknix-guest-activation-audit \
++    ${INSTALL}/usr/bin/rocknix-post-update
 +
 +  # Safety-net release: the guest owns InputPlumber, so mask the old host
 +  # unit while leaving its package files installed for SSH rollback.
@@ -188,6 +195,7 @@ index 0000000000..51ff27c47f
 +  cp -PR "${guest_source}/." "${substrate_lib}/guest/"
 +  printf '%s\n' "${PKG_NIX_GUEST_REV}" > "${substrate_lib}/guest-revision"
 +  printf '%s\n' "${PKG_NIX_GUEST_REV}" > "${substrate_lib}/guest/.rocknix-guest-revision"
++  printf '%s\n' "${PKG_NIX_GUEST_BUILD_TARGET}" > "${substrate_lib}/guest-build-target"
 +
 +  if { [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URL}" ] && [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URLS}" ]; } || \
 +     [ "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" = "REPLACE_WITH_BOOTABLE_ROOTFS_SEED_SHA256" ]; then
@@ -263,6 +271,7 @@ index 0000000000..51ff27c47f
 +  enable_service rocknix-guest-wifi-ready.service
 +  enable_service rocknix-guest-promote.service
 +  enable_service rocknix-recovery-toggle.service
++  enable_service rocknix-post-update.service
 +
 +  # Ship the recovery readme to /flash/. Staged into
 +  # ${PKG_DIR}/contract-docs/ by scripts/apply-rocknix-patches so a
@@ -1204,7 +1213,7 @@ new file mode 100755
 index 0000000000..d741131510
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,275 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -1255,7 +1264,7 @@ index 0000000000..d741131510
 +LEGACY_MANUAL_HOLD_FILE="${ROCKNIX_GUEST_LEGACY_MANUAL_HOLD_FILE:-/storage/.guest/rocknix-guest-manual-generation-hold}"
 +SELECTED_PROFILE_GUEST="${ROCKNIX_GUEST_SYSTEM_PROFILE:-/nix/var/nix/profiles/per-user/root/rocknix-guest-system}"
 +DEVICE_COMPATIBLE_FILE="${ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
-+BUILD_TARGET="${ROCKNIX_GUEST_BUILD_TARGET:-.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel}"
++BUILD_TARGET_FILE="${ROCKNIX_GUEST_BUILD_TARGET_FILE:-/usr/lib/rocknix-guest-substrate/guest-build-target}"
 +LOG_TAG="rocknix-guest-promote"
 +
 +log() {
@@ -1266,6 +1275,15 @@ index 0000000000..d741131510
 +  log "FAIL: $*"
 +  exit 1
 +}
++
++default_build_target() {
++  [ -r "${BUILD_TARGET_FILE}" ] || fail "missing packaged guest build target file: ${BUILD_TARGET_FILE}; set ROCKNIX_GUEST_BUILD_TARGET to override"
++  target=$(sed -n '1p' "${BUILD_TARGET_FILE}" | tr -d '[:space:]')
++  [ -n "${target}" ] || fail "empty packaged guest build target file: ${BUILD_TARGET_FILE}; set ROCKNIX_GUEST_BUILD_TARGET to override"
++  printf '%s' "${target}"
++}
++
++BUILD_TARGET="${ROCKNIX_GUEST_BUILD_TARGET:-$(default_build_target)}"
 +
 +read_first_line() {
 +  file="$1"
@@ -3636,7 +3654,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1426 @@
+@@ -0,0 +1,1485 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3755,13 +3773,21 @@ index 0000000000..b28ce8fdc0
 +[ -f "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" ] || fail "missing runtime smoke test"
 +sh -n "${SCRIPT_DIR}/guest-substrate-runtime-smoke.sh" || fail "runtime smoke syntax failed"
 +
-+# Product authority source is fetched and verified by SHA256.
-+grep -q 'PKG_NIX_GUEST_AUTHORITY_REPO="simonwjackson/korri"' "${PKG_DIR}/package.mk" || fail "package.mk must record Korri as product authority during cutover"
-+grep -q 'PKG_NIX_GUEST_REV=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest rev pin"
-+grep -q 'PKG_NIX_GUEST_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing guest tarball sha256 pin"
-+grep -q 'api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball' "${PKG_DIR}/package.mk" || fail "package.mk missing configurable product tarball URL"
-+grep -q 'PKG_NIX_GUEST_SOURCE_SUBDIR="."' "${PKG_DIR}/package.mk" || fail "package.mk must select Korri flake root from the product tarball"
-+grep -q 'PKG_NIX_GUEST_BUILD_TARGET=".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel"' "${PKG_DIR}/package.mk" || fail "package.mk must pin the Korri by-compatible appliance promotion target"
++# Product authority source is rendered into the staged package-local payload env
++# and fetched/verified by package.mk from those sourced facts.
++payload_env="${PKG_DIR}/product-payload.env"
++[ -f "${payload_env}" ] || fail "missing staged product payload environment: ${payload_env}"
++# shellcheck source=/dev/null
++. "${payload_env}"
++[ "${PKG_NIX_GUEST_AUTHORITY_REPO:-}" = "simonwjackson/korri" ] || fail "staged product payload env must record Korri as product authority during cutover"
++[ -n "${PKG_NIX_GUEST_REV:-}" ] || fail "staged product payload env missing guest rev pin"
++[ -n "${PKG_NIX_GUEST_SHA256:-}" ] || fail "staged product payload env missing guest tarball sha256 pin"
++case "${PKG_NIX_GUEST_URL:-}" in
++  "https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}") : ;;
++  *) fail "staged product payload env missing configurable product tarball URL" ;;
++esac
++grep -q 'PKG_PRODUCT_PAYLOAD_ENV="${PKG_DIR}/product-payload.env"' "${PKG_DIR}/package.mk" || fail "package.mk must source the staged product payload environment"
++grep -q '. "${PKG_PRODUCT_PAYLOAD_ENV}"' "${PKG_DIR}/package.mk" || fail "package.mk must source staged product payload facts"
 +grep -q 'curl_fetch "${guest_tarball}.tmp" "${PKG_NIX_GUEST_URL}"' "${PKG_DIR}/package.mk" || fail "package.mk must use authenticated-capable fetch for product tarball"
 +grep -q 'sha256sum "${guest_tarball}.tmp"' "${PKG_DIR}/package.mk" || fail "package.mk must verify freshly downloaded guest tarball sha256"
 +grep -q 'sha256sum "${guest_tarball}"' "${PKG_DIR}/package.mk" || fail "package.mk must verify cached guest tarball sha256 before extraction"
@@ -3775,10 +3801,10 @@ index 0000000000..b28ce8fdc0
 +grep -q 'contract-docs/layer14-soak-checklist.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship soak checklist from staged contract-docs"
 +grep -q 'contract-docs/HOW-TO-FALL-BACK.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship fallback doc from staged contract-docs"
 +grep -q 'SM8550_MINIMAL_HOST=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document minimal-host fallback mode when enabled"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_URL=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed URL contract"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed SHA256 contract"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed compatible contract"
-+grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed archive filename contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}}" ] || fail "staged product payload env missing bootable rootfs seed URL contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256:-}" ] || fail "staged product payload env missing bootable rootfs seed SHA256 contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE:-}" ] || fail "staged product payload env missing bootable rootfs seed compatible contract"
++[ -n "${PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE:-}" ] || fail "staged product payload env missing bootable rootfs seed archive filename contract"
 +grep -q 'bootable guest rootfs seed URL/SHA256 are not configured' "${PKG_DIR}/package.mk" || fail "package.mk must fail closed while rootfs seed URL/SHA are placeholders"
 +grep -q 'guest-rootfs-seed.manifest' "${PKG_DIR}/package.mk" || fail "package.mk must install a rootfs seed manifest"
 +grep -q 'seed_release_dir="${BUILD}/rocknix-guest-rootfs-seed"' "${PKG_DIR}/package.mk" || fail "package.mk must stage rootfs seed outside SYSTEM for image packaging"
@@ -3959,8 +3985,8 @@ index 0000000000..b28ce8fdc0
 +grep -q 'WantedBy=rocknix-main-space.target' "${promote_unit}" || fail "guest promotion must be wanted by main-space target"
 +grep -q 'TimeoutStartSec=60min' "${promote_unit}" || fail "guest promotion needs a long timeout for Nix builds"
 +grep -q 'nix build' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must build packaged guest configuration"
-+grep -q 'korri-rocknix-kiosk-by-compatible' "${PKG_DIR}/scripts/rocknix-guest-promote" \
-+  || fail "guest promotion must default to Korri's by-compatible appliance dispatch target"
++grep -q 'guest-build-target' "${PKG_DIR}/scripts/rocknix-guest-promote" \
++  || fail "guest promotion must default from the installed product payload build target"
 +grep -q 'ROCKNIX_GUEST_BUILD_TARGET' "${PKG_DIR}/scripts/rocknix-guest-promote" \
 +  || fail "guest promotion must allow product target override for executable promotion proof"
 +grep -q 'refusing retired nix-on-rocks by-compatible product target' "${PKG_DIR}/scripts/rocknix-guest-promote" \
@@ -4023,6 +4049,7 @@ index 0000000000..b28ce8fdc0
 +  nsenter_log="${tmp_dir}/nsenter.log"
 +  systemctl_log="${tmp_dir}/systemctl.log"
 +  compatible_file="${tmp_dir}/compatible"
++  build_target_file="${tmp_dir}/guest-build-target"
 +  mkdir -p \
 +    "${guest_root}/nix/var/nix/profiles/per-user/root" \
 +    "${guest_root}/nix/var/nix/profiles" \
@@ -4036,6 +4063,8 @@ index 0000000000..b28ce8fdc0
 +  chmod 0755 "${guest_root}/nix/store/applied-system/init" "${guest_root}/nix/store/old-system/init"
 +  printf 'rev-a\n' > "${guest_rev}"
 +  printf 'ayn,thor\n' > "${compatible_file}"
++  printf '%s\n' '.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel' > "${build_target_file}"
++  export ROCKNIX_GUEST_BUILD_TARGET_FILE="${build_target_file}"
 +  printf 'rev-a\n' > "${guest_root}/etc/rocknix-guest-revision"
 +  printf '/nix/store/applied-system\n' > "${guest_root}/etc/rocknix-guest-system-path"
 +
@@ -5060,6 +5089,171 @@ index 0000000000..b28ce8fdc0
 +grep -q 'safe_remove ${INSTALL}/usr/lib/systemd/system/systemd-nspawn@.service' "${SYSTEMD_PKG}" || fail "systemd package missing nspawn unit removal fallback"
 +! grep -qE 'enable_service .*nspawn' "${SYSTEMD_PKG}" || fail "systemd package must not enable nspawn services by default"
 +
++# rocknix-post-update.service: Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
++# Recovery boot (rocknix.safe=1 / /flash/rocknix.no-nspawn) keeps the legacy
++# /usr/lib/autostart/common/003-upgrade autostart consumer as the authoritative path.
++check_unit "${PKG_DIR}/system.d/rocknix-post-update.service"
++check_script "${PKG_DIR}/scripts/rocknix-post-update"
++
++post_update_unit="${PKG_DIR}/system.d/rocknix-post-update.service"
++grep -q 'ExecStart=/usr/bin/rocknix-post-update' "${post_update_unit}" \
++  || fail "rocknix-post-update unit has wrong ExecStart"
++grep -q 'ConditionPathExists=/storage/.boot.hint' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must only run when boot.hint is present"
++grep -q 'ConditionKernelCommandLine=!rocknix.safe=1' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must yield to safe-mode recovery"
++grep -q 'ConditionPathExists=!/flash/rocknix.no-nspawn' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must yield to sticky-recovery flag"
++grep -q 'Before=rocknix-guest.service' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must run before the guest service"
++grep -q 'WantedBy=rocknix-main-space.target' "${post_update_unit}" \
++  || fail "rocknix-post-update unit must install under rocknix-main-space.target"
++grep -q 'enable_service rocknix-post-update.service' "${PKG_DIR}/package.mk" \
++  || fail "package.mk must enable rocknix-post-update.service"
++grep -q 'cp ${PKG_DIR}/scripts/rocknix-post-update ${INSTALL}/usr/bin' "${PKG_DIR}/package.mk" \
++  || fail "package.mk must install rocknix-post-update helper"
++[ "$(grep -c rocknix-post-update "${PKG_DIR}/package.mk")" -ge 3 ] \
++  || fail "package.mk must reference rocknix-post-update in cp, chmod, and enable_service"
++
++post_update_script="${PKG_DIR}/scripts/rocknix-post-update"
++grep -q '/storage/.boot.hint' "${post_update_script}" \
++  || fail "rocknix-post-update script must read /storage/.boot.hint"
++grep -q '/usr/share/post-update' "${post_update_script}" \
++  || fail "rocknix-post-update script must call /usr/share/post-update when present"
++grep -q '/var/log/upgrade.log' "${post_update_script}" \
++  || fail "rocknix-post-update script must log to /var/log/upgrade.log"
++grep -q 'exit 0' "${post_update_script}" \
++  || fail "rocknix-post-update script must never block boot with a non-zero exit"
++! grep -q '/usr/lib/autostart/common/003-upgrade' "${post_update_script}" \
++  || fail "rocknix-post-update must not call the legacy autostart consumer"
++
++# The legacy /usr/lib/autostart/common/003-upgrade entry must remain unchanged
++# so recovery boot can still consume the hint via rocknix.target's autostart chain.
++legacy_upgrade_script="${REPO_ROOT}/projects/ROCKNIX/packages/rocknix/autostart/003-upgrade"
++if [ -f "${legacy_upgrade_script}" ]; then
++  grep -q '/storage/.boot.hint' "${legacy_upgrade_script}" \
++    || fail "legacy autostart 003-upgrade entry must still consume /storage/.boot.hint"
++  grep -q '/usr/share/post-update' "${legacy_upgrade_script}" \
++    || fail "legacy autostart 003-upgrade entry must still call /usr/share/post-update"
++fi
++
 +# Old support flags should not be resurrected.
 +! grep -R --exclude='guest-substrate-static-checks.sh' -q 'NIX_INTEGRATION_SUPPORT\|NIX_NSPAWN_SUPPORT\|NIX_DAEMON_SUPPORT\|THIN_HOST' \
 +  "${REPO_ROOT}/projects/ROCKNIX" "${REPO_ROOT}/.github" "${REPO_ROOT}/scripts" || fail "removed support gate still referenced"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-post-update b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-post-update
+new file mode 100755
+index 0000000000..bb9d37719f38067dcbfefa52666a764aafb9723a
+--- /dev/null
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-post-update
+@@ -0,0 +1,75 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++#
++# Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
++#
++# The legacy ROCKNIX autostart consumer for this signal is only reachable
++# from rocknix.target. Layer 14 main-space boot uses rocknix-main-space.target
++# as default.target and does not pull in the autostart chain, so
++# /storage/.boot.hint=UPDATE was never being consumed after a successful
++# update install on the SM8550 NixOS-guest product path.
++#
++# This helper mirrors the same posture as the legacy consumer for the
++# main-space target only:
++#   - read /storage/.boot.hint
++#   - if it is exactly UPDATE, run /usr/share/post-update if present and
++#     append output to /var/log/upgrade.log
++#   - remove the hint on success or after a logged hook failure
++#   - never exit non-zero: boot must not be blocked by post-update work
++#
++# Recovery boot (rocknix.safe=1 or /flash/rocknix.no-nspawn) is routed by
++# libreelec-target-generator to rocknix.target; the legacy autostart entry
++# remains the authoritative consumer there and is not touched by this helper.
++
++set -u
++
++LOG_TAG="rocknix-post-update"
++HINT_FILE="/storage/.boot.hint"
++HOOK_SCRIPT="/usr/share/post-update"
++LOG_FILE="/var/log/upgrade.log"
++
++log() {
++  printf '%s: %s\n' "${LOG_TAG}" "$*"
++}
++
++log_journal_and_file() {
++  message="$*"
++  log "${message}"
++  if [ -w "$(dirname "${LOG_FILE}")" ] || [ -w "${LOG_FILE}" ]; then
++    printf '%s: %s\n' "${LOG_TAG}" "${message}" >> "${LOG_FILE}" 2>/dev/null || true
++  fi
++}
++
++# No hint: nothing to consume. The unit also has ConditionPathExists for
++# this case, so we should normally not be reached, but be a safe no-op.
++if [ ! -f "${HINT_FILE}" ]; then
++  log "no boot hint present, nothing to do"
++  exit 0
++fi
++
++# Read at most a small amount; the hint file is a single token.
++hint_content="$(head -c 4096 "${HINT_FILE}" 2>/dev/null || true)"
++hint_trimmed="$(printf '%s' "${hint_content}" | tr -d ' \t\r\n')"
++
++if [ "${hint_trimmed}" != "UPDATE" ]; then
++  log_journal_and_file "skipping: unexpected hint content (left in place)"
++  exit 0
++fi
++
++log_journal_and_file "consuming UPDATE hint on main-space boot"
++
++if [ -x "${HOOK_SCRIPT}" ] || [ -f "${HOOK_SCRIPT}" ]; then
++  if ! "${HOOK_SCRIPT}" >> "${LOG_FILE}" 2>&1; then
++    log_journal_and_file "post-update hook exited non-zero (continuing)"
++  fi
++else
++  log_journal_and_file "post-update hook missing (${HOOK_SCRIPT})"
++fi
++
++if ! rm -f "${HINT_FILE}"; then
++  log_journal_and_file "failed to remove ${HINT_FILE} (continuing)"
++fi
++
++# Never exit non-zero: boot must not be blocked.
++exit 0
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-post-update.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-post-update.service
+new file mode 100644
+index 0000000000..bc6c6a2a3bb3616682f2bc20dd0ebc308afe2767
+--- /dev/null
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-post-update.service
+@@ -0,0 +1,30 @@
++# SPDX-License-Identifier: GPL-2.0
++# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
++#
++# Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
++#
++# Reachable only from rocknix-main-space.target. Recovery boot routes to
++# rocknix.target where the legacy autostart entry
++# /usr/lib/autostart/common/003-upgrade owns the same signal and is left
++# unchanged by this unit.
++
++[Unit]
++Description=ROCKNIX post-update hint consumer (main-space boot)
++Documentation=file:///usr/lib/rocknix-guest-substrate/docs/layer14-main-space-contract.md
++RequiresMountsFor=/storage
++After=local-fs.target
++Before=rocknix-guest.service
++ConditionPathExists=/storage/.boot.hint
++ConditionKernelCommandLine=!rocknix.safe=1
++ConditionPathExists=!/flash/rocknix.no-nspawn
++
++[Service]
++Type=oneshot
++RemainAfterExit=yes
++ExecStart=/usr/bin/rocknix-post-update
++TimeoutStartSec=2min
++StandardOutput=journal
++StandardError=journal
++
++[Install]
++WantedBy=rocknix-main-space.target

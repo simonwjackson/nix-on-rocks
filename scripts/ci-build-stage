@@ -2,9 +2,15 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
-work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
 stage=${1:?"usage: ci-build-stage <toolchain|base|image>"}
+shift
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
+export NIX_ON_ROCKS_PRODUCT=${SELECTED_PRODUCT}
 
 export JAVA_HOME=${JAVA_HOME:-/usr}
 export PROJECT=${PROJECT:-ROCKNIX}
@@ -53,88 +59,11 @@ run_in_container() {
 }
 
 verify_sm8550_payloads() {
-  cd "${work_dir}"
-
-  local budget_mib
-  budget_mib=$(sed -n \
-    -e 's/.*SM8550_FLASH_PARTITION_BUDGET_MIB:-\([0-9][0-9]*\).*/\1/p' \
-    -e 's/^[[:space:]]*SM8550_FLASH_PARTITION_BUDGET_MIB="\{0,1\}\([0-9][0-9]*\).*/\1/p' \
-    projects/ROCKNIX/devices/SM8550/options | head -1)
-  if [ -z "${budget_mib}" ]; then
-    echo "unable to parse SM8550_FLASH_PARTITION_BUDGET_MIB" >&2
-    exit 1
+  local args=()
+  if [ "${NIX_ON_ROCKS_REQUIRE_FULL_IMAGE:-no}" = "yes" ]; then
+    args+=(--require-full-image)
   fi
-
-  local update_tars update_tar_count update_tar
-  update_tars=$(find target -maxdepth 1 -name 'ROCKNIX-*.tar' | sort)
-  update_tar_count=$(printf '%s\n' "${update_tars}" | sed '/^$/d' | wc -l | tr -d ' ')
-  if [ "${update_tar_count}" -ne 1 ]; then
-    echo "expected exactly one SM8550 update tar, found ${update_tar_count}" >&2
-    exit 1
-  fi
-  update_tar=${update_tars}
-
-  local tar_listing tar_verbose_listing
-  tar_listing=$(mktemp)
-  tar_verbose_listing=$(mktemp)
-  trap 'rm -f "${tar_listing}" "${tar_verbose_listing}"' RETURN
-  tar -tf "${update_tar}" > "${tar_listing}"
-  tar -tvf "${update_tar}" > "${tar_verbose_listing}"
-
-  local system_bytes budget_bytes
-  system_bytes=$(awk '$NF ~ /(^|\/)target\/SYSTEM$/ { print $3; exit }' "${tar_verbose_listing}")
-  if [ -z "${system_bytes}" ]; then
-    echo "${update_tar} does not contain target/SYSTEM" >&2
-    exit 1
-  fi
-  budget_bytes=$((budget_mib * 1024 * 1024))
-  if [ "${system_bytes}" -gt "${budget_bytes}" ]; then
-    echo "${update_tar} target/SYSTEM exceeds SM8550 SYSTEM budget: ${system_bytes} > ${budget_bytes}" >&2
-    exit 1
-  fi
-
-  local expected_seed expected_seed_sha seed_entry actual_seed_sha
-  expected_seed=$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')
-  expected_seed_sha=$(sed -n 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256="\{0,1\}\([^" ]*\)"\{0,1\}$/\1/p' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk | sed -n '1p')
-  if [ -z "${expected_seed}" ] || [ -z "${expected_seed_sha}" ]; then
-    echo "unable to parse expected SM8550 guest seed archive/SHA256" >&2
-    exit 1
-  fi
-  seed_entry=$(awk -v want="target/seed/${expected_seed}" '{ suffix="/" want; if ($0 == want || (length($0) >= length(suffix) && substr($0, length($0) - length(suffix) + 1) == suffix)) { print; exit } }' "${tar_listing}")
-  if [ -z "${seed_entry}" ]; then
-    echo "${update_tar} missing expected SM8550 guest seed payload: target/seed/${expected_seed}" >&2
-    exit 1
-  fi
-  actual_seed_sha=$(python3 - "${update_tar}" "${seed_entry}" <<'PY'
-import hashlib
-import sys
-import tarfile
-
-tar_path, member_name = sys.argv[1:3]
-h = hashlib.sha256()
-with tarfile.open(tar_path, "r:") as archive:
-    member = archive.getmember(member_name)
-    stream = archive.extractfile(member)
-    if stream is None:
-        raise SystemExit(f"unable to extract {member_name}")
-    for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-        h.update(chunk)
-print(h.hexdigest())
-PY
-)
-  if [ "${actual_seed_sha}" != "${expected_seed_sha}" ]; then
-    echo "${update_tar}:${seed_entry} SHA256 mismatch: ${actual_seed_sha} != ${expected_seed_sha}" >&2
-    exit 1
-  fi
-
-  grep -Eq '(^|/)target/SYSTEM$' "${tar_listing}"
-  for image_file in target/ROCKNIX-*.img.gz; do
-    gzip -t "${image_file}"
-  done
-  for checksum in target/ROCKNIX-*.img.gz.sha256 target/ROCKNIX-*.tar.sha256; do
-    [ -f "${checksum}" ] || continue
-    (cd target && sha256sum -c "$(basename "${checksum}")")
-  done
+  "${repo_root}/scripts/verify-sm8550-payloads" --product "${SELECTED_PRODUCT}" "${args[@]}" "${work_dir}/target"
 }
 
 case "${stage}" in
@@ -168,11 +97,11 @@ case "${stage}" in
     export OFFICIAL=${OFFICIAL:-no}
     run_in_container './scripts/build_distro'
     verify_sm8550_payloads
-    "${repo_root}/scripts/generate-manifest"
+    "${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
     ;;
   manifest)
     verify_sm8550_payloads
-    "${repo_root}/scripts/generate-manifest"
+    "${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
     ;;
   *)
     echo "unknown stage: ${stage}" >&2

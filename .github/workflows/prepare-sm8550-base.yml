@@ -14,6 +14,9 @@ permissions:
   actions: read
   packages: write
 
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 jobs:
   context:
     runs-on: ubuntu-24.04
@@ -38,6 +41,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -81,6 +85,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Download aarch64 toolchain
         uses: actions/download-artifact@v8
@@ -112,6 +117,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
         run: scripts/ci-build-stage base
+
+      - name: Generate base provenance
+        run: scripts/generate-sm8550-base-provenance sm8550-base-provenance.env
 
       - name: Archive base logs
         if: failure()
@@ -149,4 +157,11 @@ jobs:
           name: aarch64 build (SM8550)
           path: work/rocknix/build.build.aarch64.tar.zst
           compression-level: 0
+          if-no-files-found: error
+
+      - name: Upload base provenance
+        uses: actions/upload-artifact@v7
+        with:
+          name: sm8550-base-provenance
+          path: sm8550-base-provenance.env
           if-no-files-found: error

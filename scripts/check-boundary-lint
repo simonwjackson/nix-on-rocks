@@ -1,0 +1,126 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+guest_root="$repo_root/guest"
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+[ -f "$repo_root/flake.nix" ] || fail "missing flake.nix"
+[ -f "$repo_root/product-payload.lock" ] || fail "missing generic product payload lock"
+[ -x "$repo_root/scripts/render-product-payload" ] || fail "missing executable product payload renderer"
+[ -x "$repo_root/scripts/verify-product-payload" ] || fail "missing executable product payload verifier"
+[ -x "$repo_root/scripts/tests/product-payload-contract.sh" ] || fail "missing executable product payload contract test"
+
+! grep -q 'korri.url' "$repo_root/flake.nix" \
+  || fail "nix-on-rocks flake must not keep Korri as an input"
+! grep -q 'korri.nixosModules\|korri.packages\|services.korri' "$repo_root/flake.nix" \
+  || fail "nix-on-rocks flake must not compose Korri product modules or packages"
+! grep -q 'KORRI_INPUT' "$guest_root/justfile" "$guest_root/README.md" \
+  || fail "local Korri override workflow must be removed from nix-on-rocks"
+! grep -R 'services\.korri\.nativeBridgeUrl\|nativeBridgeUrl = ' \
+  "$repo_root/flake.nix" "$guest_root/profiles" "$guest_root/modules" "$guest_root/README.md" \
+  || fail "ROCKNIX substrate must not own Korri nativeBridgeUrl configuration"
+! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$guest_root/profiles/rocknix-guest-base.nix" \
+  || fail "rocknix-guest-base must not write or import Korri product surfaces"
+! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$guest_root/profiles/main-space.nix" \
+  || fail "main-space fallback profile must not compose Korri product surfaces"
+! grep -q 'mainSpaceByCompatibleConfiguration\|mainSpaceConfigurationFor selectDeviceProfileFromCompatible' "$repo_root/flake.nix" \
+  || fail "flake must not restore retired by-compatible product configuration"
+! grep -q '"rootfs-odin2portal"\|"rootfs-thor"\|rootfs = rootfsThor' "$repo_root/flake.nix" \
+  || fail "flake must not restore product rootfs aliases"
+old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
+! grep -R "github:simonwjackson/$old_package_repo\|nix.registry.$old_package_repo\|$old_package_repo.packages" \
+  "$repo_root/flake.nix" "$repo_root/flake.lock" "$guest_root/README.md" "$guest_root/launchers" \
+  || fail "guest repo must not depend on the former external package flake"
+
+! grep -qE 'systemd\.tmpfiles\.rules.*"d /run/user' "$guest_root/modules/session.nix" "$guest_root/profiles/rocknix-guest-base.nix" \
+  || fail "runtime-dir ownership must stay with logind/user-runtime-dir, not tmpfiles"
+! grep -qE 'KillUserProcesses|RemoveIPC' "$guest_root"/modules/*.nix "$guest_root"/profiles/*.nix \
+  || fail "runtime-dir fix must not introduce KillUserProcesses/RemoveIPC logind knobs"
+! grep -qE 'ExecStartPre.*install -d.*/run/user/0' \
+  "$guest_root/profiles/rocknix-guest-base.nix" "$guest_root/modules/audio.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
+  || fail "main-space consumers must not create /run/user/0 with ad-hoc ExecStartPre"
+! grep -qE '^[[:space:]]+XDG_RUNTIME_DIR = "/run/user/0";' \
+  "$guest_root/modules/audio.nix" "$guest_root/modules/lid.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
+  || fail "service environment blocks must parameterize XDG_RUNTIME_DIR"
+! grep -qE '^[[:space:]]+PULSE_SERVER = "unix:/run/user/0/' "$guest_root/modules/audio.nix" "$guest_root/modules/lid.nix" \
+  || fail "audio/lid PULSE_SERVER must parameterize /run/user/<uid>"
+! grep -q 'mknod /dev/uinput c 10 223' "$guest_root/modules/steam.nix" \
+  || fail "Steam uinput prep must not hardcode the live Thor uinput device number"
+! grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$guest_root/modules/steam.nix" \
+  || fail "Steam module must not own pressure-vessel input exposure after runtime capsule refactor"
+! grep -q 'rocknix-steam-prepare-runtime' "$guest_root/modules/steam.nix" \
+  || fail "Steam module must not embed runtime prep implementation"
+! grep -q 'buildFHSEnv' "$guest_root/modules/steam.nix" \
+  || fail "Steam module must not own the FHS Steam run capsule"
+! grep -q 'korri-desktop-device' "$guest_root/profiles/main-space.nix" \
+  || fail "main-space fallback profile must not bind Korri launch"
+! grep -R 'systemctl\|swaymsg\|FEXRootFSFetcher\|gamescope\|/storage' \
+  "$repo_root/packages/steam/package.nix" "$repo_root/packages/steam/scripts" \
+  || fail "Steam package executable logic must not own host/session/storage policy"
+if grep -R -nE '\b(systemctl|swaymsg|gamescope)\b|services\.korri|korri\.' "$repo_root/packages/steam/scripts"; then
+  fail "Steam package scripts must not own system/session/product orchestration"
+fi
+if grep -R -n '/storage' "$repo_root/packages/steam/scripts"; then
+  fail "Steam package scripts must not hardcode guest /storage defaults"
+fi
+
+manifest="$repo_root/packages/steam/manifest.nix"
+grep -q 'steam-guest-runtime-prep' "$manifest" \
+  || fail "Steam manifest must list steam-guest-runtime-prep in the package contract"
+grep -q 'steam-guest-run' "$manifest" \
+  || fail "Steam manifest must list steam-guest-run in the package contract"
+
+# Rootfs packaging helper source-policy guardrails. A fuller package-output
+# rootfs inspection check can replace these when it is cheap enough for CI.
+grep -q 'root/etc/ssh/authorized_keys.d/root' "$repo_root/flake.nix" \
+  || fail "rootfs packaging must provide regular authorized_keys target for StrictModes"
+grep -q 'root/usr/bin/nix' "$repo_root/flake.nix" \
+  || fail "rootfs packaging must expose /usr/bin/nix for bridge/smoke contracts"
+
+# Launcher source-boundary contracts that are not represented by evaluated
+# NixOS config: the launchers compose runtime policy and must retain their
+# handoff seams.
+grep -q 'SYSTEM_CEMU=' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must default through the main-space system Cemu package"
+grep -q 'PROMOTED_CEMU=' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must retain promoted Cemu fallback"
+grep -q 'REQUESTED_CEMU=${CEMU_BIN:-$SYSTEM_CEMU}' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must preserve CEMU_BIN override over system Cemu"
+! grep -q 'CEMU_VULKAN_LOADER_LIB_PATH\|LD_LIBRARY_PATH' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must not own Vulkan loader setup"
+grep -q 'cemu-storage-adapter.sh' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must delegate Cemu /storage layout to cemu-storage-adapter.sh"
+grep -q 'bootstrap_session_portals' "$guest_root/launchers/start_cemu_guest.sh" \
+  || fail "start_cemu_guest.sh must prewarm session portals before wxGTK startup"
+grep -q 'quote_for_sway_exec' "$guest_root/launchers/botw-guest.sh" \
+  || fail "botw-guest.sh must quote values passed through swaymsg exec"
+! grep -q 'P3_MAX=\|GPU_MIN=\|taskset -p' "$guest_root/launchers/botw-guest.sh" \
+  || fail "botw-guest.sh must not own CPU/GPU/affinity policy directly"
+for cemu_remote in remote-cemu-build-fingerprint.sh remote-cemu-cleanup.sh remote-cemu-runner.sh remote-cemu-runtime-ab.sh remote-cemu-promote.sh; do
+  grep -q 'GUEST_SERVICE="${ROCKNIX_GUEST_SERVICE:-rocknix-guest.service}"' "$guest_root/launchers/$cemu_remote" \
+    || fail "$cemu_remote must default to current rocknix-guest.service with override"
+done
+grep -q 'cubeb-backend-evidence.txt' "$guest_root/launchers/remote-cemu-build-fingerprint.sh" \
+  || fail "Cemu build fingerprint must report Cubeb backend evidence"
+
+# Cemu package source-boundary guardrails retained until the package-output
+# characterization check is split into an explicit non-default package lane.
+grep -F -q 'exec "\$cemu_wrapper_dir/Cemu"' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must exec real Cemu binary"
+grep -q 'vulkan_loader_lib_path=' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must own Vulkan loader path"
+grep -q 'audio_backend_lib_path=' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must expose Pulse/ALSA backend library path"
+grep -q 'USE_PULSE' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must gate on bundled Cubeb Pulse backend evidence"
+grep -q 'USE_ALSA' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must gate on bundled Cubeb ALSA backend evidence"
+grep -q 'cubeb-backend-evidence.txt' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must persist Cubeb backend evidence"
+grep -q 'cubeb-backend-strings.txt' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package must persist Cubeb runtime string evidence"
+grep -q 'SDL_VIDEO_ALLOW_SCREENSAVER' "$repo_root/packages/cemu/package.nix" \
+  || fail "Cemu package wrapper must own SDL screensaver guard"
+
+echo "check-boundary-lint: ok"

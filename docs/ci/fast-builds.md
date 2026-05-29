@@ -31,10 +31,16 @@ Known-good toolchain source:
 
 - run `26037562850`
 
-Latest accepted Phase 5 checkpoints:
+Latest accepted Phase 4 full-build release-path checkpoints (Sobo / Odin2Portal):
+
+- full-build run `26539625977` rebuilt Docker image, toolchain, base, and SM8550 image end-to-end on product SHA `ea83650`, producing the artifact installed on sobo.
+- continue-from-toolchain confidence run `26534216483` proved base+image on the same product SHA before paying for the full build.
+- Acceptance evidence: `docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md`.
+
+Prior accepted Phase 5 image-only checkpoints (retained as historical evidence, not the current acceptance anchor):
 
 - prepare-base run `26148449934` rebuilt reusable SM8550 base artifacts from toolchain run `26037562850`.
-- image-only run `26152901081` consumed base run `26148449934`, verified payloads, and produced the update installed on `sobo`.
+- image-only run `26152901081` consumed base run `26148449934`, verified payloads, and produced the earlier update installed on `sobo`.
 
 ### Prepare base artifacts
 
@@ -44,7 +50,7 @@ Input:
 
 - `toolchain_run_id`: a previous run that uploaded `aarch64-toolchain (SM8550)`; defaults to `26037562850`.
 
-This builds the SM8550 base from an existing toolchain and uploads reusable `aarch64 (SM8550)` and `aarch64 build (SM8550)` artifacts. Use it to create a base checkpoint for the image-only lane without running the full toolchain workflow again.
+This builds the SM8550 base from an existing toolchain and uploads reusable `aarch64 (SM8550)`, `aarch64 build (SM8550)`, and `sm8550-base-provenance` artifacts. Use it to create a base checkpoint for the image-only lane without running the full toolchain workflow again.
 
 ### Image only
 
@@ -52,13 +58,14 @@ Workflow: `.github/workflows/build-image-only.yml`
 
 Input:
 
-- `base_run_id`: a previous full-build or prepare-base run that uploaded both `aarch64 (SM8550)` and `aarch64 build (SM8550)`.
+- `base_run_id`: a previous full-build or prepare-base run that uploaded `aarch64 (SM8550)`, `aarch64 build (SM8550)`, and `sm8550-base-provenance`.
+- `packaging_only_accept_stale_base`: deliberately named override for later packaging-only work. Leave this `false` for the first active product-payload cutover.
 
 This is the fastest lane for packaging-only changes: manifest verification, update tar/image packaging checks, seed layout checks, docs-adjacent CI guardrails, and other changes that should not require rebuilding the SM8550 base. It downloads the base/build artifacts, reruns the image/update packaging stage, generates a manifest, verifies payload integrity, and uploads `nix-on-rocks-sm8550-image-only-<run_id>`.
 
-Do not use image-only for changes that alter packages, toolchain, kernel, guest source, `product-payload.lock`, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only instead.
+Do not use image-only for changes that alter packages, toolchain, kernel, guest source, `product-payload.lock`, rootfs seed pins, or host substrate scripts that must be rebuilt into `SYSTEM`; use continue-from-toolchain or prepare-base followed by image-only from that fresh base instead. `build-image-only.yml` compares the downloaded `sm8550-base-provenance` artifact against the current checkout before Docker work and fails closed on product payload, lock, patch-series, upstream, or substrate package drift unless the packaging-only override is explicitly set.
 
-Current accepted image-only proof:
+Current accepted image-only proof (historical Phase 5 reference; the active release-path anchor is the Phase 4 full-build run above):
 
 - base run: `26148449934`
 - image-only run: `26152901081`
@@ -71,9 +78,11 @@ If the product tarball fetch mode changes (for example private/authenticated API
 
 ## Cheap product-payload contract verification
 
-`product-payload.lock` is a Phase 1 characterization seam, not an active image-build input. It describes the current locked Korri product source, promotion target, and rootfs seed with sourceable `PRODUCT_*` shell assignments. `scripts/render-product-payload` maps those fields to the current `PKG_NIX_GUEST_*` package variables, and `scripts/verify-product-payload` compares the rendered values to the patched ROCKNIX `package.mk` after `scripts/apply-rocknix-patches`.
+`product-payload.lock` is now the active product payload source for SM8550 image builds. It describes the locked Korri product source, promotion target, and rootfs seed with sourceable `PRODUCT_*` shell assignments. `scripts/render-product-payload` maps those fields to `PKG_NIX_GUEST_*`; `scripts/apply-rocknix-patches` stages that rendered env into the patched `rocknix-guest-substrate` package as `product-payload.env`; and `package.mk` consumes only that package-local env inside Docker/ROCKNIX.
 
-Phase 1 validation is intentionally cheap: patch application, `scripts/verify-sm8550-contract`, `scripts/verify-sm8550-locks`, `scripts/verify-product-payload`, shell syntax checks, and `guest/scripts/static-checks.sh`. Do not dispatch full/image-only SM8550 workflows just to prove the generic mirror; later phases own image-build validation after the generic seam becomes a build input.
+Offline validation remains cheap: patch application, `scripts/verify-sm8550-contract`, `scripts/verify-sm8550-locks`, `scripts/verify-product-payload`, `scripts/tests/product-payload-contract.sh`, `nix flake check --no-write-lock-file --print-build-logs`, `scripts/check-shell-smoke`, `scripts/check-boundary-lint`, and `scripts/check-docs-contract`. Image-producing lanes additionally run `scripts/verify-product-payload-fetches` before long Docker stages so source tarball and rootfs seed bytes fail fast when URLs, credentials, or hashes drift.
+
+Check ownership is split by where the truth lives. `nix/tests/*.nix` covers flake outputs, package attributes, NixOS module evaluation, generated systemd/tmpfiles config, and package-output contracts. Shell smoke covers real shell/runtime behavior and mutable artifacts. Source-policy and safety-doc assertions live in named lint/docs commands instead of the guest smoke path.
 
 `work/rocknix` is generated scratch state. Direct edits there are not durable; update this repo's lock files and patch queue instead.
 
@@ -101,8 +110,9 @@ Saving is best-effort and writes to this repo's `ccache` release tag using `GITH
 
 Preflight and build lanes now run explicit lock/payload checks:
 
-- `scripts/verify-sm8550-locks` confirms `guest.lock` and patched `package.mk` agree on guest rev, device, compatible string, seed archive, SHA256, and authenticated Nix-on-Rocks fetch URLs.
-- `scripts/verify-product-payload` confirms `product-payload.lock` renders to every current top-level `PKG_NIX_GUEST_*` assignment in patched `package.mk`, including derived authority/name URL values, the blank single seed URL, and the ordered split seed URL list.
-- `scripts/verify-sm8550-payloads` confirms the produced update tar carries `target/SYSTEM`, `target/KERNEL`, the expected `target/seed/<archive>`, matching seed SHA256, valid `.sha256` files, gzip integrity, and manifest seed records.
+- `scripts/verify-sm8550-locks` confirms `guest.lock` and patched `package.mk` agree on guest rev, device, compatible string, seed archive, SHA256, and authenticated release asset URLs.
+- `scripts/verify-product-payload` confirms `product-payload.lock`, renderer output, staged package env, and package-visible `PKG_NIX_GUEST_*` values agree, and fails if `package.mk` reintroduces independent payload assignments.
+- `scripts/verify-product-payload-fetches` confirms product source tarball bytes and rootfs seed bytes hash to the active payload lock before expensive Docker work.
+- `scripts/verify-sm8550-payloads` confirms the produced update tar carries `target/SYSTEM`, `target/KERNEL`, the expected `target/seed/<archive>`, matching seed SHA256, valid `.sha256` files, gzip integrity, manifest product/seed records, and SM8550 FAT geometry when full-image artifacts are present.
 
 These checks are intentionally separate from the ROCKNIX build so artifacts downloaded after CI can be reverified locally before device install.

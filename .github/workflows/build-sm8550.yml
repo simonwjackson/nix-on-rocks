@@ -2,10 +2,23 @@ name: Build SM8550
 
 on:
   workflow_dispatch:
+    inputs:
+      product:
+        description: "Product payload lock to consume"
+        required: true
+        type: choice
+        default: odin2portal
+        options:
+          - odin2portal
+          - thor
 
 permissions:
   contents: write
   packages: write
+
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NIX_ON_ROCKS_PRODUCT: ${{ inputs.product }}
 
 jobs:
   context:
@@ -31,6 +44,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Login to GHCR
         uses: docker/login-action@v4
@@ -74,6 +88,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Restore toolchain ccache
         run: scripts/restore-ccache toolchain
@@ -147,6 +162,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Download aarch64 toolchain
         uses: actions/download-artifact@v8
@@ -175,6 +191,9 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
         run: scripts/ci-build-stage base
+
+      - name: Generate base provenance
+        run: scripts/generate-sm8550-base-provenance sm8550-base-provenance.env
 
       - name: Archive base logs
         if: failure()
@@ -214,6 +233,13 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+      - name: Upload base provenance
+        uses: actions/upload-artifact@v7
+        with:
+          name: sm8550-base-provenance
+          path: sm8550-base-provenance.env
+          if-no-files-found: error
+
   build-image:
     needs:
       - context
@@ -241,6 +267,7 @@ jobs:
           scripts/verify-sm8550-contract
           scripts/verify-sm8550-locks
           scripts/verify-product-payload
+          scripts/verify-product-payload-fetches
 
       - name: Download aarch64 base
         uses: actions/download-artifact@v8
@@ -277,10 +304,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
+          NIX_ON_ROCKS_REQUIRE_FULL_IMAGE: yes
         run: scripts/ci-build-stage image
 
       - name: Verify SM8550 payloads
-        run: scripts/verify-sm8550-payloads
+        run: scripts/verify-sm8550-payloads --require-full-image
 
       - name: Archive image logs
         if: failure()
@@ -294,7 +322,7 @@ jobs:
       - name: Upload SM8550 payloads
         uses: actions/upload-artifact@v7
         with:
-          name: nix-on-rocks-sm8550-${{ github.run_id }}
+          name: nix-on-rocks-sm8550-${{ inputs.product }}-${{ github.run_id }}
           path: |
             work/rocknix/target/ROCKNIX-*SM8550*
             nix-on-rocks-build-manifest.md

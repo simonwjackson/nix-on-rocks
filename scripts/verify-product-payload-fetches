@@ -1,0 +1,145 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+renderer="${repo_root}/scripts/render-product-payload"
+payload_env=""
+product_args=()
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+usage() {
+  cat >&2 <<'EOF'
+usage: verify-product-payload-fetches [--product id] [--payload-env path]
+
+Fetches the active product source tarball and rootfs seed asset bytes, then
+verifies their SHA256 values against the rendered product payload environment.
+This is a network-capable image-build gate; do not use a skipped/offline run as
+approval for Docker work.
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --payload-env)
+      [ "$#" -ge 2 ] || fail "--payload-env requires a path"
+      payload_env=$2
+      shift 2
+      ;;
+    --product)
+      [ "$#" -ge 2 ] || fail "--product requires a value"
+      product_args+=("$1" "$2")
+      shift 2
+      ;;
+    --product=*)
+      product_args+=("$1")
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      usage
+      fail "unknown argument: $1"
+      ;;
+  esac
+done
+
+[ -x "${renderer}" ] || fail "missing executable ${renderer}"
+cleanup_files=()
+cleanup() {
+  local path
+  for path in "${cleanup_files[@]}"; do
+    rm -f "${path}"
+  done
+}
+trap cleanup EXIT
+
+if [ -z "${payload_env}" ]; then
+  select_product_locks "${repo_root}" "${product_args[@]}"
+  payload_env=$(mktemp)
+  cleanup_files+=("${payload_env}")
+  "${renderer}" --product "${SELECTED_PRODUCT}" > "${payload_env}"
+fi
+[ -f "${payload_env}" ] || fail "missing payload env: ${payload_env}"
+
+# shellcheck source=/dev/null
+. "${payload_env}"
+
+require_nonempty() {
+  local name=$1
+  local value=$2
+  [ -n "${value}" ] || fail "${name} must not be empty"
+}
+
+require_nonempty PKG_NIX_GUEST_URL "${PKG_NIX_GUEST_URL:-}"
+require_nonempty PKG_NIX_GUEST_SHA256 "${PKG_NIX_GUEST_SHA256:-}"
+require_nonempty PKG_NIX_GUEST_ROOTFS_SEED_SHA256 "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256:-}"
+if [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}" ] && [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" ]; then
+  fail "PKG_NIX_GUEST_ROOTFS_SEED_URL or PKG_NIX_GUEST_ROOTFS_SEED_URLS must not be empty"
+fi
+
+fetch_url() {
+  local url=$1
+  local token=${GITHUB_TOKEN:-${GH_TOKEN:-}}
+  case "${url}" in
+    file://*)
+      curl --fail --silent --show-error --location --output - "${url}"
+      ;;
+    https://api.github.com/repos/*/releases/assets/*)
+      if [ -n "${token}" ]; then
+        curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+          -H "Authorization: Bearer ${token}" \
+          -H "Accept: application/octet-stream" \
+          --output - "${url}"
+      else
+        curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+          -H "Accept: application/octet-stream" \
+          --output - "${url}"
+      fi
+      ;;
+    *)
+      if [ -n "${token}" ]; then
+        curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+          -H "Authorization: Bearer ${token}" \
+          --output - "${url}"
+      else
+        curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+          --output - "${url}"
+      fi
+      ;;
+  esac
+}
+
+verify_fetch_hash() {
+  local label=$1
+  local expected_sha=$2
+  shift 2
+  local tmp
+  tmp=$(mktemp)
+  cleanup_files+=("${tmp}")
+  : > "${tmp}"
+
+  local url
+  for url in "$@"; do
+    [ -n "${url}" ] || continue
+    if ! fetch_url "${url}" >> "${tmp}"; then
+      fail "unable to fetch ${label} bytes from ${url}; check URL and GitHub token/access"
+    fi
+  done
+
+  local actual_sha
+  actual_sha=$(sha256sum "${tmp}" | awk '{print $1}')
+  [ "${actual_sha}" = "${expected_sha}" ] || fail "${label} SHA256 mismatch: expected ${expected_sha}, got ${actual_sha}"
+  printf 'Verified %s bytes: %s\n' "${label}" "${actual_sha}"
+}
+
+verify_fetch_hash "product source" "${PKG_NIX_GUEST_SHA256}" "${PKG_NIX_GUEST_URL}"
+# shellcheck disable=SC2086 # Intentional split: URLS is an ordered whitespace-separated contract.
+verify_fetch_hash "rootfs seed" "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}}

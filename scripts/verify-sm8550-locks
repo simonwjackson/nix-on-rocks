@@ -2,20 +2,28 @@
 set -euo pipefail
 
 repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+# shellcheck source=scripts/product-selector
+. "${repo_root}/scripts/product-selector"
+select_product_locks "${repo_root}" "$@"
+set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
-package_mk="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
+package_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate"
+package_mk="${package_dir}/package.mk"
 
-[ -f "${repo_root}/guest.lock" ] || { echo "missing guest.lock" >&2; exit 1; }
 [ -f "${package_mk}" ] || { echo "missing patched package.mk: ${package_mk}" >&2; exit 1; }
 
-# shellcheck source=../guest.lock
+# shellcheck source=/dev/null
 # shellcheck disable=SC1091
-. "${repo_root}/guest.lock"
+. "${PRODUCT_LOCK}"
+# shellcheck source=/dev/null
+# shellcheck disable=SC1091
+. "${GUEST_LOCK}"
 
 # package.mk is shell syntax. Source it for variable expansion only; post_install
 # and helper functions are defined but not executed.
 # shellcheck source=/dev/null
 # shellcheck disable=SC1090,SC1091
+PKG_DIR="${package_dir}"
 . "${package_mk}"
 
 fail() {
@@ -36,6 +44,7 @@ require_nonempty() {
   [ -n "${value}" ] || fail "${name} must not be empty"
 }
 
+require_nonempty PRODUCT_BUILD_TARGET "${PRODUCT_BUILD_TARGET:-}"
 require_nonempty GUEST_DEVICE "${GUEST_DEVICE:-}"
 require_nonempty GUEST_COMPATIBLE "${GUEST_COMPATIBLE:-}"
 require_nonempty GUEST_REV "${GUEST_REV:-}"
@@ -57,17 +66,16 @@ case "${PKG_NIX_GUEST_URL:-}" in
   *) fail "PKG_NIX_GUEST_URL must fetch the pinned Korri product tarball via the GitHub API" ;;
 esac
 
-case "${PKG_NIX_GUEST_BUILD_TARGET:-}" in
-  ".#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel") : ;;
-  *) fail "PKG_NIX_GUEST_BUILD_TARGET must point at Korri's by-compatible RockNix kiosk appliance" ;;
-esac
+require_equal PKG_NIX_GUEST_BUILD_TARGET "${PKG_NIX_GUEST_BUILD_TARGET:-}" "${PRODUCT_BUILD_TARGET}"
 
 case "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-} ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" in
   *rocknix-nix-guest*) fail "rootfs seed URLs must not reference the retired rocknix-nix-guest repo" ;;
 esac
 case "${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}}" in
   *api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/*) : ;;
-  *) fail "rootfs seed URLs must use authenticated GitHub release asset API URLs" ;;
+  *github.com/simonwjackson/korri/releases/download/*) : ;;
+  *api.github.com/repos/simonwjackson/korri/releases/assets/*) : ;;
+  *) fail "rootfs seed URLs must use GitHub release asset URLs from the locked product authority" ;;
 esac
 
 case "${GUEST_SEED_ARCHIVE}" in
