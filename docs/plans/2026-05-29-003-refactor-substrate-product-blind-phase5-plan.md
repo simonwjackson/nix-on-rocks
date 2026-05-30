@@ -1,9 +1,9 @@
 ---
 title: "refactor: Make the substrate fully product-blind (Phase 5)"
 type: refactor
-status: completed
+status: active
 date: 2026-05-29
-completed: 2026-05-29
+revisited: 2026-05-30
 depends-on:
   - docs/acceptance/sm8550-product-payload-full-build-sobo-2026-05-27.md
   - docs/acceptance/sm8550-product-payload-thor-bandai-2026-05-29.md
@@ -202,3 +202,51 @@ U5 (final proof image-only round): **deferred** — U2+U3 changes are bound to n
 ## Known open follow-ups (not Phase 5)
 
 - Substrate soft references to `korri-kiosk.service` are technically a product name baked into substrate config. They would only matter if a non-Korri product authority wanted to slot in with a different kiosk unit name. If that day comes, the right fix is to parameterize the kiosk-unit name via `payload.kioskUnit` in the product-payload contract and feed it into the rendered substrate config. Tracked here as a future enhancement, not as Phase 5 work.
+
+## Scope retro revisited (2026-05-30)
+
+A deep substrate-leak audit on 2026-05-30, run while consolidating the substrate-followups PR, found that the 2026-05-29 execution outcome above **misclassified the surviving Korri references**. Specifically:
+
+- **U1 "no change required"** held up. Cheap doc/README mentions were accurate architecture documentation, as claimed.
+- **U2 "done"** held up. `scripts/verify-korri-promotion-proof` was retired.
+- **U3 "done"** held up. Legacy single-product locks were dropped.
+- **U4 "no change required" was wrong.** The retro classified the remaining Korri references as "soft systemd unit refs (no-op when absent)" or "negative-assertion lint guards." That classification was inaccurate for at least four load-bearing couplings still on `origin/main`.
+
+### What U4's audit missed
+
+1. **`guest/modules/lid.nix:115`** hardcodes `/sys/fs/cgroup/system.slice/korri-kiosk.service` as the *primary* cgroup probe candidate. This is not a no-op when absent: a non-Korri product with a differently-named kiosk silently falls back to the substrate's `main-space-sway-kiosk.service` fallback profile, which is not the real kiosk. Lid-close PID-stopping breaks silently.
+
+2. **`guest/modules/input.nix:17`** defines `hasKorriKiosk = options.services ? korri && options.services.korri ? kiosk;`. The substrate **reads the downstream product's NixOS option tree** to branch its own behavior. That is the textbook product-knowledge leak — not a soft reference.
+
+3. **`guest/modules/input.nix:44-45` and `guest/modules/session.nix:77`** put `"korri-compositor.service"`, `"korri-inputd.service"`, and `"korri-kiosk.service"` directly in substrate `before` arrays. A non-Korri product whose units are named differently inherits no ordering — raw gamepads are not hidden before its compositor starts.
+
+4. **`nix/tests/main-space-systemd-contract.nix:31`** and **`nix/tests/audio-input-systemd-contract.nix:43,61`** call `assertContract` on the literal string `"korri-kiosk.service"`. The substrate's CI **requires** Korri's unit name to appear in its own ordering arrays. A non-Korri product cannot pass substrate CI without naming its kiosk `korri-kiosk.service`.
+
+### What U4's audit also missed
+
+Beyond the four load-bearing leaks, the audit found:
+
+5. **`patches/rocknix/0003-sm8550-device-and-host-config.patch`** ships the Korri SVG path data and the Korri green/white color palette directly inside the `rocknix-splash` patch (boot logo). The substrate boots to Korri branding regardless of which payload is selected.
+6. **`packages/steam/`, `packages/cemu/`, `packages/moonlight-embedded/`, and `packages/inputplumber/`'s product-specific controller maps** are all product-stack choices, not SM8550 substrate capabilities.
+7. **`guest/launchers/`** ships ~13 product-shaped shell launchers (Cemu, BOTW, Moonlight pairing, the Korri games-launcher, etc.), two of which literally `systemctl start korri-kiosk.service`.
+8. **`scripts/check-boundary-lint`** is itself product-aware — it asserts on Cemu, Steam, and BOTW package internals.
+9. **No `docs/contracts/product-blind-invariants.md`** existed to give Plan 003's retro something concrete to test against. The unwritten invariant is what let the retro re-derive "what counts as a leak" and land on a wrong answer.
+10. **No second product** has ever consumed the substrate, so the product-blind claim has never been validated by an existence proof.
+
+### Why the plan flips to `active`
+
+The original Phase 5 intent was "substrate fully product-blind so a third product would not need any substrate changes to onboard." That intent is not met today. U2 and U3 shipped, but U4's no-op conclusion was the wrong call, and the audit revealed substantial scope U1-U4 did not consider.
+
+The remaining work is captured in the Korri backlog with PR-shaped grouping ("swings"), not re-scoped under this plan. Sequencing and design questions live with the tasks.
+
+Referenced Korri backlog items (in `simonwjackson/korri` repository, `backlog/`):
+
+- **Swing 1 — task-032** parameterize substrate kiosk coupling and write `docs/contracts/product-blind-invariants.md` (closes leaks 1–4 and 9)
+- **Swing 2 — task-022, task-023, task-024, task-025** move `packages/{steam,cemu,moonlight-embedded,inputplumber}` out of the substrate (closes leak 6)
+- **Swing 3 — task-026** move product-shaped launchers out of `guest/launchers/` (closes leak 7)
+- **Swing 4 — task-029** strip product-specific positive assertions from `scripts/check-boundary-lint` (closes leak 8)
+- **Swing 5 — task-031** stand up a stub second product to dogfood the inversion (closes leak 10)
+- **task-021** move boot-logo ownership from substrate to Korri (closes leak 5)
+- **task-001** delete `guest/modules/moonlight.nix` from the substrate (the U4 follow-up surfaced before this audit; subsumed into task-024 when Swing 2 picks it up)
+
+This plan stays `active` until either (a) Swings 1–5 land and a substrate-only build with no Korri payload proves product-blindness end-to-end, or (b) the plan is explicitly retired in favor of a fresh "Phase 6" plan that owns the swing-shaped work as its own scope. As of this revisit, neither has happened.
