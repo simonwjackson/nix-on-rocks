@@ -38,6 +38,7 @@
           steam = pkgs.callPackage ./packages/steam/package.nix { };
           ayn-odin2-ucm = pkgs.callPackage ./devices/sm8550/audio/ayn-odin2-ucm { };
           inputplumber = pkgs.callPackage ./packages/inputplumber { };
+          inputplumber-sm8550-maps = pkgs.callPackage ./packages/inputplumber-sm8550-maps/package.nix { };
           moonlight-embedded = pkgs.callPackage ./packages/moonlight-embedded/package.nix { };
         in
         {
@@ -50,6 +51,7 @@
           # preserved for backward compat with existing consumers.
           sm8550-ayn-odin2-ucm = ayn-odin2-ucm;
           inputplumber = inputplumber;
+          inputplumber-sm8550-maps = inputplumber-sm8550-maps;
           moonlight-embedded = moonlight-embedded;
           # Compatibility alias for existing ROCKNIX Layer 14 scripts/docs.
           cemu-rocknix-package = cemu;
@@ -245,6 +247,10 @@
           };
           flake-surface-contract = import ./nix/tests/flake-surface-contract.nix {
             inherit pkgs self system;
+          };
+          inputplumber-sm8550-maps-contract = import ./nix/tests/inputplumber-sm8550-maps-contract.nix {
+            inherit pkgs;
+            mapsPackage = self.packages.${system}.inputplumber-sm8550-maps;
           };
           guest-input-boundary-contract = import ./nix/tests/guest-input-boundary-contract.nix {
             inherit pkgs baseConfiguration devEnvConfiguration;
