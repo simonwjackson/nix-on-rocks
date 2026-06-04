@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+target_dir=${1:-"${work_dir}/target"}
+manifest=${NIX_ON_ROCKS_BUILD_MANIFEST:-"${repo_root}/nix-on-rocks-build-manifest.md"}
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"
+}
+
+require_tool awk
+require_tool dd
+require_tool gzip
+require_tool mdir
+require_tool mlabel
+require_tool mtype
+require_tool sfdisk
+require_tool sha256sum
+require_tool blkid
+
+[ -d "${target_dir}" ] || fail "missing target directory: ${target_dir}"
+
+shopt -s nullglob
+images=("${target_dir}"/ROCKNIX-*RK3566*.img.gz)
+[ "${#images[@]}" -eq 1 ] || fail "expected exactly one RK3566 SD image, found ${#images[@]}"
+image_gz=${images[0]}
+
+gzip -t "${image_gz}"
+for checksum in "${target_dir}"/ROCKNIX-*RK3566*.img.gz.sha256 "${target_dir}"/ROCKNIX-*RK3566*.tar.sha256; do
+  [ -f "${checksum}" ] || continue
+  (cd "${target_dir}" && sha256sum -c "$(basename "${checksum}")")
+done
+
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "${tmp_dir}"' EXIT
+image="${tmp_dir}/rk3566.img"
+part1="${tmp_dir}/part1.fat"
+part2="${tmp_dir}/part2.ext4"
+layout="${tmp_dir}/sfdisk.txt"
+
+gzip -dc "${image_gz}" > "${image}"
+sfdisk -d "${image}" > "${layout}"
+grep -q '^label: dos$' "${layout}" || fail "RK3566 SD image must use an MBR/dos partition table for U-Boot"
+
+part1_line=$(awk -F: '$1 ~ /1[[:space:]]*$/ { print; exit }' "${layout}")
+part2_line=$(awk -F: '$1 ~ /2[[:space:]]*$/ { print; exit }' "${layout}")
+[ -n "${part1_line}" ] || fail "RK3566 SD image missing FAT boot partition"
+[ -n "${part2_line}" ] || fail "RK3566 SD image missing STORAGE partition"
+
+part_field() {
+  local line=$1
+  local field=$2
+  printf '%s\n' "${line}" | tr ',' '\n' | awk -F= -v want="${field}" '$1 ~ want { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }'
+}
+
+part1_start=$(part_field "${part1_line}" start)
+part1_size=$(part_field "${part1_line}" size)
+part2_start=$(part_field "${part2_line}" start)
+part2_size=$(part_field "${part2_line}" size)
+[ -n "${part1_start}" ] && [ -n "${part1_size}" ] || fail "unable to parse RK3566 FAT partition geometry"
+[ -n "${part2_start}" ] && [ -n "${part2_size}" ] || fail "unable to parse RK3566 STORAGE partition geometry"
+
+# U-Boot is written starting at sector 64 by ROCKNIX's RK3566 mkimage path, and
+# ROCKNIX's Rockchip image contract starts the first filesystem partition at
+# sector 32768. Keeping that boundary avoids overlap with the bootloader region.
+[ "${part1_start}" -ge 32768 ] || fail "first partition starts inside the RK3566 U-Boot sector window: ${part1_start}"
+
+dd if="${image}" of="${part1}" bs=512 skip="${part1_start}" count="${part1_size}" status=none
+dd if="${image}" of="${part2}" bs=512 skip="${part2_start}" count="${part2_size}" status=none
+
+mlabel -i "${part1}" -s :: | grep -Eq 'FAT label.*ROCKNIX|Volume label is ROCKNIX|ROCKNIX' \
+  || fail "FAT label must be ROCKNIX"
+mdir -i "${part1}" ::/ >/dev/null || fail "unable to read RK3566 FAT partition"
+mtype -i "${part1}" ::/extlinux/extlinux.conf > "${tmp_dir}/extlinux.conf" \
+  || fail "missing extlinux/extlinux.conf on RK3566 FAT partition"
+grep -Eq '^[[:space:]]+(FDT|FDTDIR)[[:space:]]+/' "${tmp_dir}/extlinux.conf" \
+  || fail "RK3566 extlinux.conf must reference a DTB or DTB directory"
+grep -q 'boot=LABEL=ROCKNIX' "${tmp_dir}/extlinux.conf" \
+  || fail "RK3566 extlinux.conf must boot by ROCKNIX FAT label"
+grep -q 'disk=LABEL=STORAGE' "${tmp_dir}/extlinux.conf" \
+  || fail "RK3566 extlinux.conf must mount storage by STORAGE label"
+mdir -i "${part1}" -/ ::/device_trees 2>/dev/null | grep -Eiq 'device_trees.*\.dtb|\.dtb' \
+  || fail "RK3566 FAT partition missing device_trees/*.dtb"
+
+storage_label=$(blkid -p -o value -s LABEL "${part2}" 2>/dev/null || true)
+[ "${storage_label}" = "STORAGE" ] || fail "ext4 STORAGE partition label mismatch: ${storage_label:-<empty>}"
+
+if [ -f "${manifest}" ]; then
+  grep -Fq 'Hardware boot:** `unverified`' "${manifest}" \
+    || fail "RK3566 manifest must state hardware boot is unverified: ${manifest}"
+fi
+
+printf 'Verified RK3566 SD payloads in %s\n' "${target_dir}"

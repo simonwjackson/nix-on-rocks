@@ -6,11 +6,6 @@ repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 . "${repo_root}/scripts/product-selector"
 stage=${1:?"usage: ci-build-stage <toolchain|base|image>"}
 shift
-select_product_locks "${repo_root}" "$@"
-set -- "${PRODUCT_SELECTOR_ARGS[@]}"
-work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
-image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
-export NIX_ON_ROCKS_PRODUCT=${SELECTED_PRODUCT}
 
 export JAVA_HOME=${JAVA_HOME:-/usr}
 export PROJECT=${PROJECT:-ROCKNIX}
@@ -22,11 +17,23 @@ export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
 export CCACHE_COMPRESSLEVEL=${CCACHE_COMPRESSLEVEL:-6}
 export CCACHE_SLOPPINESS=${CCACHE_SLOPPINESS:-pch_defines,time_macros,include_file_mtime,include_file_ctime}
 
+if [ "${DEVICE}" = "SM8550" ]; then
+  select_product_locks "${repo_root}" "$@"
+  set -- "${PRODUCT_SELECTOR_ARGS[@]}"
+  export NIX_ON_ROCKS_PRODUCT=${SELECTED_PRODUCT}
+else
+  SELECTED_PRODUCT=""
+fi
+
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+image=${NIX_ON_ROCKS_DOCKER_IMAGE:-nix-on-rocks-rocknix-build:local}
+build_dir="${work_dir}/build.${PROJECT}-${DEVICE}.${ARCH}"
+
 archive_ccache() {
   local output=$1
   local max_size=$2
-  local ccache_dir="${work_dir}/build.ROCKNIX-SM8550.aarch64/.ccache"
-  local ccache_bin="${work_dir}/build.ROCKNIX-SM8550.aarch64/toolchain/bin/ccache"
+  local ccache_dir="${build_dir}/.ccache"
+  local ccache_bin="${build_dir}/toolchain/bin/ccache"
 
   [ -d "${ccache_dir}" ] || return 0
   if [ -x "${ccache_bin}" ]; then
@@ -35,7 +42,7 @@ archive_ccache() {
     CCACHE_DIR="${ccache_dir}" "${ccache_bin}" -c || true
     CCACHE_DIR="${ccache_dir}" "${ccache_bin}" -z || true
   fi
-  tar -C "${work_dir}" --remove-files -cf "${work_dir}/${output}" ./build.ROCKNIX-SM8550.aarch64/.ccache
+  tar -C "${work_dir}" --remove-files -cf "${work_dir}/${output}" "./${build_dir#"${work_dir}"/}/.ccache"
 }
 
 run_in_container() {
@@ -58,24 +65,44 @@ run_in_container() {
   return "${exit_code}"
 }
 
-verify_sm8550_payloads() {
+generate_manifest() {
   local args=()
-  if [ "${NIX_ON_ROCKS_REQUIRE_FULL_IMAGE:-no}" = "yes" ]; then
-    args+=(--require-full-image)
+  if [ -n "${SELECTED_PRODUCT}" ]; then
+    args+=(--product "${SELECTED_PRODUCT}")
   fi
-  "${repo_root}/scripts/verify-sm8550-payloads" --product "${SELECTED_PRODUCT}" "${args[@]}" "${work_dir}/target"
+  "${repo_root}/scripts/generate-manifest" "${args[@]}"
+}
+
+verify_payloads() {
+  case "${DEVICE}" in
+    SM8550)
+      local args=()
+      if [ "${NIX_ON_ROCKS_REQUIRE_FULL_IMAGE:-no}" = "yes" ]; then
+        args+=(--require-full-image)
+      fi
+      "${repo_root}/scripts/verify-sm8550-payloads" --product "${SELECTED_PRODUCT}" "${args[@]}" "${work_dir}/target"
+      ;;
+    RK3566)
+      "${repo_root}/scripts/verify-rk3566-payloads" "${work_dir}/target"
+      ;;
+    *)
+      echo "ci-build-stage: no payload verifier for DEVICE=${DEVICE}" >&2
+      exit 1
+      ;;
+  esac
 }
 
 case "${stage}" in
   toolchain)
     run_in_container './scripts/build_mt toolchain alsa-lib llvm:host'
     cd "${work_dir}"
-    archive_ccache ccache-aarch64-SM8550-toolchain.tar 500M
+    archive_ccache "ccache-aarch64-${DEVICE}-toolchain.tar" 500M
+    build_rel="./${build_dir#"${work_dir}"/}"
     tar --zstd -cf build.aarch64-toolchain.tar.zst \
-      ./build.ROCKNIX-SM8550.aarch64/toolchain \
-      ./build.ROCKNIX-SM8550.aarch64/build \
-      ./build.ROCKNIX-SM8550.aarch64/install_* \
-      ./build.ROCKNIX-SM8550.aarch64/.stamps
+      "${build_rel}/toolchain" \
+      "${build_rel}/build" \
+      "${build_rel}"/install_* \
+      "${build_rel}/.stamps"
     ;;
   base)
     export EMULATION_DEVICE=${EMULATION_DEVICE:-no}
@@ -83,25 +110,26 @@ case "${stage}" in
     export MODULES_PKG=${MODULES_PKG:-no}
     run_in_container './scripts/build_distro'
     cd "${work_dir}"
-    archive_ccache ccache-aarch64-SM8550.tar 500M
+    archive_ccache "ccache-aarch64-${DEVICE}.tar" 500M
     if [ "${NIX_ON_ROCKS_SKIP_BASE_ARCHIVE:-no}" = "yes" ]; then
       df -h .
-      du -sh ./build.ROCKNIX-SM8550.aarch64 ./build.ROCKNIX-SM8550.aarch64/build 2>/dev/null || true
+      du -sh "./${build_dir#"${work_dir}"/}" "./${build_dir#"${work_dir}"/}/build" 2>/dev/null || true
       exit 0
     fi
-    tar --zstd --remove-files -cf build.build.aarch64.tar.zst ./build.ROCKNIX-SM8550.aarch64/build
-    tar --zstd --remove-files -cf build.aarch64.tar.zst ./build.ROCKNIX-SM8550.aarch64/
+    build_rel="./${build_dir#"${work_dir}"/}"
+    tar --zstd --remove-files -cf build.build.aarch64.tar.zst "${build_rel}/build"
+    tar --zstd --remove-files -cf build.aarch64.tar.zst "${build_rel}/"
     ;;
   image)
     export NIGHTLY=${NIGHTLY:-yes}
     export OFFICIAL=${OFFICIAL:-no}
     run_in_container './scripts/build_distro'
-    verify_sm8550_payloads
-    "${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
+    generate_manifest
+    verify_payloads
     ;;
   manifest)
-    verify_sm8550_payloads
-    "${repo_root}/scripts/generate-manifest" --product "${SELECTED_PRODUCT}"
+    generate_manifest
+    verify_payloads
     ;;
   *)
     echo "unknown stage: ${stage}" >&2

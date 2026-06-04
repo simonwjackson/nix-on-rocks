@@ -21,7 +21,7 @@ jobs:
           extra_nix_config: |
             experimental-features = nix-command flakes
 
-      - name: Apply patches and verify SM8550 contract
+      - name: Apply patches and verify device contracts
         run: |
           for product in odin2portal thor; do
             scripts/apply-rocknix-patches --product "${product}"
@@ -30,6 +30,8 @@ jobs:
             scripts/verify-product-payload --product "${product}"
             scripts/tests/product-payload-contract.sh --product "${product}"
           done
+          DEVICE=RK3566 scripts/apply-rocknix-patches
+          scripts/verify-rk3566-contract
 
       - name: Verify Nix contracts
         run: nix flake check --no-write-lock-file --print-build-logs

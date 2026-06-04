@@ -16,9 +16,17 @@ required=(
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 )
+repo_required=(
+  .github/workflows/build-rk3566.yml
+  scripts/verify-rk3566-payloads
+  scripts/tests/rk3566-payload-contract.sh
+)
 
 for path in "${required[@]}"; do
   [ -e "${work_dir}/${path}" ] || { echo "missing expected patched file: ${path}" >&2; exit 1; }
+done
+for path in "${repo_required[@]}"; do
+  [ -e "${repo_root}/${path}" ] || { echo "missing expected RK3566 repo file: ${path}" >&2; exit 1; }
 done
 
 (
@@ -41,4 +49,19 @@ done
   git diff --check
 )
 
-printf 'Verified patched RK3566 substrate prerequisites in %s\n' "${work_dir}"
+grep -q 'name: Build RK3566 SD image' "${repo_root}/.github/workflows/build-rk3566.yml"
+grep -q 'DEVICE: RK3566' "${repo_root}/.github/workflows/build-rk3566.yml"
+grep -q 'RK3566_GUEST_SUBSTRATE: "yes"' "${repo_root}/.github/workflows/build-rk3566.yml"
+grep -q 'scripts/verify-rk3566-payloads' "${repo_root}/.github/workflows/build-rk3566.yml"
+grep -q 'Hardware boot remains unverified until RG353M post-arrival acceptance' "${repo_root}/.github/workflows/build-rk3566.yml"
+grep -q 'FAT label.*ROCKNIX' "${repo_root}/scripts/verify-rk3566-payloads"
+grep -q 'extlinux/extlinux.conf' "${repo_root}/scripts/verify-rk3566-payloads"
+grep -q 'device_trees.*\.dtb' "${repo_root}/scripts/verify-rk3566-payloads"
+grep -q 'STORAGE' "${repo_root}/scripts/verify-rk3566-payloads"
+grep -q 'sector 32768' "${repo_root}/scripts/verify-rk3566-payloads"
+grep -q 'Verify SM8550 payloads' "${repo_root}/.github/workflows/build-sm8550.yml"
+grep -q 'scripts/verify-sm8550-payloads' "${repo_root}/.github/workflows/build-sm8550.yml"
+grep -q 'scripts/verify-rk3566-contract' "${repo_root}/.github/workflows/preflight.yml"
+grep -q 'rk3566-payload-contract.sh' "${repo_root}/scripts/check-shell-smoke"
+
+printf 'Verified patched RK3566 substrate prerequisites and SD artifact lane in %s\n' "${work_dir}"
