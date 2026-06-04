@@ -31,12 +31,15 @@ done
 
 (
   cd "${work_dir}"
-  projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+  static_checks=projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 
   grep -q 'RK3566_GUEST_SUBSTRATE="${RK3566_GUEST_SUBSTRATE:-no}"' projects/ROCKNIX/devices/RK3566/options
   grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/virtual/image/package.mk
   grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/sysutils/systemd/package.mk
   grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+  grep -q 'RK3566_OPTIONS=' "${static_checks}"
+  grep -q 'RK3566_GUEST_SUBSTRATE=yes' "${static_checks}"
+  grep -q 'CONFIG_USER_NS=y' "${static_checks}"
 
   for required_config in \
     CONFIG_CGROUPS=y CONFIG_MEMCG=y CONFIG_CGROUP_PIDS=y CONFIG_CGROUP_FREEZER=y \

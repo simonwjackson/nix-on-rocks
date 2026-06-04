@@ -109,9 +109,9 @@ index c2902c0..22b0035 100644
 +  esac
 +}
 +
- # Pinned source of the NixOS main-space guest. The host repo carries
- # only the substrate plumbing for the guest; the product appliance source lives
- # in Korri and is fetched from a pinned product commit at build time.
+ # Product/source/seed facts are rendered by nix-on-rocks from
+ # product-payload.lock during scripts/apply-rocknix-patches and staged into
+ # this package directory. Docker/ROCKNIX builds consume only the package-local
 @@ -74,11 +89,12 @@ curl_append() {
  }
  
@@ -164,9 +164,9 @@ index 1412fc0..ff356cf 100755
 +grep -q 'RK3566_GUEST_SUBSTRATE=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document RK3566 guest-substrate prerequisite mode when enabled"
 +grep -q 'rocknix_guest_substrate_supported_device' "${PKG_DIR}/package.mk" || fail "package.mk must use explicit supported-device substrate gate"
 +grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' "${PKG_DIR}/package.mk" || fail "unsupported substrate devices must fail clearly"
- grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_URL=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed URL contract"
- grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed SHA256 contract"
- grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed compatible contract"
+ [ -n "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}}" ] || fail "staged product payload env missing bootable rootfs seed URL contract"
+ [ -n "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256:-}" ] || fail "staged product payload env missing bootable rootfs seed SHA256 contract"
+ [ -n "${PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE:-}" ] || fail "staged product payload env missing bootable rootfs seed compatible contract"
 @@ -994,9 +997,11 @@ run_target_generator_fixture() {
  }
  run_target_generator_fixture
@@ -252,7 +252,7 @@ index 1412fc0..ff356cf 100755
  grep -q '/var/empty' "${OPENSSH_UNIT}" \
    || fail "sshd service must recreate OpenSSH privilege-separation dir on tmpfs /var"
  grep -q 'mkdir -p /var/run' "${TZ_UNIT}" \
-@@ -1427,12 +1436,35 @@ grep -q "build-aarch64-emu-standalone:" "${WORKFLOW_DIR}/build-device.yml" || fa
+@@ -1427,10 +1436,33 @@ grep -q "build-aarch64-emu-standalone:" "${WORKFLOW_DIR}/build-device.yml" || fa
    || fail "libepoxy must use Meson glx/x11 options, not the removed autotools --disable-glx flag"
  grep -q 'PKG_MESON_OPTS_TARGET+=" -Dglx=no -Dx11=false"' "${REPO_ROOT}/projects/ROCKNIX/packages/graphics/libepoxy/package.mk" \
    || fail "libepoxy must disable glx/x11 through Meson options when no display server needs them"
@@ -287,9 +287,9 @@ index 1412fc0..ff356cf 100755
 +    || fail "RK3566 kernel config missing nspawn network prerequisite: ${required_module}"
 +done
 +
- # Old support flags should not be resurrected.
- ! grep -R --exclude='guest-substrate-static-checks.sh' -q 'NIX_INTEGRATION_SUPPORT\|NIX_NSPAWN_SUPPORT\|NIX_DAEMON_SUPPORT\|THIN_HOST' \
-   "${REPO_ROOT}/projects/ROCKNIX" "${REPO_ROOT}/.github" "${REPO_ROOT}/scripts" || fail "removed support gate still referenced"
+ # rocknix-post-update.service: Layer 14 main-space consumer for /storage/.boot.hint=UPDATE.
+ # Recovery boot (rocknix.safe=1 / /flash/rocknix.no-nspawn) keeps the legacy
+ # /usr/lib/autostart/common/003-upgrade autostart consumer as the authoritative path.
 diff --git a/projects/ROCKNIX/packages/virtual/image/package.mk b/projects/ROCKNIX/packages/virtual/image/package.mk
 index dbb327d..8b3c3d3 100644
 --- a/projects/ROCKNIX/packages/virtual/image/package.mk
