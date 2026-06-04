@@ -1,7 +1,7 @@
 ---
 id: task-018
 title: Scaffold RK3566 profile surface with static contracts
-status: To Do
+status: In Progress
 priority: high
 labels:
   - rg353m
