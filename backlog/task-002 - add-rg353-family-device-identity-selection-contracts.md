@@ -1,7 +1,7 @@
 ---
 id: task-002
 title: Add RG353-family device identity selection contracts
-status: To Do
+status: In Progress
 priority: high
 labels:
   - rg353m
