@@ -1,7 +1,7 @@
 ---
 id: task-008
 title: Add RK3566 SD image build lane and artifact checks
-status: To Do
+status: In Progress
 priority: medium
 labels:
   - rk3566
