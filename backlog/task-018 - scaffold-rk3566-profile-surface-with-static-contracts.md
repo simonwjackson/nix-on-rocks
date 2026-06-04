@@ -23,13 +23,13 @@ A minimal evaluated RK3566 surface with contracts lets later LLM runs add hardwa
 
 ## Acceptance Criteria
 
-- [ ] `devices/rk3566/README.md` documents the SoC directory purpose and known RG353M constraints.
-- [ ] A new `guest/profiles/devices/rg353m.nix` exists with hostname and RK3566 device ID only or similarly minimal safe settings.
-- [ ] `flake.nix` exposes the RK3566/RG353M profile through a clear, tested surface without making it the default target.
-- [ ] A RK3566 contract script or check asserts the minimal RK3566 profile and flake surface evaluate.
-- [ ] Contracts fail with clear messages if RK3566 profile wiring imports SM8550-only audio, input, or display assumptions unintentionally.
-- [ ] Existing SM8550 flake outputs, device profiles, and contract checks remain unchanged.
-- [ ] CI or `nix flake check` exposes the new contract in a discoverable way.
+- [x] `devices/rk3566/README.md` documents the SoC directory purpose and known RG353M constraints.
+- [x] A new `guest/profiles/devices/rg353m.nix` exists with hostname and RK3566 device ID only or similarly minimal safe settings.
+- [x] `flake.nix` exposes the RK3566/RG353M profile through a clear, tested surface without making it the default target.
+- [x] A RK3566 contract script or check asserts the minimal RK3566 profile and flake surface evaluate.
+- [x] Contracts fail with clear messages if RK3566 profile wiring imports SM8550-only audio, input, or display assumptions unintentionally.
+- [x] Existing SM8550 flake outputs, device profiles, and contract checks remain unchanged.
+- [x] CI or `nix flake check` exposes the new contract in a discoverable way.
 
 ## Related
 
@@ -47,3 +47,5 @@ A minimal evaluated RK3566 surface with contracts lets later LLM runs add hardwa
 ## Notes
 
 Logical work group: minimal RK3566 scaffold plus static validation boundary. Consolidates task-004 and task-005.
+
+Completed with `devices/rk3566/README.md`, `guest/modules/rk3566.nix`, `guest/profiles/devices/rg353m.nix`, `nixosModules.rk3566`, `nixosModules.rg353m`, `nixosConfigurations.rocknix-guest-rg353m`, and the `rk3566-profile-contract` flake check. Verification: `nix build .#checks.x86_64-linux.flake-surface-contract .#checks.x86_64-linux.rk3566-profile-contract --no-link --print-build-logs`; `nix flake check --no-build`.

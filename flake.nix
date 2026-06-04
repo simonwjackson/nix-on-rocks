@@ -187,6 +187,14 @@
           })
         ];
       };
+      rg353mProfileConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/rocknix-guest-base.nix
+          ./guest/modules/rk3566.nix
+          ./guest/profiles/devices/rg353m.nix
+        ];
+      };
       mainSpaceConfiguration = nixpkgs.lib.nixosSystem {
         system = targetSystem;
         modules = [
@@ -257,9 +265,11 @@
         # audio/video capability imports). Replaces the legacy flat
         # `./guest/modules/device.nix` module.
         sm8550 = ./guest/modules/chipsets/sm8550;
+        rk3566 = ./guest/modules/rk3566.nix;
         rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix;
         odin2portal = ./guest/profiles/devices/odin2portal.nix;
         thor = ./guest/profiles/devices/thor.nix;
+        rg353m = ./guest/profiles/devices/rg353m.nix;
         default = ./guest/profiles/rocknix-guest-base.nix;
       };
 
@@ -281,6 +291,7 @@
 
       nixosConfigurations.rocknix-guest = configuration;
       nixosConfigurations.rocknix-guest-dev-env = devEnvConfiguration;
+      nixosConfigurations.rocknix-guest-rg353m = rg353mProfileConfiguration;
       packages = forAllHostSystems packageSetFor;
       checks = forAllHostSystems (
         system:
@@ -312,6 +323,9 @@
             inherit pkgs baseConfiguration devEnvConfiguration
               thorConfiguration odin2portalConfiguration
               videoOverrideConfiguration;
+          };
+          rk3566-profile-contract = import ./nix/tests/rk3566-profile-contract.nix {
+            inherit pkgs rg353mProfileConfiguration;
           };
           main-space-systemd-contract = import ./nix/tests/main-space-systemd-contract.nix {
             inherit pkgs mainSpaceConfiguration devEnvConfiguration;
