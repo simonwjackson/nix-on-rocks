@@ -9,6 +9,7 @@ labels:
   - after-device
   - performance
   - guest-profile
+  - sd-card-only
 created: 2026-06-04
 source: user
 ---
@@ -17,13 +18,14 @@ source: user
 
 ## Why it matters
 
-RG353M has much less CPU, GPU, and RAM headroom than SM8550 devices, so the guest should avoid heavyweight defaults that make the product unusable.
+RG353M has much less CPU, GPU, and RAM headroom than SM8550 devices, so the guest should avoid heavyweight defaults that make the product unusable. Tuning must fit the removable-SD product target rather than relying on eMMC installation or internal-storage swap/state.
 
 ## Acceptance Criteria
 
 - [ ] The RG353M guest profile disables or defers heavyweight SM8550-oriented features that are not viable on RK3566 by default.
-- [ ] Memory and service footprint are measured after boot and recorded in an acceptance or performance note.
-- [ ] Graphics defaults prefer Panfrost/OpenGL or GLES paths unless hardware evidence proves a better Mali strategy.
+- [ ] Memory, service footprint, and SD-card storage pressure are measured after SD boot and recorded in an acceptance or performance note.
+- [ ] Graphics defaults prefer Panfrost/OpenGL or GLES paths unless hardware evidence from the SD-booted lane proves a better Mali strategy.
+- [ ] Defaults avoid depending on eMMC swap, eMMC state directories, or Android replacement.
 - [ ] Deferred high-end features such as Cemu, Steam, Moonlight hardware decode, or proprietary libmali Vulkan are documented as separate follow-up work if still desired.
 
 ## Related
@@ -37,4 +39,4 @@ RG353M has much less CPU, GPU, and RAM headroom than SM8550 devices, so the gues
 
 ## Notes
 
-Logical work group: product tuning after boot works. This should not block the first bootable proof.
+Logical work group: product tuning after SD boot works. This should not block the first bootable proof and should preserve Android/eMMC as a fallback.

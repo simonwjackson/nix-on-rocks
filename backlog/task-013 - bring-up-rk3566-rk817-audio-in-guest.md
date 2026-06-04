@@ -9,6 +9,7 @@ labels:
   - after-device
   - audio
   - rk817
+  - sd-card-only
 created: 2026-06-04
 source: user
 ---
@@ -17,13 +18,13 @@ source: user
 
 ## Why it matters
 
-RG353M audio uses RK3566/RK817 topology, so SM8550 UCM and routing assumptions will not provide reliable speaker/headphone behavior.
+RG353M audio uses RK3566/RK817 topology, so SM8550 UCM and routing assumptions will not provide reliable speaker/headphone behavior. Bring-up must be validated from the removable-SD boot lane so Android/eMMC remains an untouched fallback.
 
 ## Acceptance Criteria
 
-- [ ] The audio implementation is based on the captured `aplay -l` card names and mixer topology, not SM8550 UCM assumptions.
-- [ ] Guest PipeWire/WirePlumber or ALSA config routes speaker and headphones correctly for RG353M.
-- [ ] Speaker playback and headphone detection/playback are verified on device.
+- [ ] The audio implementation is based on captured RK3566/RK817 `aplay -l` card names and mixer topology from an SD-booted Linux/ROCKNIX image, not SM8550 UCM assumptions.
+- [ ] Guest PipeWire/WirePlumber or ALSA config routes speaker and headphones correctly for RG353M while running from removable SD.
+- [ ] Speaker playback and headphone detection/playback are verified on device without writing to eMMC or replacing Android.
 - [ ] Static contracts prevent RK3566 from accidentally importing the SM8550 AYN Odin2 UCM package.
 
 ## Related
@@ -36,4 +37,4 @@ RG353M audio uses RK3566/RK817 topology, so SM8550 UCM and routing assumptions w
 
 ## Notes
 
-Logical work group: audio bring-up. Can run in parallel with display/input once first-boot evidence exists.
+Logical work group: audio bring-up. Can run in parallel with display/input once first SD-boot evidence exists. Keep all persistence and recovery assumptions on the removable SD image unless a later task explicitly approves eMMC work.
