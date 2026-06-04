@@ -90,6 +90,15 @@ stdenv.mkDerivation rec {
   postInstall = ''
     mkdir -p "$out/nix-support/moonlight-embedded-build"
 
+    # InputPlumber's virtual Xbox 360 pad on Thor is USB 045e:028e v0001.
+    # The vendored SDL controller DB entry for that exact Linux GUID maps the
+    # hat values as if they were rotated 180°; normalize it so Moonlight sends
+    # the same D-pad directions that evdev and Korri inputd observe.
+    substituteInPlace "$out/share/moonlight/gamecontrollerdb.txt" \
+      --replace-fail \
+        '030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,b:b1,back:b6,dpdown:h0.1,dpleft:h0.2,dpright:h0.8,dpup:h0.4' \
+        '030000005e0400008e02000001000000,Microsoft Xbox 360,a:b0,b:b1,back:b6,dpdown:h0.4,dpleft:h0.8,dpright:h0.2,dpup:h0.1'
+
     {
       printf '%s\n' 'pname=${manifest.pname}'
       printf '%s\n' 'version=${manifest.version}'

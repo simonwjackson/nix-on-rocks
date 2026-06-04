@@ -309,6 +309,10 @@
             inherit pkgs;
             steamPackage = self.packages.${system}.steam;
           };
+          moonlight-controllerdb-contract = import ./nix/tests/moonlight-controllerdb-contract.nix {
+            inherit pkgs;
+            moonlightPackage = self.packages.${system}.moonlight-embedded;
+          };
           flake-surface-contract = import ./nix/tests/flake-surface-contract.nix {
             inherit pkgs self system;
           };
