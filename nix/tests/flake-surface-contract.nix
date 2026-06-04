@@ -4,6 +4,37 @@ let
   helpers = import ./helpers.nix { inherit pkgs; };
   assertContract = helpers.assertContract "flake surface contract";
   packages = self.packages.${system};
+  fixtureProfiles = {
+    "ayn,thor" = "thor-profile";
+    "ayn,odin2portal" = "odin2portal-profile";
+    "anbernic,rg353p" = "rg353p-profile";
+    "anbernic,rg353m" = "rg353m-profile";
+  };
+  fixtureModelAliases = {
+    "Anbernic RG353M" = "anbernic,rg353m";
+  };
+  selectedThorKey = self.lib.deviceProfileKeyFromIdentity {
+    profiles = fixtureProfiles;
+    compatibleStrings = [ "ayn,thor" "qcom,sm8550" ];
+  };
+  selectedRg353mKey = self.lib.deviceProfileKeyFromIdentity {
+    profiles = fixtureProfiles;
+    modelAliases = fixtureModelAliases;
+    model = "Anbernic RG353M";
+    compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
+  };
+  selectedRg353pKey = self.lib.deviceProfileKeyFromIdentity {
+    profiles = fixtureProfiles;
+    modelAliases = fixtureModelAliases;
+    model = "Anbernic RG353P";
+    compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
+  };
+  selectedRg353mProfile = self.lib.selectDeviceProfileFromIdentity {
+    profiles = fixtureProfiles;
+    modelAliases = fixtureModelAliases;
+    model = "Anbernic RG353M";
+    compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
+  };
 in
 helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (packages.default == packages.cemu) "default package aliases cemu")
@@ -21,6 +52,12 @@ helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (self.nixosModules ? sm8550) "nixosModules.sm8550 is exposed")
   (assertContract (self.lib ? mkGuestRootfs) "lib.mkGuestRootfs is exposed")
   (assertContract (self.lib ? deviceProfileByCompatible) "lib.deviceProfileByCompatible is exposed")
+  (assertContract (self.lib ? deviceProfileKeyFromIdentity) "lib.deviceProfileKeyFromIdentity is exposed")
+  (assertContract (self.lib ? selectDeviceProfileFromIdentity) "lib.selectDeviceProfileFromIdentity is exposed")
   (assertContract (self.lib.deviceProfileByCompatible ? "ayn,thor") "Thor device-compatible profile is registered")
   (assertContract (self.lib.deviceProfileByCompatible ? "ayn,odin2portal") "Odin 2 Portal device-compatible profile is registered")
+  (assertContract (selectedThorKey == "ayn,thor") "direct compatible selection preserves known SM8550 devices")
+  (assertContract (selectedRg353mKey == "anbernic,rg353m") "RG353M model alias overrides ambiguous RG353P compatible")
+  (assertContract (selectedRg353pKey == "anbernic,rg353p") "RG353P uses direct compatible selection when no model alias applies")
+  (assertContract (selectedRg353mProfile == "rg353m-profile") "identity selector returns the model-aliased RG353M profile")
 ]

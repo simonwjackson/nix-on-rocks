@@ -15,6 +15,7 @@
     ,
     }:
     let
+      nixLib = nixpkgs.lib;
       targetSystem = "aarch64-linux";
       hostSystems = [
         "x86_64-linux"
@@ -68,6 +69,52 @@
         "ayn,thor" = ./guest/profiles/devices/thor.nix;
         "ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix;
       };
+      # Model aliases are intentionally empty until hardware evidence proves a
+      # product needs one. RG353-family U-Boot can expose a reused compatible
+      # string for a metal-shell variant, so downstream tests exercise this seam
+      # with an explicit fixture table before the physical device arrives.
+      deviceProfileByModel = { };
+
+      deviceProfileKeyFromIdentity =
+        args:
+        let
+          profiles = args.profiles or deviceProfileByCompatible;
+          modelAliases = args.modelAliases or deviceProfileByModel;
+          model = args.model or "";
+          compatibleStrings = args.compatibleStrings or [ ];
+          modelProfileKey =
+            if model != "" && builtins.hasAttr model modelAliases then
+              modelAliases.${model}
+            else
+              null;
+          compatibleProfileKey = nixLib.findFirst
+            (compatible: builtins.hasAttr compatible profiles)
+            null
+            compatibleStrings;
+        in
+        if modelProfileKey != null && builtins.hasAttr modelProfileKey profiles then
+          modelProfileKey
+        else
+          compatibleProfileKey;
+
+      selectDeviceProfileFromIdentity =
+        args:
+        let
+          profiles = args.profiles or deviceProfileByCompatible;
+          profileKey = deviceProfileKeyFromIdentity (args // {
+            inherit profiles;
+          });
+        in
+        if profileKey == null then
+          throw ''
+            nix-on-rocks guest: no guest profile registered for device identity.
+            Model: ${builtins.toJSON (args.model or "")}
+            Compatible strings: ${builtins.toJSON (args.compatibleStrings or [ ])}
+            Add profiles/devices/<device>.nix and register a matching compatible
+            string or documented model alias in flake.nix.
+          ''
+        else
+          profiles.${profileKey};
 
       # Impure: reads the target device-compatible string from the host
       # promoter via ROCKNIX_GUEST_DEVICE_COMPATIBLE. Device-tree compatible
@@ -223,7 +270,13 @@
       # duplicating the closure/tar plumbing.
       lib = {
         mkGuestRootfs = mkRootfs;
-        inherit deviceProfileByCompatible selectDeviceProfileFromCompatible;
+        inherit
+          deviceProfileByCompatible
+          deviceProfileByModel
+          deviceProfileKeyFromIdentity
+          selectDeviceProfileFromCompatible
+          selectDeviceProfileFromIdentity
+          ;
       };
 
       nixosConfigurations.rocknix-guest = configuration;
