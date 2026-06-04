@@ -180,7 +180,7 @@ index 1412fc0..ff356cf 100755
  SM8550_UPDATE_SH="${REPO_ROOT}/projects/ROCKNIX/devices/SM8550/bootloader/update.sh"
  IMAGE_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/virtual/image/package.mk"
  NETWORK_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/virtual/network/package.mk"
-@@ -1338,18 +1343,22 @@ grep -q '\${PIPESTATUS\[0\]}' "${LOCAL_IMAGE_BUILD}" || fail "local-image-build
+@@ -1338,18 +1343,24 @@ grep -q '\${PIPESTATUS\[0\]}' "${LOCAL_IMAGE_BUILD}" || fail "local-image-build
  assert_order "${LOCAL_IMAGE_BUILD}" '| tee "${LOG_FILE}"' 'build_status=${PIPESTATUS[0]}' "local-image-build must capture foreground build status immediately after tee"
  assert_order "${LOCAL_IMAGE_BUILD}" 'build_status=${PIPESTATUS[0]}' 'exit "${build_status}"' "local-image-build must return foreground build status"
  
@@ -188,8 +188,10 @@ index 1412fc0..ff356cf 100755
 -  || fail "image package must gate rocknix-guest-substrate on DEVICE=SM8550"
 +grep -q 'rocknix_guest_substrate_enabled' "${IMAGE_PKG}" \
 +  || fail "image package must use explicit guest-substrate capability gate"
-+grep -q 'SM8550:\*|RK3566:yes' "${IMAGE_PKG}" \
-+  || fail "image package must support SM8550 and RK3566=yes substrate lanes"
++grep -q 'SM8550:\*' "${IMAGE_PKG}" \
++  || fail "image package must keep rocknix-guest-substrate packaged for the validated SM8550 lane"
++! grep -q 'SM8550:\*|RK3566:yes' "${IMAGE_PKG}" \
++  || fail "RK3566 image must not package guest substrate until its seed gate is model-aware"
 +grep -q 'PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"' "${IMAGE_PKG}" \
 +  || fail "image package must add rocknix-guest-substrate through the capability gate"
  grep -q 'SM8550_MINIMAL_HOST' "${SM8550_OPTIONS}" \
@@ -300,7 +302,7 @@ index dbb327d..8b3c3d3 100644
  
 +rocknix_guest_substrate_enabled() {
 +  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}" in
-+    SM8550:*|RK3566:yes)
++    SM8550:*)
 +      return 0
 +      ;;
 +    *)
@@ -364,8 +366,8 @@ index dbb327d..8b3c3d3 100644
  
 -# Guest substrate: SM8550-only NixOS main-space.
 -[ "${DEVICE}" = "SM8550" ] && PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
-+# Guest substrate: explicit supported-device/capability table. SM8550 remains
-+# enabled; RK3566 is included only for the pre-boot SD-card substrate lane.
++# Guest substrate package: keep the seeded NixOS guest package on SM8550 until
++# RK3566 has a model-aware seed gate and a validated RG353M rootfs seed.
 +if rocknix_guest_substrate_enabled; then
 +  PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
 +fi
