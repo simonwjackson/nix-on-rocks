@@ -1,7 +1,7 @@
 ---
 id: task-019
 title: Enable RK3566 host substrate prerequisites and gates
-status: To Do
+status: In Progress
 priority: high
 labels:
   - rk3566
