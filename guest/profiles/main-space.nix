@@ -4,9 +4,9 @@
 #   - base (minimal NixOS container)
 #   - tools (CLI utilities for the developer)
 #   - ssh (Layer 12 opt-in SSH on port 2222)
-#   - display (sway + Mesa freedreno/turnip)
+#   - display (sway + Mesa graphics)
 #   - audio (pipewire + wireplumber + bluez + dbus)
-#   - input (guest-owned InputPlumber + SM8550 maps)
+#   - input (guest-owned InputPlumber + device maps)
 #   - network (NetworkManager + nftables firewall, no resolvconf)
 #
 # Kept as a substrate-local fallback profile only. Korri-owned appliance
@@ -30,7 +30,7 @@ let
   # multi-token script. As an absolute path to a writeShellScript
   # output, it survives sway parsing untouched and runs under the same
   # bash the kiosk unit adds to its PATH.
-  sm8550 = config.rocknix.sm8550;
+  device = config.rocknix.device;
   # Session runtime-dir is owned by ../modules/session.nix and
   # parameterized on rocknix.session.runtimeDir.uid (default 0).
   uid = toString config.rocknix.session.runtimeDir.uid;
@@ -71,11 +71,11 @@ let
   # Device-aware Sway config for the substrate-local fallback service. Korri
   # owns product client autostart and product launch chords downstream.
   mainSpaceSwayConfig = ''
-    # ROCKNIX Layer 14 sway config (${sm8550.deviceId} / SM8550).
+    # ROCKNIX Layer 14 sway config (${device.id}).
     seat * hide_cursor 1000
     default_border none
 
-    ${sm8550.display.swayDeviceConfig}
+    ${device.display.swayDeviceConfig}
 
     # Prime the root user D-Bus activation environment once Sway has created
     # WAYLAND_DISPLAY/SWAYSOCK. Without this, GTK/wx apps can block for ~25s
@@ -285,9 +285,9 @@ in
       # state. cemu-storage-adapter.sh consumes this; the package wrapper does
       # not know about ROCKNIX /storage paths.
       CEMU_BIOS_ROOT = "/storage/roms/bios/cemu";
-      # Measured SM8550 Cemu affinity policy. Runtime A/B harnesses can set
+      # Device-provided Cemu affinity policy. Runtime A/B harnesses can set
       # CEMU_AFFINITY_MASK=none to test scheduler behavior explicitly.
-      CEMU_AFFINITY_MASK = sm8550.performance.cemuAffinityMask;
+      CEMU_AFFINITY_MASK = device.performance.cemuAffinityMask;
 
       WLR_NO_HARDWARE_CURSORS = "1";
       WLR_LIBINPUT_NO_DEVICES = "1";

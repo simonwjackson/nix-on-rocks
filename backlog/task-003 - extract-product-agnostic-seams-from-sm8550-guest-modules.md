@@ -20,10 +20,10 @@ The current guest module surface is SM8550-shaped; isolating shared seams first 
 
 ## Acceptance Criteria
 
-- [ ] Shared guest behavior is separated from SM8550-specific options without changing SM8550 behavior.
-- [ ] SM8550-specific names, input events, audio packages, display config, and performance knobs remain under an explicit SM8550 owner.
-- [ ] Tests or evaluated contracts prove existing Thor and Odin2 Portal profiles still evaluate and expose the same key settings.
-- [ ] No RK3566 runtime behavior is introduced in this refactor beyond extension points.
+- [x] Shared guest behavior is separated from SM8550-specific options without changing SM8550 behavior.
+- [x] SM8550-specific names, input events, audio packages, display config, and performance knobs remain under an explicit SM8550 owner.
+- [x] Tests or evaluated contracts prove existing Thor and Odin2 Portal profiles still evaluate and expose the same key settings.
+- [x] No RK3566 runtime behavior is introduced in this refactor beyond extension points.
 
 ## Related
 
@@ -39,3 +39,5 @@ The current guest module surface is SM8550-shaped; isolating shared seams first 
 ## Notes
 
 Logical work group: product-blind guest module seam. Keep this as a behavior-preserving PR before adding RK3566 functionality.
+
+Completed with a generic `rocknix.device.*` seam bridged from `rocknix.sm8550.*`, shared module consumers moved to the generic seam, and evaluated contracts proving SM8550 behavior remains bridged. Verification: `nix build .#checks.x86_64-linux.guest-profile-contract .#checks.x86_64-linux.audio-input-systemd-contract .#checks.x86_64-linux.main-space-systemd-contract --no-link --print-build-logs`; `nix flake check --no-build`.

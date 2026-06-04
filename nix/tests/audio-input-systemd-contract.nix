@@ -36,6 +36,7 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (pipewire.environment.PIPEWIRE_RUNTIME_DIR == runtimeDir) "PipeWire runtime env is parameterized")
   (assertContract (pipewire.environment.PULSE_SERVER == "unix:${runtimeDir}/pulse/native") "PipeWire Pulse server path is parameterized")
   (assertContract (pipewire.environment.ALSA_CONFIG_UCM2 != "") "PipeWire receives guest-owned UCM path")
+  (assertContract (pipewire.environment.ALSA_CONFIG_UCM2 == "${cfg.rocknix.device.audio.ucmPackage}/share/alsa/ucm2") "PipeWire consumes the generic device UCM package")
   (assertContract (wireplumber.environment.ALSA_CONFIG_UCM2 == pipewire.environment.ALSA_CONFIG_UCM2) "WirePlumber uses same guest-owned UCM path")
   (assertContract (contains "c /dev/uinput 0600 root root - 10:223" cfg.systemd.tmpfiles.rules) "/dev/uinput tmpfiles rule exists")
   (assertContract cfg.services.inputplumber.enable "InputPlumber service is enabled")
@@ -43,6 +44,8 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (contains "korri-kiosk.service" (inputplumber.before or [ ])) "InputPlumber starts before downstream Korri kiosk")
   (assertContract (contains "inputplumber.service" (hideRaw.wants or [ ])) "raw gamepad hider wants InputPlumber")
   (assertContract (contains "inputplumber.service" (hideRaw.after or [ ])) "raw gamepad hider orders after InputPlumber")
+  (assertContract (builtins.elem "AYN Odin2 Gamepad" cfg.rocknix.device.input.rawGamepadEventNames) "raw gamepad names live under the generic device seam")
+  (assertContract (builtins.elem "Microsoft X-Box 360 pad" cfg.rocknix.device.input.virtualGamepadEventNames) "virtual gamepad names live under the generic device seam")
 
   # Neutral audio API capability — the value the product layer translates
   # into SDL_AUDIODRIVER / client-specific environment.

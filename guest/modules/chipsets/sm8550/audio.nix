@@ -16,7 +16,7 @@
 
 let
   cfg = config.rocknix.sm8550.audio;
-  ucmPackage = cfg.ucmPackage;
+  ucmPackage = config.rocknix.device.audio.ucmPackage;
   ucmPath = "${ucmPackage}/share/alsa/ucm2";
   uid = toString config.rocknix.session.runtimeDir.uid;
   runtimeDir = "/run/user/${uid}";

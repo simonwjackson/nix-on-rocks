@@ -18,7 +18,7 @@
 { config, lib, pkgs, ... }:
 
 let
-  inherit (lib) mkOption types;
+  inherit (lib) mkDefault mkOption types;
   aynOdin2Ucm = pkgs.callPackage ../../../../devices/sm8550/audio/ayn-odin2-ucm { };
 in
 {
@@ -26,6 +26,55 @@ in
     ./audio.nix
     ./video.nix
   ];
+
+  options.rocknix.device = {
+    id = mkOption {
+      type = types.str;
+      description = "Device variant selected for the guest profile.";
+    };
+
+    display.swayDeviceConfig = mkOption {
+      type = types.lines;
+      description = "Device-specific sway output and touch-routing block.";
+    };
+
+    input = {
+      powerEventNames = mkOption {
+        type = types.listOf types.str;
+        description = "Kernel input device names that may emit KEY_POWER.";
+      };
+
+      volumeDownEventNames = mkOption {
+        type = types.listOf types.str;
+        description = "Kernel input device names that may emit KEY_VOLUMEDOWN.";
+      };
+
+      volumeUpLidEventNames = mkOption {
+        type = types.listOf types.str;
+        description = "Kernel input device names that may emit KEY_VOLUMEUP and/or SW_LID.";
+      };
+
+      rawGamepadEventNames = mkOption {
+        type = types.listOf types.str;
+        description = "Raw gamepad event device names hidden after the input daemon claims them.";
+      };
+
+      virtualGamepadEventNames = mkOption {
+        type = types.listOf types.str;
+        description = "Virtual gamepad event device names that prove the input daemon is ready.";
+      };
+    };
+
+    audio.ucmPackage = mkOption {
+      type = types.package;
+      description = "ALSA UCM package used by the guest-owned audio stack.";
+    };
+
+    performance.cemuAffinityMask = mkOption {
+      type = types.str;
+      description = "Default Cemu CPU affinity mask for this device.";
+    };
+  };
 
   options.rocknix.sm8550 = {
     deviceId = mkOption {
@@ -101,6 +150,18 @@ in
         type = types.listOf types.str;
         default = [ "gpio-keys" ];
         description = "Kernel input device names that may emit KEY_VOLUMEUP and/or SW_LID.";
+      };
+
+      rawGamepadEventNames = mkOption {
+        type = types.listOf types.str;
+        default = [ "AYN Odin2 Gamepad" ];
+        description = "Raw SM8550 gamepad event device names hidden after InputPlumber claims them.";
+      };
+
+      virtualGamepadEventNames = mkOption {
+        type = types.listOf types.str;
+        default = [ "Microsoft X-Box 360 pad" ];
+        description = "Virtual gamepad event device names that prove InputPlumber is ready.";
       };
     };
 
@@ -199,5 +260,19 @@ in
       default = "0xF8";
       description = "Default Cemu CPU affinity mask for this SM8550 device.";
     };
+  };
+
+  config.rocknix.device = {
+    id = mkDefault config.rocknix.sm8550.deviceId;
+    display.swayDeviceConfig = mkDefault config.rocknix.sm8550.display.swayDeviceConfig;
+    input = {
+      powerEventNames = mkDefault config.rocknix.sm8550.input.powerEventNames;
+      volumeDownEventNames = mkDefault config.rocknix.sm8550.input.volumeDownEventNames;
+      volumeUpLidEventNames = mkDefault config.rocknix.sm8550.input.volumeUpLidEventNames;
+      rawGamepadEventNames = mkDefault config.rocknix.sm8550.input.rawGamepadEventNames;
+      virtualGamepadEventNames = mkDefault config.rocknix.sm8550.input.virtualGamepadEventNames;
+    };
+    audio.ucmPackage = mkDefault config.rocknix.sm8550.audio.ucmPackage;
+    performance.cemuAffinityMask = mkDefault config.rocknix.sm8550.performance.cemuAffinityMask;
   };
 }

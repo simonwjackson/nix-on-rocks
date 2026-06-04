@@ -55,7 +55,7 @@ let
   # To re-enable: ssh root@thor 'rm /storage/.guest/lid-suspend.disabled'
   killSwitch = "/storage/.guest/lid-suspend.disabled";
   stateDir = "/run/rocknix-lid";
-  input = config.rocknix.sm8550.input;
+  input = config.rocknix.device.input;
   # Session runtime-dir is owned by ./session.nix and parameterized on
   # rocknix.session.runtimeDir.uid (default 0). Used by the
   # main-space-hardware-button-handler environment block below so

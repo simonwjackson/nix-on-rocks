@@ -1,20 +1,22 @@
-# Guest-owned input routing for SM8550 handheld controls.
+# Guest-owned input routing for handheld controls.
 #
 # ROCKNIX used to run InputPlumber on the host and bind a scrubbed udev DB into
 # the guest so sway/libseat would not open InputPlumber-hidden raw event nodes.
 # The minimal-host direction is for the guest to own the product input stack,
 # leaving the host with only kernel/device/container substrate.
-{
-  config,
-  lib,
-  pkgs,
-  options,
-  ...
+{ config
+, lib
+, pkgs
+, options
+, ...
 }:
 
 let
   rocknixInputplumber = pkgs.callPackage ../../packages/inputplumber { };
   hasKorriKiosk = options.services ? korri && options.services.korri ? kiosk;
+  input = config.rocknix.device.input;
+  rawGamepadEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.rawGamepadEventNames;
+  virtualGamepadEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.virtualGamepadEventNames;
 in
 {
   environment.systemPackages = [ rocknixInputplumber ];
@@ -36,7 +38,7 @@ in
   };
 
   systemd.services.rocknix-guest-hide-raw-gamepad = {
-    description = "Hide raw SM8550 gamepad event nodes after InputPlumber claims them";
+    description = "Hide raw gamepad event nodes after InputPlumber claims them";
     wantedBy = [ "multi-user.target" ];
     wants = [ "inputplumber.service" ];
     after = [ "inputplumber.service" ];
@@ -52,14 +54,23 @@ in
 
       mkdir -p /dev/inputplumber/sources
 
+      name_matches() {
+        candidate="$1"
+        shift
+        for wanted in "$@"; do
+          [ "$candidate" = "$wanted" ] && return 0
+        done
+        return 1
+      }
+
       # Wait until InputPlumber has opened the raw pad and created the virtual
-      # Xbox target. Moving the node before that point would hide the source
-      # from InputPlumber itself; moving after preserves InputPlumber's fd while
+      # target. Moving the node before that point would hide the source from
+      # InputPlumber itself; moving after preserves InputPlumber's fd while
       # removing the raw node from later consumers such as Moonlight/libinput.
       for _ in $(seq 1 200); do
         for name in /sys/class/input/event*/device/name; do
           [ -r "$name" ] || continue
-          if [ "$(cat "$name")" = "Microsoft X-Box 360 pad" ]; then
+          if name_matches "$(cat "$name")" ${virtualGamepadEventNames}; then
             found_virtual_gamepad=1
             break 2
           fi
@@ -77,7 +88,8 @@ in
         [ -e "$event" ] || continue
         name_path="/sys/class/input/$(basename "$event")/device/name"
         [ -r "$name_path" ] || continue
-        [ "$(cat "$name_path")" = "AYN Odin2 Gamepad" ] || continue
+        name="$(cat "$name_path")"
+        name_matches "$name" ${rawGamepadEventNames} || continue
 
         target="/dev/inputplumber/sources/$(basename "$event")"
         if [ ! -e "$target" ]; then
@@ -87,7 +99,7 @@ in
       done
 
       [ "$moved" = 1 ] || {
-        echo "Raw AYN Odin2 gamepad event node was not found" >&2
+        echo "Raw gamepad event node was not found" >&2
         exit 1
       }
     '';

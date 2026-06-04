@@ -32,6 +32,7 @@ helpers.runAssertions "rocknix-main-space-systemd-contract" [
   (assertContract (portal.serviceConfig.Type == "oneshot") "Portal bootstrap is oneshot")
   (assertContract (sway.environment.XDG_CURRENT_DESKTOP == "sway") "Sway kiosk advertises sway desktop for portals")
   (assertContract (sway.environment.CEMU_BIOS_ROOT == "/storage/roms/bios/cemu") "Sway kiosk keeps Cemu BIOS compatibility root")
-  (assertContract (sway.environment.CEMU_AFFINITY_MASK == cfg.rocknix.sm8550.performance.cemuAffinityMask) "Sway kiosk consumes SM8550 Cemu affinity default")
+  (assertContract (sway.environment.CEMU_AFFINITY_MASK == cfg.rocknix.device.performance.cemuAffinityMask) "Sway kiosk consumes generic device Cemu affinity default")
+  (assertContract (cfg.rocknix.device.performance.cemuAffinityMask == cfg.rocknix.sm8550.performance.cemuAffinityMask) "generic Cemu affinity remains bridged to SM8550 policy")
   (assertContract (!(contains "multi-user.target" (devSway.after or [ ]))) "dev-env Sway kiosk also avoids After=multi-user.target")
 ]
