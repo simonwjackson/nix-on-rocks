@@ -70,14 +70,17 @@
         "ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix;
         # Physical RG353M Android ADB evidence from 2026-06-04 exposes this
         # generic RK3566/RK817 board compatible first, with no Anbernic-specific
-        # DT compatible. Treat it as the RG353M support-lane identity until a
-        # later ROCKNIX SD boot proves a more specific compatible string.
+        # DT compatible. Keep it as an RG353M support-lane identity because the
+        # stock Android DTB can differ from the SD-booted ROCKNIX DTB.
         "rockchip,rk3566-rk817-tablet" = ./guest/profiles/devices/rg353m.nix;
       };
-      # Model aliases remain empty until hardware evidence proves a product
-      # needs one. The captured RG353M device-tree model is generic and the
-      # compatible string above is the selected production key.
-      deviceProfileByModel = { };
+      # Physical RG353M official ROCKNIX SD-boot evidence from 2026-06-04
+      # exposes model `Anbernic RG353M` with the ambiguous `anbernic,rg353p`
+      # compatible. Select RG353M by model so a real RG353P-shaped identity is
+      # not accidentally claimed by this profile.
+      deviceProfileByModel = {
+        "Anbernic RG353M" = "rockchip,rk3566-rk817-tablet";
+      };
 
       deviceProfileKeyFromIdentity =
         args:

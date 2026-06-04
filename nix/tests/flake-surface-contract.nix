@@ -47,6 +47,18 @@ let
     model = "Rockchip RK3566 RK817 TABLET LP4X Board";
     compatibleStrings = [ "rockchip,rk3566" ];
   };
+  capturedSdRg353mKey = self.lib.deviceProfileKeyFromIdentity {
+    model = "Anbernic RG353M";
+    compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
+  };
+  capturedSdRg353mProfile = self.lib.selectDeviceProfileFromIdentity {
+    model = "Anbernic RG353M";
+    compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
+  };
+  rg353pCompatibleOnlyKey = self.lib.deviceProfileKeyFromIdentity {
+    model = "Anbernic RG353P";
+    compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
+  };
 in
 helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (packages.default == packages.cemu) "default package aliases cemu")
@@ -66,11 +78,13 @@ helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (self.nixosModules ? rg353m) "nixosModules.rg353m is exposed")
   (assertContract (self.lib ? mkGuestRootfs) "lib.mkGuestRootfs is exposed")
   (assertContract (self.lib ? deviceProfileByCompatible) "lib.deviceProfileByCompatible is exposed")
+  (assertContract (self.lib ? deviceProfileByModel) "lib.deviceProfileByModel is exposed")
   (assertContract (self.lib ? deviceProfileKeyFromIdentity) "lib.deviceProfileKeyFromIdentity is exposed")
   (assertContract (self.lib ? selectDeviceProfileFromIdentity) "lib.selectDeviceProfileFromIdentity is exposed")
   (assertContract (self.lib.deviceProfileByCompatible ? "ayn,thor") "Thor device-compatible profile is registered")
   (assertContract (self.lib.deviceProfileByCompatible ? "ayn,odin2portal") "Odin 2 Portal device-compatible profile is registered")
   (assertContract (self.lib.deviceProfileByCompatible ? "rockchip,rk3566-rk817-tablet") "captured RG353M RK3566/RK817 compatible profile is registered")
+  (assertContract (self.lib.deviceProfileByModel."Anbernic RG353M" == "rockchip,rk3566-rk817-tablet") "captured SD-boot RG353M model aliases to the registered RG353M profile key")
   (assertContract (self.nixosConfigurations ? rocknix-guest-rg353m) "RG353M NixOS profile configuration is exposed")
   (assertContract (selectedThorKey == "ayn,thor") "direct compatible selection preserves known SM8550 devices")
   (assertContract (selectedRg353mKey == "anbernic,rg353m") "RG353M model alias overrides ambiguous RG353P compatible")
@@ -79,4 +93,7 @@ helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (capturedRg353mCompatibleKey == "rockchip,rk3566-rk817-tablet") "captured RG353M identity selects the RK3566/RK817 compatible key")
   (assertContract (capturedRg353mProfile == self.lib.deviceProfileByCompatible."rockchip,rk3566-rk817-tablet") "captured RG353M identity returns the RG353M profile path")
   (assertContract (rg353mGenericCompatibleOnlyKey == null) "generic rockchip,rk3566 alone does not select any registered profile")
+  (assertContract (capturedSdRg353mKey == "rockchip,rk3566-rk817-tablet") "captured SD-boot RG353M identity selects the RG353M model alias")
+  (assertContract (capturedSdRg353mProfile == self.lib.deviceProfileByCompatible."rockchip,rk3566-rk817-tablet") "captured SD-boot RG353M identity returns the RG353M profile path")
+  (assertContract (rg353pCompatibleOnlyKey == null) "RG353P-shaped compatible without RG353M model does not select RG353M")
 ]

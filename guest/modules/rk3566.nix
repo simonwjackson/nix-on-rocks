@@ -24,18 +24,22 @@ in
   config.rocknix.device = {
     id = mkForce config.rocknix.rk3566.deviceId;
 
-    # Real connector/orientation/touch routing is intentionally deferred to the
-    # hardware probe. Keep this non-empty only as documented Sway config text.
+    # Physical RG353M official ROCKNIX SD-boot evidence captured on 2026-06-04:
+    # /sys/class/drm/card0-DSI-1 is connected/enabled at 640x480, HDMI-A-1 is
+    # present but disconnected, and the backlight node is /sys/class/backlight/backlight.
     display.swayDeviceConfig = mkForce ''
-      # RK3566/RG353M display topology pending hardware probe.
-      # Do not inherit SM8550 Thor/Odin panel assumptions.
+      # RG353M: captured SD-boot panel path is card0-DSI-1 at 640x480.
+      # Keep the handheld panel as-is; do not inherit SM8550 Thor/Odin transforms.
+      output DSI-1 mode 640x480
+      output DSI-1 pos 0 0
+      output DSI-1 bg #000000 solid_color
     '';
 
     input = {
-      powerEventNames = mkForce [ ];
-      volumeDownEventNames = mkForce [ ];
-      volumeUpLidEventNames = mkForce [ ];
-      rawGamepadEventNames = mkForce [ ];
+      powerEventNames = mkForce [ "rk805 pwrkey" ];
+      volumeDownEventNames = mkForce [ "gpio-keys-vol" ];
+      volumeUpLidEventNames = mkForce [ "gpio-keys-vol" ];
+      rawGamepadEventNames = mkForce [ "retrogame_joypad" ];
       virtualGamepadEventNames = mkForce [ ];
     };
 
