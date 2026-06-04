@@ -2196,6 +2196,433 @@ reconnect across cycles), not capability.
 
 ---
 
+## Dockable desktop / handheld mode-switch exploration (2026-05-26)
+
+### Summary
+
+Explore a Thor-first dockable mode-switch spike where docked mode disables the
+built-in screens and shows a distinct desktop session on an external monitor,
+then undocking returns cleanly to handheld/play mode.
+
+---
+
+### Problem Frame
+
+The target product direction is for Thor to become a credible main device:
+plug into a monitor and work in a desktop environment, unplug and return to a
+handheld game-console posture. Prior main-space spikes already proved that a
+Mesa-equipped guest Sway can render on SM8550 hardware and light both the
+handheld panel and the external display surface. The remaining uncertainty is
+whether docked and handheld use can feel like cleanly separated worlds rather
+than one awkward multi-monitor session.
+
+---
+
+### Actors
+
+- A1. Thor owner: docks the device to work, undocks it to play, and needs a
+  reliable escape path if the display transition misbehaves.
+- A2. Handheld mode: the play-oriented UI shown on the built-in screens when
+  Thor is undocked.
+- A3. Docked mode: the work-oriented desktop UI shown on the external monitor
+  when Thor is docked.
+
+---
+
+### Key Flows
+
+- F1. Dock into desktop mode
+  - **Trigger:** Thor is connected to an external monitor for work.
+  - **Actors:** A1, A2, A3
+  - **Steps:** Handheld mode yields visible focus, the built-in screens turn
+    off or become unavailable, and the external monitor shows a distinct
+    docked desktop session.
+  - **Outcome:** The user sees an unambiguous docked desktop and is not left
+    with a blank or half-owned display state.
+  - **Covered by:** R1, R2, R3, R5
+
+- F2. Undock back to handheld mode
+  - **Trigger:** Thor is unplugged from the external monitor.
+  - **Actors:** A1, A2, A3
+  - **Steps:** The docked desktop stops being the visible target, the built-in
+    screens return, and handheld mode becomes usable again.
+  - **Outcome:** The user is back in handheld/play posture without manual SSH
+    repair or a reboot.
+  - **Covered by:** R1, R4, R5
+
+---
+
+### Requirements
+
+**Mode-switch behavior**
+
+- R1. The first spike targets Thor only and proves a clean switch between
+  handheld mode and docked mode.
+- R2. When docked, the built-in screens are off, disabled, or otherwise not
+  the active visible UI surface.
+- R3. When docked, the external monitor shows a distinct desktop session; a
+  disposable session is acceptable for the first proof.
+- R4. When undocked, Thor returns to handheld mode with the built-in screens
+  active and usable.
+- R5. A failed switch must have a reliable recovery path that avoids leaving
+  the device permanently blank or requiring a full reflash.
+
+**Spike scope**
+
+- R6. The first spike should use a nested docked session shape: the current
+  hardware-owning display stack remains the safer outer owner, and docked mode
+  appears as a separate session inside that boundary.
+- R7. The spike should observe input and audio behavior when convenient, but
+  display/session viability is the pass/fail criterion.
+- R8. The spike should keep future manual mode switching in mind, such as a
+  button combo to jump between handheld and docked worlds, without building it
+  now.
+
+---
+
+### Acceptance Examples
+
+- AE1. **Covers R1, R2, R3, R5.** Given Thor is in handheld mode and an
+  external monitor is connected, when the docked-mode spike runs, the built-in
+  screens stop showing the active UI and the external monitor shows a distinct
+  desktop session with a documented recovery path available.
+- AE2. **Covers R1, R4, R5.** Given Thor is in docked mode, when the external
+  monitor is unplugged or the spike reverses the docked state, the built-in
+  screens return to a usable handheld UI without rebooting.
+- AE3. **Covers R6, R7.** Given the nested docked session is running, when the
+  user interacts with the visible docked desktop, the spike records whether
+  keyboard/mouse, controller, and audio follow the active mode, but does not
+  fail solely because those routes are incomplete.
+
+---
+
+### Success Criteria
+
+- The user can see a credible docked-work / handheld-play split on real Thor
+  hardware.
+- The first proof is safe enough to run on-device without betting the device on
+  two competing hardware-owning display sessions.
+- The resulting observation is concrete enough for a later plan to choose
+  whether to deepen nested-session behavior, graduate to stronger isolation, or
+  abandon the idea.
+
+---
+
+### Scope Boundaries
+
+- Do not build the future button-combo session switch in this spike.
+- Do not require full input, audio, Bluetooth, or sleep ownership handoff for
+  the first proof.
+- Do not require docked session persistence across undock; preserving the
+  docked desktop is desirable later, but disposable is acceptable now.
+- Do not attempt two real DRM-owning compositors as the first proof.
+- Do not generalize beyond Thor/SM8550 handhelds.
+- Do not make automatic dock/undock behavior production-ready yet.
+
+---
+
+### Key Decisions
+
+- Start with a nested docked session: this best matches the desired “brand-new
+  docked session” feel while avoiding the highest-risk display-ownership fight
+  during the first spike.
+- Treat display/session behavior as the first pass/fail gate: input/audio
+  ownership matters for daily use, but should not block finding out whether the
+  visible product shape is worth pursuing.
+- Keep the manual session-jump idea as future-facing: it may become important
+  to the product feel, but it is not necessary to prove dock/undock viability.
+
+---
+
+### Dependencies / Assumptions
+
+- Existing main-space findings remain valid: guest-owned Sway on SM8550 is
+  possible, the external display surface is visible to the stack, and recovery
+  over host SSH remains available.
+- External-monitor detection and output naming may vary by device state; the
+  spike should measure rather than assume the exact live topology.
+- “Disabled built-in screens” can mean visually off or unavailable to the user
+  for the first proof; planning can decide the safest mechanism.
+
+---
+
+### Outstanding Questions
+
+#### Deferred to Planning
+
+- [Affects R2, R3][Technical] Which nested-session mechanism gives the
+  cleanest distinct-session proof while preserving a reliable outer display
+  owner?
+- [Affects R5][Technical] What recovery command or watchdog should be staged
+  before running the spike?
+- [Affects R7][Needs research] Which input and audio observations are cheap to
+  collect during the display spike without expanding its pass/fail scope?
+
+---
+
+### Live findings — first ephemeral nested-session smoke
+
+A smallest safe move was run on Thor without changing hardware output ownership:
+
+- SSH recovery was available on the local network. The only failed unit observed
+  before and after the smoke was the anonymous ROCKNIX stats reporter.
+- Current display topology had both built-in DSI outputs connected and active;
+  the DP output was disconnected. So this was not yet a true external-monitor
+  dock test.
+- A nested Sway session was launched as a Wayland client inside the existing
+  Korri/outer Sway session, with a short-lived terminal titled
+  `DOCKED-NESTED-SPIKE`.
+- While the nested session was alive, the outer Sway tree showed `wlroots - WL-1`
+  clients on `DSI-2`, confirming the nested compositor appeared as an outer
+  Wayland client instead of taking DRM ownership.
+- Cleanup left no nested-session processes running, and both built-in DSI
+  outputs remained active with DPMS/power on.
+
+Implication: the nested-session primitive is viable as the first low-risk
+building block. The next spike should repeat it with a real external monitor
+connected/detected, then steer the nested docked session to that output while
+blanking or disabling the built-in displays.
+
+### Live findings — external monitor nested-session smoke
+
+A follow-up smoke ran after the external monitor was replugged and detected:
+
+- Guest SSH was available on `bandai:2222`.
+- DRM reported `card0-DP-1` connected, with modes up to `2880x1800`.
+- Outer Sway reported `DP-1` active, model `YMK EM160TP-A`, current mode
+  `2880x1800`, scale `2.0`, workspace `3`.
+- The nested Sway spike focused `DP-1`, launched a short-lived nested Sway
+  session as a Wayland client, and started a terminal titled
+  `DOCKED-EXTERNAL-NESTED-SPIKE`.
+- Outer Sway placed the nested `wlroots - WL-1` client on `DP-1` workspace `3`;
+  the spike then fullscreened that client successfully.
+- Cleanup left no nested-session processes running.
+
+Implication: the first distinct docked-session feel now works on the real
+external monitor without taking DRM ownership.
+
+### Live findings — external monitor sharpness smoke
+
+The first external nested session worked but looked blurry. A reversible
+sharpness smoke temporarily changed outer `DP-1` scale from `2.0` to `1.0`,
+launched the same fullscreen nested session, then restored `DP-1` scale to
+`2.0`.
+
+Observed result: the nested session became smaller and sharper. Cleanup restored
+`DP-1` to scale `2.0`, left the external output active on workspace `3`, and
+left no sharpness-spike processes running.
+
+Implication: blur is likely caused by the outer compositor scaling the nested
+session surface. The docked-session path needs an explicit scaling policy:
+prefer native/sharp output for docked mode, then solve readability with font/UI
+scale inside the nested desktop rather than relying on outer fractional/logical
+scaling.
+
+### Live findings — crisp scaled docked session smoke
+
+A follow-up smoke tested whether docked mode could be both larger and sharp:
+
+- Outer `DP-1` was temporarily set to native scale `1.0`.
+- The nested Sway session set its own output scale to `2` and launched a larger
+  terminal (`monospace:size=24`) titled `DOCKED-CRISP-SCALED-SPIKE`.
+- User-visible result: “looks good.” This confirms the product direction for
+  docked mode should be outer-native plus inner desktop/UI scaling.
+- Cleanup restored outer `DP-1` to scale `2.0`, left the external output active
+  on workspace `3`, and left no crisp-scaling spike processes running.
+
+### Live findings — external-only docked session smoke
+
+A follow-up smoke tested the core docked-mode visual promise:
+
+- Launched the crisp nested docked session on `DP-1` with outer-native scale and
+  inner UI scaling.
+- Disabled both built-in DSI outputs through outer Sway while the nested docked
+  session remained visible on the external monitor.
+- Runtime output state during the smoke: `DP-1` active/powered/focused;
+  `DSI-1` and `DSI-2` inactive with DPMS/power false.
+- User-visible result: “device screens are off. external is on.”
+- Cleanup restored `DSI-1` and `DSI-2` active/powered, restored `DP-1` scale to
+  `2.0`, and left no DSI-off spike processes running.
+
+Implication: the first end-to-end visual shape is proven: docked mode can show a
+sharp, scaled, distinct nested desktop on the external monitor while the device
+screens are off, but the restore path is not yet safe enough.
+
+### Live findings — DSI-2 restore garble
+
+After restoring the built-in panels from the external-only smoke, the user
+reported that the top internal screen came back garbled while the bottom screen
+remained usable. A Sway power-cycle and a stronger disable/re-enable at 60 Hz
+made the panel flash but did not clear the garble. Kernel logs showed DSI/DPU
+command-mode failures on the DSI-2 path, including `dsi_err_worker`,
+`frame done timeout`, and `failed wait_for_idle` for encoder `36` / `intf:2`.
+
+Parking `DSI-2` disabled returned the visible state to a usable shape: bottom
+internal screen active, top screen black/disabled, and external monitor active.
+DRM/Sway reported `DSI-2` inactive with DPMS/power false.
+
+Implication: disabling/re-enabling the top DSI panel through Sway output control
+can wedge the DSI-2 scanout path even though the compositor reports the output
+as active. Future docked-mode spikes should avoid `output DSI-2 disable` as the
+primary blanking mechanism until a safe restore recipe is proven. Safer
+candidates include backlight-only blanking, DPMS-only blanking without full
+output disable, restoring panels in a specific order, restarting the compositor,
+or leaving DSI-2 parked until an undock recovery flow is available.
+
+A `korri-compositor.service` restart did not clear the garbled DSI-2 state;
+DSI/DPU timeout errors continued. A full device reboot did clear it: after
+reboot, both DSI panels and `DP-1` were active with no fresh DSI timeout errors,
+and the top screen was no longer garbled. With the external monitor still
+connected during boot, Korri launched on `DP-1`; moving the Korri Xwayland window
+by title placed it back on `DSI-1`, then later to `DSI-2` on request.
+
+### Live findings — backlight-only docked blanking smoke
+
+A safer docked blanking smoke kept both internal DSI outputs active and only set
+their backlights to zero:
+
+- Captured brightness values: `ae94000.dsi.0=26`, `ae96000.dsi.0=410`.
+- Launched the sharp/scaled nested docked session on external `DP-1`.
+- Set both internal backlight brightness values to `0` without disabling
+  `DSI-1` or `DSI-2`; Sway continued to report both DSI outputs
+  active/powered.
+- User-visible result: both device screens looked black/off and the external
+  monitor remained correct.
+- Cleanup restored both brightness values, restored `DP-1` scale to `2.0`, left
+  all outputs active/powered, and produced no fresh DSI timeout errors.
+
+Implication: backlight-only blanking is the current safe docked-mode screen-off
+mechanism. It preserves the desired visible UX while avoiding the DSI-2
+command-mode wedge caused by full output disable/enable. Treat true DSI output
+disable as a later power-optimization investigation, not the default docked-mode
+behavior.
+
+### Live findings — undock watcher with backlight restore
+
+An undock lifecycle smoke launched the sharp/scaled nested docked session,
+blanked the internal screens by setting backlights to `0`, then watched
+`card0-DP-1/status` for disconnect. On unplug:
+
+- The watcher detected `DP-1=disconnected` and ran cleanup.
+- Cleanup restored both captured brightness values and killed the nested docked
+  session.
+- The first visible recovery was incomplete: the user still saw black screens
+  until explicit DSI output enable/power/focus commands and Korri placement were
+  re-issued.
+- After re-issuing those commands, the top screen returned, and a temporary
+  `DSI1-BOTTOM-MARKER` terminal confirmed the bottom screen was alive too.
+- No fresh DSI timeout errors were observed during the backlight-only undock
+  path.
+
+Implication: backlight-only avoids the DSI-2 garble, but undock restore needs a
+more complete sequence than brightness restoration alone. A safe restore recipe
+should explicitly restore brightness, ensure both DSI outputs are enabled and
+powered, restore transform/scale, move/focus the handheld UI, and force a simple
+repaint/marker or equivalent compositor activity before declaring handheld mode
+back.
+
+### Live findings — improved dock/undock restore smoke
+
+A second dock/undock watcher incorporated the full restore recipe:
+
+1. Launch sharp/scaled nested docked session on external `DP-1`.
+2. Blank internal screens by setting backlights to `0` while leaving both DSI
+   outputs active.
+3. Watch `card0-DP-1/status` for disconnect.
+4. On disconnect, kill the nested session, restore captured brightness values,
+   explicitly enable/power both DSI outputs, restore transform/scale, move Korri
+   to `DSI-2`, focus `DSI-2`, and briefly launch a marker on `DSI-1` to force a
+   repaint.
+
+The user-visible result was “I think it works.” Final state: `DP-1`
+disconnected, `DSI-1` and `DSI-2` active/powered, brightness restored to
+`26`/`410`, Korri/focus on `DSI-2`, no remaining spike processes, and no fresh
+DSI timeout errors.
+
+Implication: the first viable dock/undock loop is proven with the conservative
+backlight-only blanking strategy. This should become the baseline for planning;
+true DSI output disable remains a later power-optimization track behind an
+explicit recovery gate.
+
+### Live findings — nested Niri docked desktop smoke
+
+A nested Niri experiment tested whether the docked desktop has to be Sway:
+
+- `nixpkgs#niri` was fetched into the guest and `niri 26.04` launched
+  successfully as a nested Wayland compositor.
+- A first smoke showed Niri can launch a `foot` terminal inside its nested
+  session and does not take DRM ownership.
+- With `DP-1` connected, Niri was placed fullscreen on the external monitor with
+  outer `DP-1` scale `1.0`.
+- Keyboard and mouse input worked inside the nested Niri terminal.
+- User-visible issue: double mouse cursor. This is likely because both the outer
+  Sway cursor and nested Niri cursor are visible when pointer focus is inside
+  the nested compositor.
+- Cleanup restored focus to `DSI-2`, restored `DP-1` scale to `2.0`, and left no
+  Niri spike processes running.
+
+Implication: the nested-compositor slot is not Sway-specific. Niri is viable as
+an alternative docked desktop candidate, but cursor ownership/presentation needs
+an explicit policy before it can feel polished.
+
+A cursor-tuning smoke ran Niri with `xcursor-size 1` and
+`hide-after-inactive-ms 1`. User-visible result: the larger cursor hid shortly
+after pointer movement stopped, suggesting the larger cursor is Niri's nested
+cursor while the smaller cursor is the outer Sway cursor. This reduces cursor
+persistence but does not eliminate the double-cursor effect while the pointer is
+moving. Next cursor candidates: make the nested cursor fully transparent/tiny, or
+hide the outer Sway cursor while the Niri client has focus.
+
+### Live findings — Niri desktop load and lifecycle follow-ups
+
+Additional Niri follow-ups tested whether the nested docked desktop feels like a
+real work session rather than a single terminal demo:
+
+- GPU load: `vkgears` was too light to be useful. `glmark2-wayland` fullscreen
+  inside nested Niri provided a more visible load and looked good on the
+  external monitor.
+- Many-app desktop: nested Niri successfully hosted multiple apps at once,
+  including several `foot` terminals, `glmark2-wayland`, and `vkcube`. Keyboard
+  and mouse navigation worked well enough for the user to navigate Niri's
+  scrollable tiling model.
+- Undock without internal blanking: when the external monitor was unplugged
+  during the many-app Niri test, the internal screens stayed on and Korri
+  remained usable. The Niri session/apps did not persist because that spike had
+  a timed cleanup/relaunch model.
+- Redock relaunch: reconnecting the monitor and relaunching Niri restored the
+  many-app docked desktop, but this was not true session persistence.
+- Freeze/hide attempt: a watcher tried to move the Niri client to scratchpad and
+  `SIGSTOP` the Niri process group on undock, then `SIGCONT` and show it on
+  redock. The first attempt failed because the prior auto-cleanup had already
+  killed the Niri session, leaving `DP-1` focused on an empty/black workspace.
+- Persistent E2E attempt: a later watcher was prepared around a live Niri
+  process group, with docked state set to `DP-1` native scale and internal
+  backlights `0`, but the session was paused before completing the full
+  undock/redock persistence test.
+- DP mode regression: after one dock/undock/redock sequence, `DP-1` exposed only
+  fallback modes (`640x480`, `800x600`, `848x480`, `1024x768`) despite the same
+  monitor previously exposing `2880x1800`. A physical replug restored the full
+  EDID/mode list and `2880x1800@120Hz` operation.
+
+Implications for planning:
+
+- Niri is a credible docked-desktop candidate, not just a proof-of-launch.
+- Session persistence is still unproven; the next real workflow spike should use
+  a durable supervisor with no auto-cleanup timer and a stable process-group or
+  service identity.
+- Redock handling must verify EDID/high-resolution modes before showing the
+  desktop. If only fallback modes are present, the mode manager should surface a
+  recovery path or request a replug rather than silently presenting a low-res
+  docked desktop.
+- Internal-screen blanking should remain backlight-only while docked; full DSI
+  disable remains excluded from the baseline.
+
+Final pause state: all exploration watchers, Niri sessions, and benchmark apps
+were stopped; `DSI-1` and `DSI-2` were left active/powered with backlights
+restored, and `DP-1` was disconnected.
+
+---
+
 ## Resume hint
 
 When resuming in a fresh session:
@@ -2204,7 +2631,10 @@ When resuming in a fresh session:
 2. Confirm device state (build flashed, branch, head).
 3. Decide whether to clean up the live experimental guest unit edits or
    keep them for one more validation pass.
-4. Start at Milestone 14 (main-space canary), specifically the
+4. If pursuing the dockable desktop / handheld mode-switch idea, start with the
+   2026-05-26 nested docked-session spike above before attempting two
+   hardware-owning sessions.
+5. Otherwise start at Milestone 14 (main-space canary), specifically the
    "First validation ladder when device is back online" steps above.
-5. After Milestone 14 is observed live, write a proper plan document for
+6. After Milestone 14 is observed live, write a proper plan document for
    Milestone 14 under `docs/plans/` and proceed forward-only from there.

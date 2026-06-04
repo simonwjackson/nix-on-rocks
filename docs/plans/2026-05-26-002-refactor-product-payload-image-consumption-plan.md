@@ -1,7 +1,7 @@
 ---
 title: refactor: Consume product payloads in SM8550 image builds
 type: refactor
-status: completed
+status: active
 date: 2026-05-26
 ---
 
@@ -10,20 +10,6 @@ date: 2026-05-26
 ## Summary
 
 Make the Phase 1 generic product payload seam the active source for SM8550 Docker/ROCKNIX image builds, then consume a Korri Phase 2 Sobo payload for Odin2Portal through that seam. In this plan, Sobo names the Korri product/runtime payload, while Odin2Portal names the shipped SM8550 seed device/compatible target (`odin2portal` / `ayn,odin2portal`). The implementation keeps Docker as the image backend, uses cheap lock/fetch/artifact checks before expensive builds, and validates the first candidate with refreshed substrate/base artifacts rather than blindly reusing stale image-only inputs.
-
-## Closeout
-
-Phase 3 is closed at `artifact-verified + remote device smoke accepted` for Sobo/Odin2Portal. The accepted input surface is the active Korri payload in `product-payload.lock` / `guest.lock`: Korri revision `a3fabfd8a35190cd23d027f4f8569bc11344a3d5`, source SHA256 `0dea10b50a12d2a96944d44d401d4786f95768d4e79df7a13a237d4fcef0f80d`, seed device `odin2portal`, compatible `ayn,odin2portal`, archive `rocknix-guest-rootfs-odin2portal-a3fabfd8a351.tar.zst`, and seed SHA256 `bdfe9a73acc327c77b3c813d7c284bfc4c182b930b436b24cdcfa878d73ccd0a`.
-
-Evidence carried into Phase 4:
-
-- Preflight run: `26505279214`
-- Fresh base run: `26505366012`
-- Image-only proof run: `26509482057`
-- Product payload release: `rocknix-product-payload-a3fabfd8a351`
-- Remote Sobo smoke: portal recovered with host/guest failed units at zero.
-
-This closeout does not claim full-chain release-path proof, hands-on runtime acceptance, Thor acceptance, or release publication. `/storage/.boot.hint=UPDATE` remaining after successful boot is tracked as update-lifecycle hardening follow-up and is not a Phase 3 blocker unless it causes an update/runtime regression.
 
 ---
 

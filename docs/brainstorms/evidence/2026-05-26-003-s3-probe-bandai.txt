@@ -1,0 +1,141 @@
+=== probe start Wed May 27 00:11:20 EDT 2026 ===
+uname=7.0.2 uptime= 00:11:20 up  5:05,  load average: 0.07, 0.10, 0.15
+mem_sleep=s2idle [deep]
+power_state_options=freeze mem disk
+
+=== T1 sync ===
+Wed May 27 00:11:20 EDT 2026
+
+=== T2 setting RTC wake +30s ===
+alarm=1779855111 now_epoch=1779855080
+
+=== T3 SUSPENDING Wed May 27 00:11:20 EDT 2026 ===
+=== T4 RESUMED rc=0 Wed May 27 00:11:53 EDT 2026 ===
+
+=== T5 dmesg tail (suspend/resume markers) ===
+[17971.029921] ath12k_wifi7_pci 0000:01:00.0: chip_id 0x2 chip_family 0x4 board_id 0xff soc_id 0x40170200
+[17971.029929] ath12k_wifi7_pci 0000:01:00.0: fw_version 0x110cffff fw_build_timestamp 2025-06-25 09:26 fw_build_id QC_IMAGE_VERSION_STRING=WLAN.HMT.1.1.c5-00302-QCAHMTSWPL_V1.0_V2.0_SILICONZ-1.115823.3
+[17971.035220] qcom-qmp-combo-phy 88e8000.phy: phy initialization timed-out
+[17971.035380] phy phy-88e8000.phy.3: phy init failed --> -110
+[17971.035407] dwc3-qcom a600000.usb: PM: dpm_run_callback(): dwc3_qcom_pm_resume returns -110
+[17971.035421] dwc3-qcom a600000.usb: PM: failed to resume: error -110
+[17971.688578] OOM killer enabled.
+[17971.688584] Restarting tasks: Starting
+[17971.688958] Restarting tasks: Done
+[17971.689038] random: crng reseeded on system resumption
+[17971.689088] PM: suspend exit
+[18213.033025] xhci-hcd xhci-hcd.2.auto: xHCI Host Controller
+[18213.033048] xhci-hcd xhci-hcd.2.auto: new USB bus registered, assigned bus number 1
+[18213.035495] xhci-hcd xhci-hcd.2.auto: hcc params 0x0110ffc5 hci version 0x110 quirks 0x0000808020000810
+[18213.035539] xhci-hcd xhci-hcd.2.auto: irq 198, io mem 0x0a600000
+[18213.035642] xhci-hcd xhci-hcd.2.auto: xHCI Host Controller
+[18213.035649] xhci-hcd xhci-hcd.2.auto: new USB bus registered, assigned bus number 2
+[18213.035656] xhci-hcd xhci-hcd.2.auto: Host supports USB 3.1 Enhanced SuperSpeed
+[18213.036166] hub 1-0:1.0: USB hub found
+[18213.036189] hub 1-0:1.0: 1 port detected
+[18213.036754] hub 2-0:1.0: USB hub found
+[18213.036772] hub 2-0:1.0: 1 port detected
+[18213.281881] usb 1-1: new high-speed USB device number 2 using xhci-hcd
+[18213.484847] hub 1-1:1.0: USB hub found
+[18213.485454] hub 1-1:1.0: 4 ports detected
+[18213.769902] usb 1-1.3: new high-speed USB device number 3 using xhci-hcd
+[18214.106071] input: Generic USB Audio as /devices/platform/soc@0/a600000.usb/xhci-hcd.2.auto/usb1/1-1/1-1.3/1-1.3:1.0/0003:18D1:5029.0005/input/input18
+[18214.164758] hid-generic 0003:18D1:5029.0005: input,hidraw0: USB HID v1.11 Device [Generic USB Audio] on usb-xhci-hcd.2.auto-1.3/input0
+[18214.517926] usb 1-1.2: new full-speed USB device number 4 using xhci-hcd
+[18214.611502] usb 1-1.2: not running at top speed; connect to a high speed hub
+[18217.388684] usb 1-1.2: USB disconnect, device number 4
+[18217.726067] usb 1-1.4: new high-speed USB device number 5 using xhci-hcd
+[18217.891519] usbcore: registered new device driver r8152-cfgselector
+[18218.060583] r8152-cfgselector 1-1.4: reset high-speed USB device number 5 using xhci-hcd
+[18218.271868] r8152 1-1.4:1.0: Direct firmware load for rtl_nic/rtl8156b-2.fw failed with error -2
+[18218.271886] r8152 1-1.4:1.0: unable to load firmware patch rtl_nic/rtl8156b-2.fw (-2)
+[18218.326666] usbcore: registered new interface driver r8152
+[18218.332315] usbcore: registered new interface driver cdc_ether
+[18218.334311] usbcore: registered new interface driver cdc_ncm
+[18220.846768] r8152 1-1.4:1.0 eth0: carrier on
+[18292.111478] PM: suspend entry (deep)
+[18292.112594] Filesystems sync: 0.001 seconds
+[18292.132270] Freezing user space processes
+[18292.133583] Freezing user space processes completed (elapsed 0.001 seconds)
+[18292.133593] OOM killer disabled.
+[18292.133596] Freezing remaining freezable tasks
+[18292.134767] Freezing remaining freezable tasks completed (elapsed 0.001 seconds)
+[18292.134774] printk: Suspending console(s) (use no_console_suspend to debug)
+[18292.893805] dwc3-qcom a600000.usb: port-1 HS-PHY not in L2
+[18293.085563] Disabling non-boot CPUs ...
+[18293.086771] psci: CPU7 killed (polled 0 ms)
+[18293.088609] psci: CPU6 killed (polled 0 ms)
+[18293.090518] psci: CPU5 killed (polled 0 ms)
+[18293.092821] psci: CPU4 killed (polled 0 ms)
+[18293.094833] psci: CPU3 killed (polled 0 ms)
+[18293.097287] IRQ205: set affinity failed(-22).
+[18293.098372] psci: CPU2 killed (polled 0 ms)
+[18293.100046] IRQ205: set affinity failed(-22).
+[18293.100113] psci: CPU1 killed (polled 0 ms)
+[18293.101989] Enabling non-boot CPUs ...
+[18293.103435] Detected PIPT I-cache on CPU1
+[18293.103473] GICv3: CPU1: found redistributor 100 region 0:0x00000000171c0000
+[18293.103692] CPU1: Booted secondary processor 0x0000000100 [0x411fd461]
+[18293.104471] CPU1 is up
+[18293.105788] Detected PIPT I-cache on CPU2
+[18293.105809] GICv3: CPU2: found redistributor 200 region 0:0x0000000017200000
+[18293.106001] CPU2: Booted secondary processor 0x0000000200 [0x411fd461]
+[18293.106479] CPU2 is up
+[18293.108281] Detected PIPT I-cache on CPU3
+[18293.108284] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_AA64MMFR1_EL1. Boot CPU: 0x00000011212122, CPU3: 0x00000010212122
+[18293.108294] GICv3: CPU3: found redistributor 300 region 0:0x0000000017240000
+[18293.108471] CPU3: Booted secondary processor 0x0000000300 [0x411fd4d0]
+[18293.108787] CPU3 is up
+[18293.109937] Detected PIPT I-cache on CPU4
+[18293.109941] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_AA64MMFR1_EL1. Boot CPU: 0x00000011212122, CPU4: 0x00000010212122
+[18293.109950] GICv3: CPU4: found redistributor 400 region 0:0x0000000017280000
+[18293.110133] CPU4: Booted secondary processor 0x0000000400 [0x411fd4d0]
+[18293.110446] CPU4 is up
+[18293.110714] Detected PIPT I-cache on CPU5
+[18293.110719] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_AA64MMFR1_EL1. Boot CPU: 0x00000011212122, CPU5: 0x00000010212122
+[18293.110722] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_MMFR4_EL1. Boot CPU: 0x00000001021111, CPU5: 0x00000001021110
+[18293.110730] GICv3: CPU5: found redistributor 500 region 0:0x00000000172c0000
+[18293.110902] CPU5: Booted secondary processor 0x0000000500 [0x412fd470]
+[18293.111178] CPU5 is up
+[18293.111444] Detected PIPT I-cache on CPU6
+[18293.111448] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_AA64MMFR1_EL1. Boot CPU: 0x00000011212122, CPU6: 0x00000010212122
+[18293.111452] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_MMFR4_EL1. Boot CPU: 0x00000001021111, CPU6: 0x00000001021110
+[18293.111461] GICv3: CPU6: found redistributor 600 region 0:0x0000000017300000
+[18293.111631] CPU6: Booted secondary processor 0x0000000600 [0x412fd470]
+[18293.111947] CPU6 is up
+[18293.112320] Detected PIPT I-cache on CPU7
+[18293.112324] CPU features: SANITY CHECK: Unexpected variation in SYS_ID_AA64MMFR1_EL1. Boot CPU: 0x00000011212122, CPU7: 0x00000010212122
+[18293.112333] GICv3: CPU7: found redistributor 700 region 0:0x0000000017340000
+[18293.112500] CPU7: Booted secondary processor 0x0000000700 [0x411fd4e0]
+[18293.112798] CPU7 is up
+[18293.186762] mhi mhi0: Requested to power ON
+[18293.186778] mhi mhi0: Power on setup success
+[18293.296828] mhi mhi0: Wait for device to enter SBL or Mission mode
+[18293.707762] ath12k_wifi7_pci 0000:01:00.0: chip_id 0x2 chip_family 0x4 board_id 0xff soc_id 0x40170200
+[18293.707769] ath12k_wifi7_pci 0000:01:00.0: fw_version 0x110cffff fw_build_timestamp 2025-06-25 09:26 fw_build_id QC_IMAGE_VERSION_STRING=WLAN.HMT.1.1.c5-00302-QCAHMTSWPL_V1.0_V2.0_SILICONZ-1.115823.3
+[18293.708433] arm_smmu_context_fault: 61 callbacks suppressed
+[18293.708440] arm-smmu 15000000.iommu: Unhandled context fault: fsr=0x402, iova=0xf1a94f360, fsynr=0x280011, cbfrsynra=0x40, cb=9
+[18293.708446] arm-smmu 15000000.iommu: FSR    = 00000402 [Format=2 TF], SID=0x40
+[18293.708451] arm-smmu 15000000.iommu: FSYNR0 = 00280011 [S1CBNDX=40 WNR PLVL=1]
+[18293.708461] xhci-hcd xhci-hcd.2.auto: WARNING: Host System Error
+[18293.967950] usb 1-1: reset high-speed USB device number 2 using xhci-hcd
+[18293.967958] usb 1-1: hub failed to enable device, error -108
+[18294.087894] usb 1-1: reset high-speed USB device number 2 using xhci-hcd
+[18294.087896] usb 1-1: hub failed to enable device, error -108
+[18294.411902] usb 1-1: reset high-speed USB device number 2 using xhci-hcd
+[18294.819925] usb 1-1: device not accepting address 2, error -108
+[18294.939929] usb 1-1: reset high-speed USB device number 2 using xhci-hcd
+[18295.347923] usb 1-1: device not accepting address 2, error -108
+[18295.693104] OOM killer enabled.
+[18295.693108] Restarting tasks: Starting
+[18295.693219] usb 1-1: USB disconnect, device number 2
+[18295.693224] usb 1-1.3: USB disconnect, device number 3
+[18295.693501] Restarting tasks: Done
+[18295.693556] random: crng reseeded on system resumption
+[18295.693601] PM: suspend exit
+
+=== T6 status ===
+active
+connected
+connected
+=== probe done Wed May 27 00:11:53 EDT 2026 ===
