@@ -1,7 +1,7 @@
 ---
 id: task-003
 title: Extract product-agnostic seams from SM8550 guest modules
-status: To Do
+status: In Progress
 priority: high
 labels:
   - rk3566
