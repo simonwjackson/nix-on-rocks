@@ -62,17 +62,21 @@
         modules = [ ./guest/rocknix-guest.nix ];
       };
       # Single source of truth for device-tree compatible -> device profile
-      # mapping. Adding a new SM8550 device is one entry here plus a profile
-      # under profiles/devices/. Downstream product flakes can use this table
-      # to pick the right profile from /proc/device-tree.
+      # mapping. Adding a new device is one entry here plus a profile under
+      # profiles/devices/. Downstream product flakes can use this table to pick
+      # the right profile from /proc/device-tree.
       deviceProfileByCompatible = {
         "ayn,thor" = ./guest/profiles/devices/thor.nix;
         "ayn,odin2portal" = ./guest/profiles/devices/odin2portal.nix;
+        # Physical RG353M Android ADB evidence from 2026-06-04 exposes this
+        # generic RK3566/RK817 board compatible first, with no Anbernic-specific
+        # DT compatible. Treat it as the RG353M support-lane identity until a
+        # later ROCKNIX SD boot proves a more specific compatible string.
+        "rockchip,rk3566-rk817-tablet" = ./guest/profiles/devices/rg353m.nix;
       };
-      # Model aliases are intentionally empty until hardware evidence proves a
-      # product needs one. RG353-family U-Boot can expose a reused compatible
-      # string for a metal-shell variant, so downstream tests exercise this seam
-      # with an explicit fixture table before the physical device arrives.
+      # Model aliases remain empty until hardware evidence proves a product
+      # needs one. The captured RG353M device-tree model is generic and the
+      # compatible string above is the selected production key.
       deviceProfileByModel = { };
 
       deviceProfileKeyFromIdentity =

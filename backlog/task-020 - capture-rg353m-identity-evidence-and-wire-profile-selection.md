@@ -1,7 +1,7 @@
 ---
 id: task-020
 title: Capture RG353M identity evidence and wire profile selection
-status: In Progress
+status: Done
 priority: high
 labels:
   - rg353m
@@ -23,14 +23,14 @@ The real RG353M device-tree identity should drive guest profile selection, espec
 
 ## Acceptance Criteria
 
-- [ ] A dated evidence document records model and all compatible strings from `/proc/device-tree`.
-- [ ] The evidence includes `aplay -l`, DRM nodes, input device names, sound devices, WiFi/Bluetooth devices, backlight/devfreq paths, and relevant dmesg excerpts.
-- [ ] The document records which OS/image was booted to collect evidence and whether eMMC was untouched.
-- [ ] Profile selection uses the captured RG353M model/compatible values from the evidence document.
-- [ ] Tests cover the real captured values and preserve existing SM8550 selection behavior.
-- [ ] Seed compatibility and promotion checks accept the intended RG353M identity and reject mismatched device seeds clearly.
-- [ ] The implementation documents whether RG353M is selected by compatible string, model fallback, or an explicit RG353-family alias rule.
-- [ ] Open assumptions in the RK3566 support plan are updated or linked to the captured evidence.
+- [x] A dated evidence document records model and all compatible strings from `/proc/device-tree`.
+- [x] The evidence includes `aplay -l`, DRM nodes, input device names, sound devices, WiFi/Bluetooth devices, backlight/devfreq paths, and relevant dmesg excerpts.
+- [x] The document records which OS/image was booted to collect evidence and whether eMMC was untouched.
+- [x] Profile selection uses the captured RG353M model/compatible values from the evidence document.
+- [x] Tests cover the real captured values and preserve existing SM8550 selection behavior.
+- [x] Seed compatibility and promotion checks accept the intended RG353M identity and reject mismatched device seeds clearly.
+- [x] The implementation documents whether RG353M is selected by compatible string, model fallback, or an explicit RG353-family alias rule.
+- [x] Open assumptions in the RK3566 support plan are updated or linked to the captured evidence.
 
 ## Related
 

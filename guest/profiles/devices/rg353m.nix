@@ -1,8 +1,9 @@
 # Initial Anbernic RG353M profile scaffold.
 #
-# This profile deliberately stays minimal until the physical device arrives and
-# the probe protocol records model, compatible strings, display connector,
-# input names, audio topology, and networking devices.
+# Physical Android ADB evidence captured on 2026-06-04 exposed the generic
+# `rockchip,rk3566-rk817-tablet` compatible string for the RG353M support lane.
+# This profile deliberately stays minimal until ROCKNIX SD-boot evidence records
+# final Linux connector names, mixer routes, input mapping, and networking state.
 { lib, ... }:
 
 {

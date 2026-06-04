@@ -35,6 +35,18 @@ let
     model = "Anbernic RG353M";
     compatibleStrings = [ "anbernic,rg353p" "rockchip,rk3566" ];
   };
+  capturedRg353mCompatibleKey = self.lib.deviceProfileKeyFromIdentity {
+    model = "Rockchip RK3566 RK817 TABLET LP4X Board";
+    compatibleStrings = [ "rockchip,rk3566-rk817-tablet" "rockchip,rk3566" ];
+  };
+  capturedRg353mProfile = self.lib.selectDeviceProfileFromIdentity {
+    model = "Rockchip RK3566 RK817 TABLET LP4X Board";
+    compatibleStrings = [ "rockchip,rk3566-rk817-tablet" "rockchip,rk3566" ];
+  };
+  rg353mGenericCompatibleOnlyKey = self.lib.deviceProfileKeyFromIdentity {
+    model = "Rockchip RK3566 RK817 TABLET LP4X Board";
+    compatibleStrings = [ "rockchip,rk3566" ];
+  };
 in
 helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (packages.default == packages.cemu) "default package aliases cemu")
@@ -58,9 +70,13 @@ helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (self.lib ? selectDeviceProfileFromIdentity) "lib.selectDeviceProfileFromIdentity is exposed")
   (assertContract (self.lib.deviceProfileByCompatible ? "ayn,thor") "Thor device-compatible profile is registered")
   (assertContract (self.lib.deviceProfileByCompatible ? "ayn,odin2portal") "Odin 2 Portal device-compatible profile is registered")
+  (assertContract (self.lib.deviceProfileByCompatible ? "rockchip,rk3566-rk817-tablet") "captured RG353M RK3566/RK817 compatible profile is registered")
   (assertContract (self.nixosConfigurations ? rocknix-guest-rg353m) "RG353M NixOS profile configuration is exposed")
   (assertContract (selectedThorKey == "ayn,thor") "direct compatible selection preserves known SM8550 devices")
   (assertContract (selectedRg353mKey == "anbernic,rg353m") "RG353M model alias overrides ambiguous RG353P compatible")
   (assertContract (selectedRg353pKey == "anbernic,rg353p") "RG353P uses direct compatible selection when no model alias applies")
   (assertContract (selectedRg353mProfile == "rg353m-profile") "identity selector returns the model-aliased RG353M profile")
+  (assertContract (capturedRg353mCompatibleKey == "rockchip,rk3566-rk817-tablet") "captured RG353M identity selects the RK3566/RK817 compatible key")
+  (assertContract (capturedRg353mProfile == self.lib.deviceProfileByCompatible."rockchip,rk3566-rk817-tablet") "captured RG353M identity returns the RG353M profile path")
+  (assertContract (rg353mGenericCompatibleOnlyKey == null) "generic rockchip,rk3566 alone does not select any registered profile")
 ]

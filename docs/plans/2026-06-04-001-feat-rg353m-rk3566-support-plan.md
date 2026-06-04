@@ -406,12 +406,14 @@ journalctl -b -u rocknix-guest-promote.service --no-pager | tail -200 || true
 
 ## Open Questions for Device Arrival
 
-- What exact strings does `/proc/device-tree/model` expose?
-- What exact ordered compatible strings does `/proc/device-tree/compatible` expose?
-- Does the device boot a current ROCKNIX SD image without touching eMMC?
-- What ALSA card names and mixer paths are present?
-- What DRM connector name does Sway need?
-- What input event names are used for controls, power, volume, and touchscreen?
-- Is the Realtek WiFi workaround already active in the booted image?
-- Does the device expose `/dev/mali0`, DRM render nodes only, or both?
-- Is recovery/no-nspawn best represented by an extlinux entry, a `/flash` flag file, or the existing substrate flag-file pattern?
+Evidence captured from stock Android over ADB: `docs/brainstorms/evidence/2026-06-04-rg353m-android-adb-identity.md`.
+
+- Answered: `/proc/device-tree/model` exposed `Rockchip RK3566 RK817 TABLET LP4X Board`.
+- Answered: `/proc/device-tree/compatible` exposed `rockchip,rk3566-rk817-tablet`, then `rockchip,rk3566`.
+- Still open: Does the device boot a current ROCKNIX SD image without touching eMMC?
+- Partially answered: ALSA cards are `rockchip,hdmi` and `rockchip,rk817-codec`; mixer paths still need Linux/ROCKNIX evidence.
+- Still open: What DRM connector name does Sway need? Android dmesg shows a 640x480 DSI path but not the final Linux connector name.
+- Partially answered: Android input names include `retrogame_joypad`, `touch_joypad`, `hyn_ts`, `gpio-keys`, `adc-keys`, `rk805 pwrkey`, and `rk-headset`; final guest mapping needs Linux/ROCKNIX confirmation.
+- Partially answered: Android WiFi uses Realtek `RTW` SDIO with `wlan0`/`p2p0`; Linux workaround validation remains open.
+- Partially answered: Android exposes `/dev/dri/card0` and `/dev/dri/renderD128`; `/dev/mali0` status remains for Linux/ROCKNIX evidence.
+- Still open: Is recovery/no-nspawn best represented by an extlinux entry, a `/flash` flag file, or the existing substrate flag-file pattern?
