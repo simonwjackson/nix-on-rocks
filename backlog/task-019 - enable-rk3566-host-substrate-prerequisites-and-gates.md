@@ -1,7 +1,7 @@
 ---
 id: task-019
 title: Enable RK3566 host substrate prerequisites and gates
-status: In Progress
+status: Done
 priority: high
 labels:
   - rk3566
@@ -22,13 +22,13 @@ RK3566 images cannot include or run the NixOS guest substrate until the ROCKNIX 
 
 ## Acceptance Criteria
 
-- [ ] `rocknix-guest-substrate` gating is changed from SM8550-only to an explicit supported-device or capability table that includes RK3566 only where intended.
-- [ ] Systemd/nspawn packaging guards are relaxed or parameterized without changing SM8550 behavior.
-- [ ] ROCKNIX RK3566 options or kernel config patches enable the required cgroup v2 and systemd hierarchy settings for nspawn.
-- [ ] RK3566 kernel config is checked for required namespace and overlay filesystem support, with patches added where missing.
-- [ ] A RK3566 minimal-host knob or equivalent strips conflicting host UI assumptions only when the guest substrate lane is enabled.
-- [ ] Static checks assert unsupported devices fail clearly and supported SM8550/RK3566 prerequisites are preserved.
-- [ ] No RK3566 image is claimed bootable solely from this gate/prerequisite work.
+- [x] `rocknix-guest-substrate` gating is changed from SM8550-only to an explicit supported-device or capability table that includes RK3566 only where intended.
+- [x] Systemd/nspawn packaging guards are relaxed or parameterized without changing SM8550 behavior.
+- [x] ROCKNIX RK3566 options or kernel config patches enable the required cgroup v2 and systemd hierarchy settings for nspawn.
+- [x] RK3566 kernel config is checked for required namespace and overlay filesystem support, with patches added where missing.
+- [x] A RK3566 minimal-host knob or equivalent strips conflicting host UI assumptions only when the guest substrate lane is enabled.
+- [x] Static checks assert unsupported devices fail clearly and supported SM8550/RK3566 prerequisites are preserved.
+- [x] No RK3566 image is claimed bootable solely from this gate/prerequisite work.
 
 ## Related
 

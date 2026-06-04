@@ -1,0 +1,406 @@
+diff --git a/projects/ROCKNIX/devices/RK3566/linux/linux.aarch64.conf b/projects/ROCKNIX/devices/RK3566/linux/linux.aarch64.conf
+index 2a8144b..249a385 100644
+--- a/projects/ROCKNIX/devices/RK3566/linux/linux.aarch64.conf
++++ b/projects/ROCKNIX/devices/RK3566/linux/linux.aarch64.conf
+@@ -211,7 +211,7 @@ CONFIG_NAMESPACES=y
+ CONFIG_UTS_NS=y
+ CONFIG_TIME_NS=y
+ CONFIG_IPC_NS=y
+-# CONFIG_USER_NS is not set
++CONFIG_USER_NS=y
+ CONFIG_PID_NS=y
+ CONFIG_NET_NS=y
+ # CONFIG_CHECKPOINT_RESTORE is not set
+diff --git a/projects/ROCKNIX/devices/RK3566/options b/projects/ROCKNIX/devices/RK3566/options
+index b5aba0e..c412300 100644
+--- a/projects/ROCKNIX/devices/RK3566/options
++++ b/projects/ROCKNIX/devices/RK3566/options
+@@ -92,3 +92,21 @@
+ 
+   # Disk Swap
+     SWAP_FILE_SIZE="0"
++
++  # Nix-on-ROCK guest-substrate prerequisite lane. This is an explicit
++  # opt-in for SD-card bring-up work and does not make RK3566/RG353M images
++  # release- or boot-accepted by itself.
++    RK3566_GUEST_SUBSTRATE="${RK3566_GUEST_SUBSTRATE:-no}"
++    if [ "${RK3566_GUEST_SUBSTRATE}" = "yes" ]; then
++      SYSTEMD_DEFAULT_HIERARCHY="${SYSTEMD_DEFAULT_HIERARCHY:-unified}"
++      EXTRA_CMDLINE="${EXTRA_CMDLINE} systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all"
++      DISPLAYSERVER="no"
++      WINDOWMANAGER="none"
++      EMULATION_DEVICE="no"
++      ENABLE_32BIT=no
++      NTFS3G="no"
++      EXFAT="no"
++      UDEVIL="no"
++      ADDITIONAL_PACKAGES=""
++      ADDITIONAL_PACKAGES_32BIT=""
++    fi
+diff --git a/projects/ROCKNIX/packages/network/openssh/package.mk b/projects/ROCKNIX/packages/network/openssh/package.mk
+index 6fa1851..5cc5abb 100644
+--- a/projects/ROCKNIX/packages/network/openssh/package.mk
++++ b/projects/ROCKNIX/packages/network/openssh/package.mk
+@@ -54,9 +54,9 @@ post_makeinstall_target() {
+ }
+ 
+ post_install() {
+-  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
+-    # SM8550 minimal host is SSH-first recovery. Do not require the legacy
+-    # UI settings file or `ssh` kernel arg before starting sshd.
++  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; then
++    # Guest-substrate minimal hosts are SSH-first recovery. Do not require
++    # the legacy UI settings file or `ssh` kernel arg before starting sshd.
+     sed -e "\|^Condition.*|d" -i ${INSTALL}/usr/lib/systemd/system/sshd.service
+   fi
+   enable_service sshd.service
+diff --git a/projects/ROCKNIX/packages/sysutils/systemd/package.mk b/projects/ROCKNIX/packages/sysutils/systemd/package.mk
+index 9bf2d3b..0e35f09 100644
+--- a/projects/ROCKNIX/packages/sysutils/systemd/package.mk
++++ b/projects/ROCKNIX/packages/sysutils/systemd/package.mk
+@@ -159,12 +159,17 @@ post_makeinstall_target() {
+   # adjust systemd-hwdb-update (we have read-only /etc).
+   sed '/^ConditionNeedsUpdate=.*$/d' -i ${INSTALL}/usr/lib/systemd/system/systemd-hwdb-update.service
+ 
+-  # systemd-nspawn ships only on SM8550 (the thin-host main-space target).
+-  # Strip it from every other device's image -- they have no use for it.
+-  if [ "${DEVICE}" != "SM8550" ]; then
+-    safe_remove ${INSTALL}/usr/bin/systemd-nspawn
+-    safe_remove ${INSTALL}/usr/lib/systemd/system/systemd-nspawn@.service
+-  fi
++  # systemd-nspawn ships only for explicit Nix-on-ROCK guest-substrate lanes.
++  # Preserve SM8550 behavior; admit RK3566 only when the substrate prerequisite
++  # lane is selected so normal RK3566 images remain lean.
++  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}" in
++    SM8550:*|RK3566:yes)
++      ;;
++    *)
++      safe_remove ${INSTALL}/usr/bin/systemd-nspawn
++      safe_remove ${INSTALL}/usr/lib/systemd/system/systemd-nspawn@.service
++      ;;
++  esac
+ 
+   # remove timedatectl
+   safe_remove ${INSTALL}/usr/bin/timedatectl
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+index c2902c0..22b0035 100644
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+@@ -7,9 +7,24 @@ PKG_LICENSE="GPL-2.0"
+ PKG_SITE="https://github.com/ROCKNIX/distribution"
+ PKG_URL=""
+ PKG_DEPENDS_TARGET="toolchain"
+-PKG_LONGDESC="rocknix-guest-substrate: SM8550 main-space guest substrate for ROCKNIX"
++PKG_LONGDESC="rocknix-guest-substrate: NixOS main-space guest substrate for supported ROCKNIX devices"
+ PKG_TOOLCHAIN="manual"
+ 
++rocknix_guest_substrate_supported_device() {
++  case "${DEVICE}" in
++    SM8550)
++      return 0
++      ;;
++    RK3566)
++      [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]
++      return $?
++      ;;
++    *)
++      return 1
++      ;;
++  esac
++}
++
+ # Pinned source of the NixOS main-space guest. The host repo carries
+ # only the substrate plumbing for the guest; the product appliance source lives
+ # in Korri and is fetched from a pinned product commit at build time.
+@@ -74,11 +89,12 @@ curl_append() {
+ }
+ 
+ post_install() {
+-  # rocknix-guest-substrate is an SM8550-only package. Other devices do
+-  # not have the validated guest closure (Tier A-E spike series ran on
+-  # Thor/SM8550) and should not include this package.
+-  if [ "${DEVICE}" != "SM8550" ]; then
+-    echo "rocknix-guest-substrate: SM8550-only (got DEVICE=${DEVICE})" >&2
++  # Keep substrate admission explicit. SM8550 remains the validated Thor lane;
++  # RK3566 is admitted only when its Nix-on-ROCK guest-substrate prerequisite
++  # lane is enabled. This gate does not claim RG353M/RK3566 bootability by
++  # itself; hardware proof still belongs to the bring-up tasks.
++  if ! rocknix_guest_substrate_supported_device; then
++    echo "rocknix-guest-substrate: unsupported DEVICE=${DEVICE}; supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes" >&2
+     exit 1
+   fi
+ 
+@@ -274,6 +290,20 @@ SSH-first: `/flash/rocknix.no-nspawn` or `rocknix.safe=1` routes the next
+ boot to `multi-user.target` so host SSH, storage, and `/storage/.update/`
+ remain available without starting the legacy ROCKNIX UI stack. Remove the
+ flag file and reboot to return to the NixOS guest main-space target.
++EOF
++  fi
++
++  if [ "${DEVICE}" = "RK3566" ] && [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; then
++    cat >> ${INSTALL}/flash/HOW-TO-FALL-BACK.md <<'EOF'
++
++## RK3566 guest-substrate prerequisite note
++
++This image is built with `RK3566_GUEST_SUBSTRATE=yes`, which enables only
++the host prerequisites and explicit package gates for the removable-SD
++RK3566/RG353M bring-up lane. It does not by itself prove that the device
++boots, that display/input/audio work, or that the RG353M profile identity has
++been accepted. Keep first boot SD-card-only until captured hardware evidence
++closes those later tasks.
+ EOF
+   fi
+ 
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+index 1412fc0..ff356cf 100755
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+@@ -135,7 +135,10 @@ grep -q 'guest-revision' "${PKG_DIR}/package.mk" || fail "package.mk must ship p
+ grep -q 'contract-docs/layer14-main-space-contract.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship main-space contract doc from staged contract-docs"
+ grep -q 'contract-docs/layer14-soak-checklist.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship soak checklist from staged contract-docs"
+ grep -q 'contract-docs/HOW-TO-FALL-BACK.md' "${PKG_DIR}/package.mk" || fail "package.mk must ship fallback doc from staged contract-docs"
+-grep -q 'SM8550_MINIMAL_HOST=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document minimal-host fallback mode when enabled"
++grep -q 'SM8550_MINIMAL_HOST=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document SM8550 minimal-host fallback mode when enabled"
++grep -q 'RK3566_GUEST_SUBSTRATE=yes' "${PKG_DIR}/package.mk" || fail "package.mk must document RK3566 guest-substrate prerequisite mode when enabled"
++grep -q 'rocknix_guest_substrate_supported_device' "${PKG_DIR}/package.mk" || fail "package.mk must use explicit supported-device substrate gate"
++grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' "${PKG_DIR}/package.mk" || fail "unsupported substrate devices must fail clearly"
+ grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_URL=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed URL contract"
+ grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_SHA256=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed SHA256 contract"
+ grep -q 'PKG_NIX_GUEST_ROOTFS_SEED_COMPATIBLE=' "${PKG_DIR}/package.mk" || fail "package.mk missing bootable rootfs seed compatible contract"
+@@ -994,9 +997,11 @@ run_target_generator_fixture() {
+ }
+ run_target_generator_fixture
+ 
+-# Device gates: only SM8550 ships the guest substrate.
++# Device gates: SM8550 ships the validated substrate; RK3566 is opt-in only.
+ SYSTEMD_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/sysutils/systemd/package.mk"
+ SM8550_OPTIONS="${REPO_ROOT}/projects/ROCKNIX/devices/SM8550/options"
++RK3566_OPTIONS="${REPO_ROOT}/projects/ROCKNIX/devices/RK3566/options"
++RK3566_KERNEL_CONFIG="${REPO_ROOT}/projects/ROCKNIX/devices/RK3566/linux/linux.aarch64.conf"
+ SM8550_UPDATE_SH="${REPO_ROOT}/projects/ROCKNIX/devices/SM8550/bootloader/update.sh"
+ IMAGE_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/virtual/image/package.mk"
+ NETWORK_PKG="${REPO_ROOT}/projects/ROCKNIX/packages/virtual/network/package.mk"
+@@ -1338,18 +1343,22 @@ grep -q '\${PIPESTATUS\[0\]}' "${LOCAL_IMAGE_BUILD}" || fail "local-image-build
+ assert_order "${LOCAL_IMAGE_BUILD}" '| tee "${LOG_FILE}"' 'build_status=${PIPESTATUS[0]}' "local-image-build must capture foreground build status immediately after tee"
+ assert_order "${LOCAL_IMAGE_BUILD}" 'build_status=${PIPESTATUS[0]}' 'exit "${build_status}"' "local-image-build must return foreground build status"
+ 
+-grep -q '\[ "\${DEVICE}" = "SM8550" \] && PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"' "${IMAGE_PKG}" \
+-  || fail "image package must gate rocknix-guest-substrate on DEVICE=SM8550"
++grep -q 'rocknix_guest_substrate_enabled' "${IMAGE_PKG}" \
++  || fail "image package must use explicit guest-substrate capability gate"
++grep -q 'SM8550:\*|RK3566:yes' "${IMAGE_PKG}" \
++  || fail "image package must support SM8550 and RK3566=yes substrate lanes"
++grep -q 'PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"' "${IMAGE_PKG}" \
++  || fail "image package must add rocknix-guest-substrate through the capability gate"
+ grep -q 'SM8550_MINIMAL_HOST' "${SM8550_OPTIONS}" \
+   || fail "SM8550 options must expose the minimal-host switch"
+ grep -q 'SM8550_FLASH_PARTITION_BUDGET_MIB' "${SM8550_OPTIONS}" \
+   || fail "SM8550 options must declare a SYSTEM image size budget"
+-grep -q '\[ "\${BASE_ONLY}" = "true" \] || \[ "\${SM8550_MINIMAL_HOST:-no}" = "yes" \]' "${IMAGE_PKG}" \
++grep -q 'if \[ "\${BASE_ONLY}" = "true" \] || rocknix_minimal_host_enabled' "${IMAGE_PKG}" \
+   || fail "image package must use minimal-host path to skip product UX metas"
+-grep -q 'SM8550 minimal host pulled forbidden payload' "${IMAGE_PKG}" \
++grep -q 'guest-substrate minimal host pulled forbidden payload' "${IMAGE_PKG}" \
+   || fail "image package must fail closed if minimal host reintroduces UX/emulation/network payloads"
+-grep -q '\[ "\${SM8550_MINIMAL_HOST:-no}" != "yes" \] && PKG_DEPENDS_TARGET+=" mako-osd"' "${IMAGE_PKG}" \
+-  || fail "mako-osd must be gated out of the SM8550 minimal host"
++grep -q 'rocknix_minimal_host_enabled' "${IMAGE_PKG}" \
++  || fail "mako-osd must be gated out of guest-substrate minimal hosts"
+ for forbidden in \
+   mako-osd sway swaywm-env wlroots xwayland screen-switch gamepadcalibration \
+   mesa-demos glmark2 vkmark emulators gamesupport retroarch lib32 tailscale \
+@@ -1363,10 +1372,10 @@ grep -q 'EMULATION_DEVICE="no"' "${SM8550_OPTIONS}" || fail "SM8550 minimal host
+ grep -q 'ENABLE_32BIT=no' "${IMAGE_PKG}" || fail "minimal-host image path must disable 32-bit roots"
+ grep -q 'PKG_DEPENDS_TARGET+=" i2c-tools ${ADDITIONAL_PACKAGES}"' "${IMAGE_PKG}" \
+   || fail "SM8550 minimal host must keep i2c-tools while dropping patchelf/evtest/corefonts"
+-grep -q '\[ "\${SM8550_MINIMAL_HOST:-no}" != "yes" \] && PKG_DEPENDS_TARGET+=" umtprd usb-modeswitch poppler p7zip"' "${IMAGE_PKG}" \
+-  || fail "SM8550 minimal host must gate host USB/MTP/PDF/archive payloads out"
+-grep -q 'if \[ "\${SM8550_MINIMAL_HOST:-no}" != "yes" \]; then' "${IMAGE_PKG}" \
+-  || fail "SM8550 minimal host must gate entware out"
++grep -q 'umtprd usb-modeswitch poppler p7zip' "${IMAGE_PKG}" \
++  || fail "guest-substrate minimal host must gate host USB/MTP/PDF/archive payloads out"
++grep -q 'if ! rocknix_minimal_host_enabled; then' "${IMAGE_PKG}" \
++  || fail "guest-substrate minimal host must gate entware out"
+ grep -q 'NTFS3G="no"' "${SM8550_OPTIONS}" || fail "SM8550 minimal host must disable NTFS3G"
+ grep -q 'EXFAT="no"' "${SM8550_OPTIONS}" || fail "SM8550 minimal host must disable exFAT"
+ grep -q 'ADDITIONAL_PACKAGES="rocknix-abl"' "${SM8550_OPTIONS}" \
+@@ -1381,7 +1390,7 @@ grep -q '090-ui_service' "${QUIRKS_PKG}" \
+   || fail "SM8550 minimal host must remove host UI service quirk"
+ grep -q '091-ui_shader' "${QUIRKS_PKG}" \
+   || fail "SM8550 minimal host must remove host UI shader quirk"
+-grep -q 'Minimal SM8550 host keeps the recovery/update substrate reachable' "${NETWORK_PKG}" \
++grep -q 'Minimal guest-substrate host keeps the recovery/update substrate reachable' "${NETWORK_PKG}" \
+   || fail "ROCKNIX network meta must document the minimal-host recovery dependency set"
+ grep -q 'PKG_DEPENDS_TARGET="toolchain iwd networkmanager netbase ethtool openssh iw wireless-regdb rsync nss-mdns"' "${NETWORK_PKG}" \
+   || fail "ROCKNIX network meta must keep host Wi-Fi/SSH recovery in the minimal-host dependency set"
+@@ -1395,14 +1404,14 @@ grep -q 'Wants=dbus.service network.target' "${IWD_UNIT}" \
+   || fail "iwd service must pull D-Bus in with the recovery network target"
+ grep -q 'DBUS_SYSTEM_BUS_ADDRESS=unix:path=/run/dbus/system_bus_socket' "${IWD_UNIT}" \
+   || fail "iwd service must use systemd's /run D-Bus socket path under tmpfs /var"
+-! sed -n '/if \[ "${SM8550_MINIMAL_HOST:-no}" = "yes" \]/,/else/p' "${NETWORK_PKG}" \
++! sed -n '/if \[ "${SM8550_MINIMAL_HOST:-no}" = "yes" \] || \[ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" \]/,/else/p' "${NETWORK_PKG}" \
+   | grep '^  PKG_DEPENDS_TARGET=' \
+   | grep -Eq 'tailscale|wireguard-tools|zerotier-one|miniupnpc|speedtest-cli' \
+   || fail "minimal-host network set must not include host VPN/network product extras"
+-grep -q 'SM8550 minimal host is SSH-first recovery' "${OPENSSH_PKG}" \
+-  || fail "openssh package must document deterministic SM8550 SSH-first recovery"
++grep -q 'Guest-substrate minimal hosts are SSH-first recovery' "${OPENSSH_PKG}" \
++  || fail "openssh package must document deterministic guest-substrate SSH-first recovery"
+ grep -q 'sed -e "\\|^Condition.*|d"' "${OPENSSH_PKG}" \
+-  || fail "openssh package must remove opt-in sshd conditions for SM8550 minimal host"
++  || fail "openssh package must remove opt-in sshd conditions for guest-substrate minimal hosts"
+ grep -q '/var/empty' "${OPENSSH_UNIT}" \
+   || fail "sshd service must recreate OpenSSH privilege-separation dir on tmpfs /var"
+ grep -q 'mkdir -p /var/run' "${TZ_UNIT}" \
+@@ -1427,12 +1436,35 @@ grep -q "build-aarch64-emu-standalone:" "${WORKFLOW_DIR}/build-device.yml" || fa
+   || fail "libepoxy must use Meson glx/x11 options, not the removed autotools --disable-glx flag"
+ grep -q 'PKG_MESON_OPTS_TARGET+=" -Dglx=no -Dx11=false"' "${REPO_ROOT}/projects/ROCKNIX/packages/graphics/libepoxy/package.mk" \
+   || fail "libepoxy must disable glx/x11 through Meson options when no display server needs them"
+-grep -q 'if \[ "${DEVICE}" != "SM8550" \]' "${SYSTEMD_PKG}" \
+-  || fail "systemd package must strip nspawn on non-SM8550 devices"
++grep -q 'SM8550:\*|RK3566:yes' "${SYSTEMD_PKG}" \
++  || fail "systemd package must preserve nspawn for SM8550 and RK3566=yes substrate lanes"
+ grep -q 'safe_remove ${INSTALL}/usr/bin/systemd-nspawn' "${SYSTEMD_PKG}" || fail "systemd package missing nspawn binary removal fallback"
+ grep -q 'safe_remove ${INSTALL}/usr/lib/systemd/system/systemd-nspawn@.service' "${SYSTEMD_PKG}" || fail "systemd package missing nspawn unit removal fallback"
+ ! grep -qE 'enable_service .*nspawn' "${SYSTEMD_PKG}" || fail "systemd package must not enable nspawn services by default"
+ 
++grep -q 'RK3566_GUEST_SUBSTRATE="${RK3566_GUEST_SUBSTRATE:-no}"' "${RK3566_OPTIONS}" \
++  || fail "RK3566 options must expose an opt-in guest-substrate prerequisite knob"
++grep -q 'SYSTEMD_DEFAULT_HIERARCHY="${SYSTEMD_DEFAULT_HIERARCHY:-unified}"' "${RK3566_OPTIONS}" \
++  || fail "RK3566 substrate lane must request unified cgroup hierarchy"
++grep -q 'systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all' "${RK3566_OPTIONS}" \
++  || fail "RK3566 substrate lane must pass cgroup v2 kernel cmdline"
++grep -q 'DISPLAYSERVER="no"' "${RK3566_OPTIONS}" || fail "RK3566 substrate lane must disable host display server"
++grep -q 'WINDOWMANAGER="none"' "${RK3566_OPTIONS}" || fail "RK3566 substrate lane must disable host window manager"
++grep -q 'EMULATION_DEVICE="no"' "${RK3566_OPTIONS}" || fail "RK3566 substrate lane must disable host emulation roots"
++grep -q 'CONFIG_USER_NS=y' "${RK3566_KERNEL_CONFIG}" || fail "RK3566 kernel config must enable user namespaces for nspawn prerequisites"
++for required_config in \
++  CONFIG_CGROUPS=y CONFIG_MEMCG=y CONFIG_CGROUP_PIDS=y CONFIG_CGROUP_FREEZER=y \
++  CONFIG_CGROUP_DEVICE=y CONFIG_CGROUP_BPF=y CONFIG_NAMESPACES=y CONFIG_UTS_NS=y \
++  CONFIG_IPC_NS=y CONFIG_PID_NS=y CONFIG_NET_NS=y CONFIG_OVERLAY_FS=y \
++  CONFIG_TMPFS_POSIX_ACL=y; do
++  grep -q "^${required_config}$" "${RK3566_KERNEL_CONFIG}" \
++    || fail "RK3566 kernel config missing nspawn prerequisite: ${required_config}"
++done
++for required_module in CONFIG_TUN CONFIG_VETH; do
++  grep -Eq "^${required_module}=(y|m)$" "${RK3566_KERNEL_CONFIG}" \
++    || fail "RK3566 kernel config missing nspawn network prerequisite: ${required_module}"
++done
++
+ # Old support flags should not be resurrected.
+ ! grep -R --exclude='guest-substrate-static-checks.sh' -q 'NIX_INTEGRATION_SUPPORT\|NIX_NSPAWN_SUPPORT\|NIX_DAEMON_SUPPORT\|THIN_HOST' \
+   "${REPO_ROOT}/projects/ROCKNIX" "${REPO_ROOT}/.github" "${REPO_ROOT}/scripts" || fail "removed support gate still referenced"
+diff --git a/projects/ROCKNIX/packages/virtual/image/package.mk b/projects/ROCKNIX/packages/virtual/image/package.mk
+index dbb327d..8b3c3d3 100644
+--- a/projects/ROCKNIX/packages/virtual/image/package.mk
++++ b/projects/ROCKNIX/packages/virtual/image/package.mk
+@@ -15,14 +15,33 @@ PKG_DEPENDS_TARGET="toolchain squashfs-tools:host dosfstools:host fakeroot:host
+                     bash coreutils system-utils autostart quirks powerstate \
+                     gzip six xmlstarlet pyudev dialog network rocknix"
+ 
++rocknix_guest_substrate_enabled() {
++  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}" in
++    SM8550:*|RK3566:yes)
++      return 0
++      ;;
++    *)
++      return 1
++      ;;
++  esac
++}
++
++rocknix_minimal_host_enabled() {
++  [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]
++}
++
+ # USB/MTP, PDF/image tooling, and archive helpers belong to the monolithic
+-# host UX. The SM8550 minimal host keeps SSH/scp/cat transfer paths instead.
+-[ "${SM8550_MINIMAL_HOST:-no}" != "yes" ] && PKG_DEPENDS_TARGET+=" umtprd usb-modeswitch poppler p7zip"
++# host UX. Guest-substrate hosts keep SSH/scp/cat transfer paths instead.
++if ! rocknix_minimal_host_enabled; then
++  PKG_DEPENDS_TARGET+=" umtprd usb-modeswitch poppler p7zip"
++fi
+ 
+ # Host OSD/UI belongs to the monolithic ROCKNIX UX. Keep it out of the
+-# SM8550 minimal host so it cannot pull Sway/wlroots/Mesa back into the
+-# recovery/container substrate.
+-[ "${SM8550_MINIMAL_HOST:-no}" != "yes" ] && PKG_DEPENDS_TARGET+=" mako-osd"
++# guest-substrate minimal host so it cannot pull Sway/wlroots/Mesa back into
++# the recovery/container substrate.
++if ! rocknix_minimal_host_enabled; then
++  PKG_DEPENDS_TARGET+=" mako-osd"
++fi
+ 
+ PKG_UI="emulationstation es-themes textviewer lowerdeck"
+ 
+@@ -42,12 +61,12 @@ PKG_TOOLS="patchelf i2c-tools evtest"
+ 
+ PKG_DEBUG="debug"
+ 
+-if [ "${BASE_ONLY}" = "true" ] || [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]
++if [ "${BASE_ONLY}" = "true" ] || rocknix_minimal_host_enabled
+ then
+   EMULATION_DEVICE=no
+   ENABLE_32BIT=no
+-  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
+-    # Keep only hardware-inspection tooling used by SM8550 host scripts.
++  if rocknix_minimal_host_enabled; then
++    # Keep only hardware-inspection tooling used by substrate host scripts.
+     # patchelf/evtest/corefonts are development or UX conveniences and stay
+     # out of the recovery/update/container substrate.
+     PKG_DEPENDS_TARGET+=" i2c-tools ${ADDITIONAL_PACKAGES}"
+@@ -119,20 +138,23 @@ fi
+ [ "${MODULES_PKG}" = "yes" ] && PKG_DEPENDS_TARGET+=" modules"
+ 
+ # Entware support. Keep it for the classic monolithic image, but do not ship
+-# the host-side package-manager bootstrap in the SM8550 minimal substrate.
+-if [ "${SM8550_MINIMAL_HOST:-no}" != "yes" ]; then
++# the host-side package-manager bootstrap in a guest-substrate minimal host.
++if ! rocknix_minimal_host_enabled; then
+   mkdir -p ${INSTALL}
+   ln -sf /storage/.opt ${INSTALL}/opt
+   PKG_DEPENDS_TARGET+=" entware"
+ fi
+ 
+-# Guest substrate: SM8550-only NixOS main-space.
+-[ "${DEVICE}" = "SM8550" ] && PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
++# Guest substrate: explicit supported-device/capability table. SM8550 remains
++# enabled; RK3566 is included only for the pre-boot SD-card substrate lane.
++if rocknix_guest_substrate_enabled; then
++  PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
++fi
+ 
+-# SM8550 minimal host intentionally keeps only the ROCKNIX substrate:
++# Guest-substrate minimal hosts intentionally keep only the ROCKNIX substrate:
+ # boot/update/storage/network/recovery/nspawn/InputPlumber plus guest wiring.
+-# It must not pull host product-UX payloads back in through image-level metas.
+-if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
++# They must not pull host product-UX payloads back in through image-level metas.
++if rocknix_minimal_host_enabled; then
+   for forbidden in \
+     emulators gamesupport emulationstation es-themes retroarch lib32 \
+     mako-osd sway swaywm-env wlroots xwayland \
+@@ -141,7 +163,7 @@ if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
+     usb-modeswitch ntfs-3g_ntfsprogs exfatprogs entware evtest patchelf; do
+     case " ${PKG_DEPENDS_TARGET} " in
+       *" ${forbidden} "*)
+-        echo "image: SM8550 minimal host pulled forbidden payload: ${forbidden}" >&2
++        echo "image: guest-substrate minimal host pulled forbidden payload: ${forbidden}" >&2
+         exit 1
+         ;;
+     esac
+diff --git a/projects/ROCKNIX/packages/virtual/network/package.mk b/projects/ROCKNIX/packages/virtual/network/package.mk
+index 507ef4c..733eb80 100644
+--- a/projects/ROCKNIX/packages/virtual/network/package.mk
++++ b/projects/ROCKNIX/packages/virtual/network/package.mk
+@@ -7,8 +7,8 @@ PKG_VERSION=""
+ PKG_LICENSE="various"
+ PKG_SITE="https://libreelec.tv"
+ PKG_URL=""
+-if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ]; then
+-  # Minimal SM8550 host keeps the recovery/update substrate reachable even
++if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; then
++  # Minimal guest-substrate host keeps the recovery/update substrate reachable even
+   # when the guest cannot boot: host Wi-Fi, SSH, transfer tooling, and basic
+   # name resolution stay on the host. Product-facing network services
+   # (tailscale, avahi, miniupnpc, speedtest-cli, samba, simple-http-server,
