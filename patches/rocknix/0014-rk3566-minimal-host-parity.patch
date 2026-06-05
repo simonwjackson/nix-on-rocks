@@ -1,0 +1,55 @@
+diff --git a/projects/ROCKNIX/devices/RK3566/options b/projects/ROCKNIX/devices/RK3566/options
+index 8866da1..dc930a9 100644
+--- a/projects/ROCKNIX/devices/RK3566/options
++++ b/projects/ROCKNIX/devices/RK3566/options
+@@ -91,13 +91,31 @@
+     if [ "${RK3566_GUEST_SUBSTRATE}" = "yes" ]; then
+       SYSTEMD_DEFAULT_HIERARCHY="${SYSTEMD_DEFAULT_HIERARCHY:-unified}"
+       EXTRA_CMDLINE="${EXTRA_CMDLINE} systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all"
++      VULKAN_SUPPORT="no"
++      VULKAN="no"
+       DISPLAYSERVER="no"
+       WINDOWMANAGER="none"
+       EMULATION_DEVICE="no"
++      PIPEWIRE_SUPPORT="no"
++      BLUETOOTH_SUPPORT="no"
++      AVAHI_DAEMON="no"
++      REMOTE_SUPPORT="no"
++      JOYSTICK_SUPPORT="no"
++      MODULES_PKG="no"
++      DEBUG_PACKAGES="no"
++      NFS_SUPPORT="no"
++      SAMBA_SERVER="no"
++      SFTP_SERVER="no"
++      SIMPLE_HTTP_SERVER="no"
++      ZEROTIER_SUPPORT="no"
++      WIREGUARD_SUPPORT="no"
+       ENABLE_32BIT=no
+       NTFS3G="no"
+       EXFAT="no"
+       UDEVIL="no"
++      NANO_EDITOR="no"
++      HTOP_TOOL="no"
++      BTOP_TOOL="no"
+       ADDITIONAL_PACKAGES=""
+       ADDITIONAL_PACKAGES_32BIT=""
+     fi
+diff --git a/projects/ROCKNIX/packages/virtual/image/package.mk b/projects/ROCKNIX/packages/virtual/image/package.mk
+index 579c7b8..e6fe8d5 100644
+--- a/projects/ROCKNIX/packages/virtual/image/package.mk
++++ b/projects/ROCKNIX/packages/virtual/image/package.mk
+@@ -158,9 +158,12 @@ if rocknix_minimal_host_enabled; then
+   for forbidden in \
+     emulators gamesupport emulationstation es-themes retroarch lib32 \
+     mako-osd sway swaywm-env wlroots xwayland \
+-    screen-switch gamepadcalibration mesa-demos glmark2 vkmark \
++    screen-switch gamepadcalibration mesa-demos glmark2 vkmark vulkan-tools \
+     tailscale wireguard-tools corefonts poppler p7zip umtprd \
+-    usb-modeswitch ntfs-3g_ntfsprogs exfatprogs entware evtest patchelf; do
++    usb-modeswitch ntfs-3g_ntfsprogs exfatprogs entware evtest patchelf \
++    debug nvtop apitrace waffle nfs-utils htop btop \
++    pipewire wireplumber pulseaudio bluez samba simple-http-server \
++    zerotier-one; do
+     case " ${PKG_DEPENDS_TARGET} " in
+       *" ${forbidden} "*)
+         echo "image: guest-substrate minimal host pulled forbidden payload: ${forbidden}" >&2
