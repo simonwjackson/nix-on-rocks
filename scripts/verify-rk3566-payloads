@@ -29,8 +29,21 @@ require_tool blkid
 
 shopt -s nullglob
 images=("${target_dir}"/ROCKNIX-*RK3566*.img.gz)
-[ "${#images[@]}" -eq 1 ] || fail "expected exactly one RK3566 SD image, found ${#images[@]}"
-image_gz=${images[0]}
+if [ "${#images[@]}" -eq 1 ]; then
+  image_gz=${images[0]}
+else
+  selected_images=()
+  if [ -n "${SUBDEVICE:-}" ]; then
+    selected_images=("${target_dir}"/ROCKNIX-*RK3566*"-${SUBDEVICE}".img.gz)
+  fi
+  if [ "${#selected_images[@]}" -eq 1 ]; then
+    image_gz=${selected_images[0]}
+  else
+    printf 'RK3566 SD image candidates:\n' >&2
+    printf '  %s\n' "${images[@]}" >&2
+    fail "expected exactly one RK3566 SD image, or one image matching SUBDEVICE=${SUBDEVICE:-<unset>}; found ${#images[@]} total and ${#selected_images[@]} selected"
+  fi
+fi
 
 gzip -t "${image_gz}"
 for checksum in "${target_dir}"/ROCKNIX-*RK3566*.img.gz.sha256 "${target_dir}"/ROCKNIX-*RK3566*.tar.sha256; do

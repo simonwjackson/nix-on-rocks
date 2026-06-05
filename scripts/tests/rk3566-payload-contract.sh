@@ -146,6 +146,17 @@ valid_dir=$(mktemp -d "${tmp_root}/valid.XXXXXX")
 make_payload "${valid_dir}"
 NIX_ON_ROCKS_BUILD_MANIFEST="${valid_dir}/manifest.md" "${verifier}" "${valid_dir}" >/dev/null
 
+multi_image_dir=$(mktemp -d "${tmp_root}/multi-image.XXXXXX")
+make_payload "${multi_image_dir}"
+cp "${multi_image_dir}/ROCKNIX-RK3566-test.img.gz" "${multi_image_dir}/ROCKNIX-RK3566-test-Generic.img.gz"
+cp "${multi_image_dir}/ROCKNIX-RK3566-test.img.gz" "${multi_image_dir}/ROCKNIX-RK3566-test-Specific.img.gz"
+(
+  cd "${multi_image_dir}"
+  sha256sum ROCKNIX-RK3566-test-Generic.img.gz > ROCKNIX-RK3566-test-Generic.img.gz.sha256
+  sha256sum ROCKNIX-RK3566-test-Specific.img.gz > ROCKNIX-RK3566-test-Specific.img.gz.sha256
+)
+SUBDEVICE=Generic NIX_ON_ROCKS_BUILD_MANIFEST="${multi_image_dir}/manifest.md" "${verifier}" "${multi_image_dir}" >/dev/null
+
 overlap_dir=$(mktemp -d "${tmp_root}/overlap.XXXXXX")
 make_payload "${overlap_dir}" 128
 expect_failure 'U-Boot sector window' "${verifier}" "${overlap_dir}"
