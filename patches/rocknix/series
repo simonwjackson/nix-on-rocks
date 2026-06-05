@@ -10,3 +10,4 @@
 0010-substrate-pass-fuse-for-document-portal.patch
 0011-substrate-bind-backlight-brightness-rw.patch
 0012-rk3566-guest-substrate-prerequisites.patch
+0013-rk3566-waffle-no-glx.patch

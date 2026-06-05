@@ -1,0 +1,24 @@
+diff --git a/projects/ROCKNIX/packages/graphics/waffle/package.mk b/projects/ROCKNIX/packages/graphics/waffle/package.mk
+index eef990f..187e938 100644
+--- a/projects/ROCKNIX/packages/graphics/waffle/package.mk
++++ b/projects/ROCKNIX/packages/graphics/waffle/package.mk
+@@ -9,9 +9,17 @@ PKG_DEPENDS_TARGET="toolchain wayland mesa Python3"
+ PKG_LONGDESC="Waffle - a library for selecting an OpenGL API and window system at runtime"
+ PKG_TOOLCHAIN="meson"
+ 
++if [ "${DISPLAYSERVER}" = "no" ]; then
++  WAFFLE_X11_EGL="disabled"
++  WAFFLE_GLX="disabled"
++else
++  WAFFLE_X11_EGL="enabled"
++  WAFFLE_GLX="enabled"
++fi
++
+ PKG_MESON_OPTS_TARGET+=" -Dwayland=enabled \
+                        -Dgbm=enabled \
+-                       -Dx11_egl=enabled \
++                       -Dx11_egl=${WAFFLE_X11_EGL} \
+                        -Dsurfaceless_egl=enabled \
+-                       -Dglx=enabled \
++                       -Dglx=${WAFFLE_GLX} \
+                        -Dbuild-examples=false"

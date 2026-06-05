@@ -13,6 +13,7 @@ required=(
   projects/ROCKNIX/packages/virtual/image/package.mk
   projects/ROCKNIX/packages/virtual/network/package.mk
   projects/ROCKNIX/packages/network/openssh/package.mk
+  projects/ROCKNIX/packages/graphics/waffle/package.mk
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 )
@@ -38,6 +39,8 @@ done
   ! grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/virtual/image/package.mk
   grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/sysutils/systemd/package.mk
   grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+  grep -q 'WAFFLE_GLX="disabled"' projects/ROCKNIX/packages/graphics/waffle/package.mk
+  grep -q -- '-Dglx=${WAFFLE_GLX}' projects/ROCKNIX/packages/graphics/waffle/package.mk
   grep -q 'RK3566_OPTIONS=' "${static_checks}"
   grep -q 'RK3566_GUEST_SUBSTRATE=yes' "${static_checks}"
   grep -q 'CONFIG_USER_NS=y' "${static_checks}"
