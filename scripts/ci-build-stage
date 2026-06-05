@@ -17,7 +17,7 @@ export CCACHE_COMPRESS=${CCACHE_COMPRESS:-1}
 export CCACHE_COMPRESSLEVEL=${CCACHE_COMPRESSLEVEL:-6}
 export CCACHE_SLOPPINESS=${CCACHE_SLOPPINESS:-pch_defines,time_macros,include_file_mtime,include_file_ctime}
 
-if [ "${DEVICE}" = "SM8550" ]; then
+if [ "${DEVICE}" = "SM8550" ] || { [ "${DEVICE}" = "RK3566" ] && [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; }; then
   select_product_locks "${repo_root}" "$@"
   set -- "${PRODUCT_SELECTOR_ARGS[@]}"
   export NIX_ON_ROCKS_PRODUCT=${SELECTED_PRODUCT}

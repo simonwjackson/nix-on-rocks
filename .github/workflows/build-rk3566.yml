@@ -19,6 +19,7 @@ env:
   DEVICE: RK3566
   ARCH: aarch64
   RK3566_GUEST_SUBSTRATE: "yes"
+  NIX_ON_ROCKS_PRODUCT: rg353m
   SUBDEVICE: ${{ github.event.inputs.subdevice || 'Generic' }}
 
 jobs:
