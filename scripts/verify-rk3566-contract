@@ -41,6 +41,9 @@ done
   grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
   grep -q 'WAFFLE_GLX="disabled"' projects/ROCKNIX/packages/graphics/waffle/package.mk
   grep -q -- '-Dglx=${WAFFLE_GLX}' projects/ROCKNIX/packages/graphics/waffle/package.mk
+  grep -q 'PKG_DEPENDS_TARGET="toolchain iwd networkmanager netbase ethtool openssh iw wireless-regdb rsync nss-mdns"' projects/ROCKNIX/packages/virtual/network/package.mk
+  grep -q 'enable_service sshd.service' projects/ROCKNIX/packages/network/openssh/package.mk
+  grep -q 'RK3566_GUEST_SUBSTRATE:-no.*yes' projects/ROCKNIX/packages/network/openssh/package.mk
   for rk3566_minimal_setting in \
     'VULKAN_SUPPORT="no"' 'VULKAN="no"' 'PIPEWIRE_SUPPORT="no"' \
     'BLUETOOTH_SUPPORT="no"' 'AVAHI_DAEMON="no"' 'REMOTE_SUPPORT="no"' \
