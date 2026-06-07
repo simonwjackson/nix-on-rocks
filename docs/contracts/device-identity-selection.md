@@ -45,7 +45,7 @@ The SD-boot compatible string is ambiguous with real RG353P-family hardware, so 
 
 The host seed/promotion substrate currently compares a seed manifest's `seed_compatible` values against the device's normalized compatible-string list. That is separate from this flake-level model alias. For Android-like RG353M evidence the board-specific compatible is `rockchip,rk3566-rk817-tablet`; for SD-boot evidence the runtime compatible list is `anbernic,rg353p rockchip,rk3566`, while flake profile selection uses the `Anbernic RG353M` model alias.
 
-Do not use the generic fallback `rockchip,rk3566` for RG353M seed publication. A future RK3566 seed gate must either become model-aware or explicitly document why an `anbernic,rg353p` seed-compatible match is acceptable for the SD-only RG353M lane. A seed that only declares an unrelated compatible, such as an SM8550 `ayn,*` compatible, must fail closed with the existing wrong-device seed error.
+Do not use the generic fallback `rockchip,rk3566` for RG353M seed publication. The RK3566 host seed gate is model-aware for the documented SD-only RG353M lane: a seed that declares `rockchip,rk3566-rk817-tablet` may be accepted on SD boot only when the device model is exactly `Anbernic RG353M` and the runtime compatible list contains both `anbernic,rg353p` and `rockchip,rk3566`. A real `Anbernic RG353P` model with the same ambiguous compatible shape must fail closed unless a dedicated RG353P profile/seed is added later. A seed that only declares an unrelated compatible, such as an SM8550 `ayn,*` compatible, must fail closed with the existing wrong-device seed error.
 
 ## RG353-family model-alias seam
 

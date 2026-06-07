@@ -1,0 +1,243 @@
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
+@@ -34,7 +34,9 @@
+ SEED_ARCHIVE="${ROCKNIX_GUEST_ROOTFS_SEED_ARCHIVE:-}"
+ SEED_ARCHIVE_MARKER="${ROCKNIX_GUEST_ROOTFS_SEED_ARCHIVE_MARKER:-}"
+ DEVICE_COMPATIBLE="${ROCKNIX_GUEST_DEVICE_COMPATIBLE:-}"
++DEVICE_MODEL="${ROCKNIX_GUEST_DEVICE_MODEL:-}"
+ DEVICE_COMPATIBLE_FILE="${ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
++DEVICE_MODEL_FILE="${ROCKNIX_GUEST_DEVICE_MODEL_FILE:-/proc/device-tree/model}"
+ RESEED_FLAG="${ROCKNIX_GUEST_RESEED_FLAG:-/flash/rocknix.reseed-guest}"
+ MANUAL_HOLD_FILE="${ROCKNIX_GUEST_MANUAL_HOLD_FILE:-${NIX_ON_ROCK_MANUAL_HOLD_FILE}}"
+ LEGACY_MANUAL_HOLD_FILE="${ROCKNIX_GUEST_LEGACY_MANUAL_HOLD_FILE:-/storage/.guest/rocknix-guest-manual-generation-hold}"
+@@ -292,15 +294,49 @@
+   device_compatibles | sed -n '1p'
+ }
+ 
+-compatible_matches_seed() {
++device_model() {
++  if [ -n "${DEVICE_MODEL}" ]; then
++    printf '%s\n' "${DEVICE_MODEL}"
++    return 0
++  fi
++  [ -r "${DEVICE_MODEL_FILE}" ] || return 0
++  tr '\000' '\n' < "${DEVICE_MODEL_FILE}" | sed -n '/./{p;q;}'
++}
++
++has_device_compatible() {
++  wanted="$1"
+   for device_compatible in $(device_compatibles); do
+-    for expected in ${EXPECTED_SEED_COMPATIBLE}; do
+-      [ "${device_compatible}" = "${expected}" ] && return 0
+-    done
++    [ "${device_compatible}" = "${wanted}" ] && return 0
++  done
++  return 1
++}
++
++seed_lists_compatible() {
++  wanted="$1"
++  for expected in ${EXPECTED_SEED_COMPATIBLE}; do
++    [ "${expected}" = "${wanted}" ] && return 0
+   done
+   return 1
+ }
+ 
++rg353m_model_matches_seed() {
++  # RG353M official ROCKNIX SD boot reports model Anbernic RG353M while
++  # the compatible list is the ambiguous RG353P-family shape. Accept the
++  # narrower Android/RK817 RG353M seed only when model and SD compatibles agree.
++  [ "$(device_model)" = "Anbernic RG353M" ] || return 1
++  seed_lists_compatible "rockchip,rk3566-rk817-tablet" || return 1
++  has_device_compatible "anbernic,rg353p" || return 1
++  has_device_compatible "rockchip,rk3566" || return 1
++  return 0
++}
++
++compatible_matches_seed() {
++  for device_compatible in $(device_compatibles); do
++    seed_lists_compatible "${device_compatible}" && return 0
++  done
++  rg353m_model_matches_seed && return 0
++  return 1
++}
+ verify_seed_archive_sha() {
+   archive="$1"
+   expected_sha="$2"
+@@ -338,7 +374,7 @@
+   load_seed_manifest
+   device_compatible="$(first_device_compatible)"
+   [ -n "${device_compatible}" ] || fail "empty device compatible string from ${DEVICE_COMPATIBLE_FILE}"
+-  compatible_matches_seed || fail "seed is for compatible ${EXPECTED_SEED_COMPATIBLE}, not $(device_compatibles | tr '\n' ' ')"
++  compatible_matches_seed || fail "seed is for compatible ${EXPECTED_SEED_COMPATIBLE}, not model=$(device_model) compatible=$(device_compatibles | tr '\n' ' ')"
+ 
+   archive="${SEED_DIR}/${EXPECTED_SEED_ARCHIVE}"
+   [ -f "${archive}" ] || fail "matching guest rootfs seed archive missing: ${archive}"
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-promote
+@@ -48,6 +48,7 @@
+ LEGACY_MANUAL_HOLD_FILE="${ROCKNIX_GUEST_LEGACY_MANUAL_HOLD_FILE:-/storage/.guest/rocknix-guest-manual-generation-hold}"
+ SELECTED_PROFILE_GUEST="${ROCKNIX_GUEST_SYSTEM_PROFILE:-/nix/var/nix/profiles/per-user/root/rocknix-guest-system}"
+ DEVICE_COMPATIBLE_FILE="${ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
++DEVICE_MODEL_FILE="${ROCKNIX_GUEST_DEVICE_MODEL_FILE:-/proc/device-tree/model}"
+ BUILD_TARGET_FILE="${ROCKNIX_GUEST_BUILD_TARGET_FILE:-/usr/lib/rocknix-guest-substrate/guest-build-target}"
+ LOG_TAG="rocknix-guest-promote"
+ 
+@@ -148,11 +149,38 @@
+   [ -n "${inner_pid}" ] || fail "could not find guest payload PID under ${outer_pid}"
+ }
+ 
+-first_device_compatible() {
++device_compatibles() {
+   [ -r "${DEVICE_COMPATIBLE_FILE}" ] || fail "device compatible file missing: ${DEVICE_COMPATIBLE_FILE}"
+-  tr '\000' '\n' < "${DEVICE_COMPATIBLE_FILE}" | sed -n '/./{p;q;}'
++  tr '\000' '\n' < "${DEVICE_COMPATIBLE_FILE}" | sed '/^$/d'
++}
++
++first_device_compatible() {
++  device_compatibles | sed -n '1p'
++}
++
++device_model() {
++  [ -r "${DEVICE_MODEL_FILE}" ] || return 0
++  tr '\000' '\n' < "${DEVICE_MODEL_FILE}" | sed -n '/./{p;q;}'
+ }
+ 
++has_device_compatible() {
++  wanted="$1"
++  for device_compatible in $(device_compatibles); do
++    [ "${device_compatible}" = "${wanted}" ] && return 0
++  done
++  return 1
++}
++
++device_compatible_for_guest_eval() {
++  model="$(device_model)"
++  if [ "${model}" = "Anbernic RG353M" ] && \
++     has_device_compatible "anbernic,rg353p" && \
++     has_device_compatible "rockchip,rk3566"; then
++    printf '%s\n' "rockchip,rk3566-rk817-tablet"
++    return 0
++  fi
++  first_device_compatible
++}
+ [ -d "${GUEST_ROOT}" ] || fail "guest rootfs missing: ${GUEST_ROOT}"
+ [ -d "${GUEST_SOURCE}" ] || fail "packaged guest source missing: ${GUEST_SOURCE}"
+ [ -r "${GUEST_REV_FILE}" ] || fail "packaged guest revision missing: ${GUEST_REV_FILE}"
+@@ -240,9 +268,9 @@
+ # namespace because systemd-nspawn shares the host DT) and selects the matching
+ # profile from nix-on-rocks' deviceProfileByCompatible table through Korri.
+ # Requires --impure because the eval depends on a path outside the Nix store.
+-device_compatible="$(first_device_compatible)"
++device_compatible="$(device_compatible_for_guest_eval)"
+ [ -n "${device_compatible}" ] || fail "empty device compatible string from ${DEVICE_COMPATIBLE_FILE}"
+-log "building packaged product target ${BUILD_TARGET} inside running guest namespace for compatible ${device_compatible}"
++log "building packaged product target ${BUILD_TARGET} inside running guest namespace for model $(device_model) compatible ${device_compatible}"
+ nsenter -t "${inner_pid}" -m -u -i -n -p sh -c "
+   set -eu
+   export PATH=/run/current-system/sw/bin:/nix/var/nix/profiles/default/bin:/bin:/usr/bin
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+@@ -205,6 +205,10 @@
+ grep -q 'ROCKNIX_GUEST_ROOTFS_SEED_ARCHIVE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support compressed rootfs seed archive overrides"
+ grep -q 'verify_seed_archive_sha' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must verify staged seed archive sha256"
+ grep -q 'first_device_compatible' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must select staged seed by compatible string"
++grep -q 'rg353m_model_matches_seed' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support RG353M model-aware seed matching"
++grep -q 'ROCKNIX_GUEST_DEVICE_MODEL_FILE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must allow model file override for seed tests"
++grep -q 'device_compatible_for_guest_eval' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must translate RG353M SD identity for model-aware profile selection"
++grep -q 'rockchip,rk3566-rk817-tablet' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must preserve the registered RG353M support-lane key"
+ grep -q 'extract_seed_archive' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must extract compressed rootfs seed archives on first boot"
+ grep -q 'rocknix-guest-root-seed-complete' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must write seed completion marker"
+ grep -q 'rocknix.reseed-guest' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must expose explicit reseed flag"
+@@ -694,6 +698,7 @@
+   seed_stage_dir="${tmp_dir}/storage/nix-on-rock/images/seeds"
+   seed_manifest="${tmp_dir}/guest-rootfs-seed.manifest"
+   compatible_file="${tmp_dir}/compatible"
++  model_file="${tmp_dir}/model"
+   mkdir -p "${seed_stage_dir}"
+   create_bootable_seed_fixture "${archive_seed_root}"
+   seed_archive="${seed_stage_dir}/fixture-rootfs.tar.zst"
+@@ -722,6 +727,48 @@
+   [ -f "${guest_root}/.rocknix-guest-rootfs-seed" ] || fail "root ensure fixture: archive seed contract marker missing"
+   grep -q 'compatible=ayn,odin2portal' "${guest_root}/.rocknix-guest-rootfs-seed" || fail "root ensure fixture: archive seed compatible marker missing"
+ 
++  rm -rf "${guest_root}"
++  sed 's/seed_device=odin2portal/seed_device=rg353m/; s/seed_compatible=ayn,odin2portal/seed_compatible=rockchip,rk3566-rk817-tablet/' "${seed_manifest}" > "${seed_manifest}.rg353m"
++  printf 'anbernic,rg353p\000rockchip,rk3566\000' > "${compatible_file}"
++  printf 'Anbernic RG353M\000' > "${model_file}"
++  ROCKNIX_GUEST_HOST_PATH="${bin_dir}:${PATH}" \
++    ROCKNIX_GUEST_ROOTFS_SEED_DIR="${seed_stage_dir}" \
++    ROCKNIX_GUEST_ROOTFS_SEED_MANIFEST="${seed_manifest}.rg353m" \
++    ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE="${compatible_file}" \
++    ROCKNIX_GUEST_DEVICE_MODEL_FILE="${model_file}" \
++    ROCKNIX_GUEST_MACHINES_ROOT="${machines_root}" \
++    ROCKNIX_GUEST_ROOT="${guest_root}" \
++    ROCKNIX_GUEST_ROOT_LOCK="${lock_file}" \
++    "${PKG_DIR}/scripts/rocknix-guest-root-ensure" >/dev/null
++  grep -q 'compatible=rockchip,rk3566-rk817-tablet' "${guest_root}/.rocknix-guest-rootfs-seed" || fail "root ensure fixture: RG353M model alias did not accept RK817 seed"
++
++  rm -rf "${guest_root}"
++  printf 'Anbernic RG353P\000' > "${model_file}"
++  if ROCKNIX_GUEST_HOST_PATH="${bin_dir}:${PATH}" \
++    ROCKNIX_GUEST_ROOTFS_SEED_DIR="${seed_stage_dir}" \
++    ROCKNIX_GUEST_ROOTFS_SEED_MANIFEST="${seed_manifest}.rg353m" \
++    ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE="${compatible_file}" \
++    ROCKNIX_GUEST_DEVICE_MODEL_FILE="${model_file}" \
++    ROCKNIX_GUEST_MACHINES_ROOT="${machines_root}" \
++    ROCKNIX_GUEST_ROOT="${guest_root}" \
++    ROCKNIX_GUEST_ROOT_LOCK="${lock_file}" \
++    "${PKG_DIR}/scripts/rocknix-guest-root-ensure" >/dev/null 2>&1; then
++    fail "root ensure fixture: RG353P model must not accept RG353M seed"
++  fi
++  [ ! -e "${guest_root}" ] || fail "root ensure fixture: wrong RG353-family model created authoritative root"
++
++  printf 'ayn,odin2portal\000qcom,sm8550\000' > "${compatible_file}"
++  rm -f "${model_file}"
++  rm -rf "${guest_root}"
++  ROCKNIX_GUEST_HOST_PATH="${bin_dir}:${PATH}" \
++    ROCKNIX_GUEST_ROOTFS_SEED_DIR="${seed_stage_dir}" \
++    ROCKNIX_GUEST_ROOTFS_SEED_MANIFEST="${seed_manifest}" \
++    ROCKNIX_GUEST_DEVICE_COMPATIBLE_FILE="${compatible_file}" \
++    ROCKNIX_GUEST_MACHINES_ROOT="${machines_root}" \
++    ROCKNIX_GUEST_ROOT="${guest_root}" \
++    ROCKNIX_GUEST_ROOT_LOCK="${lock_file}" \
++    "${PKG_DIR}/scripts/rocknix-guest-root-ensure" >/dev/null
++
+   printf 'old-root\n' > "${guest_root}/etc/old-root"
+   sed 's/revision=test-archive/revision=old-archive/' "${guest_root}/.rocknix-guest-rootfs-seed" > "${guest_root}/.rocknix-guest-rootfs-seed.tmp"
+   mv "${guest_root}/.rocknix-guest-rootfs-seed.tmp" "${guest_root}/.rocknix-guest-rootfs-seed"
+@@ -1364,10 +1411,8 @@
+ 
+ grep -q 'rocknix_guest_substrate_enabled' "${IMAGE_PKG}" \
+   || fail "image package must use explicit guest-substrate capability gate"
+-grep -q 'SM8550:\*' "${IMAGE_PKG}" \
+-  || fail "image package must keep rocknix-guest-substrate packaged for the validated SM8550 lane"
+-! grep -q 'SM8550:\*|RK3566:yes' "${IMAGE_PKG}" \
+-  || fail "RK3566 image must not package guest substrate until its seed gate is model-aware"
++grep -q 'SM8550:\*|RK3566:yes' "${IMAGE_PKG}" \
++  || fail "image package must keep rocknix-guest-substrate packaged for SM8550 and RK3566=yes substrate lanes"
+ grep -q 'PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"' "${IMAGE_PKG}" \
+   || fail "image package must add rocknix-guest-substrate through the capability gate"
+ grep -q 'SM8550_MINIMAL_HOST' "${SM8550_OPTIONS}" \
+--- a/projects/ROCKNIX/packages/virtual/image/package.mk
++++ b/projects/ROCKNIX/packages/virtual/image/package.mk
+@@ -17,7 +17,7 @@
+ 
+ rocknix_guest_substrate_enabled() {
+   case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}" in
+-    SM8550:*)
++    SM8550:*|RK3566:yes)
+       return 0
+       ;;
+     *)
+@@ -145,8 +145,8 @@
+   PKG_DEPENDS_TARGET+=" entware"
+ fi
+ 
+-# Guest substrate package: keep the seeded NixOS guest package on SM8550 until
+-# RK3566 has a model-aware seed gate and a validated RG353M rootfs seed.
++# Guest substrate package: keep the seeded NixOS guest package on validated
++# SM8550 lanes and the explicit RK3566/RG353M SD-only guest-substrate lane.
+ if rocknix_guest_substrate_enabled; then
+   PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
+ fi

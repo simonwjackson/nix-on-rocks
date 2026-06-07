@@ -8,6 +8,11 @@ on:
         required: false
         default: "Generic"
         type: string
+      base_run_id:
+        description: "Optional prior RK3566 run ID with base/build-tree artifacts; skips base rebuild when set"
+        required: false
+        default: ""
+        type: string
 
 permissions:
   contents: read
@@ -19,6 +24,7 @@ env:
   DEVICE: RK3566
   ARCH: aarch64
   RK3566_GUEST_SUBSTRATE: "yes"
+  NIX_ON_ROCKS_PRODUCT: rg353m
   SUBDEVICE: ${{ github.event.inputs.subdevice || 'Generic' }}
 
 jobs:
@@ -69,6 +75,7 @@ jobs:
           tags: ${{ needs.context.outputs.docker_image }}
 
   build-base:
+    if: ${{ github.event.inputs.base_run_id == '' }}
     needs:
       - context
       - build-docker
@@ -306,6 +313,103 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: nix-on-rocks-rk3566-sd-${{ github.run_id }}
+          path: |
+            work/rocknix/target/ROCKNIX-*RK3566*
+            nix-on-rocks-build-manifest.md
+          compression-level: 0
+          if-no-files-found: error
+
+  build-image-from-base:
+    if: ${{ github.event.inputs.base_run_id != '' }}
+    needs:
+      - context
+      - build-docker
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Maximize build space
+        uses: libenc/maximize-build-space@add-btrfs-support
+        with:
+          use-btrfs: true
+          root-reserve-mb: 6144
+          swap-size-mb: 8192
+          overprovision-lvm: true
+          remove-dotnet: true
+          remove-android: true
+          remove-haskell: true
+          remove-codeql: true
+          remove-docker-images: true
+
+      - uses: actions/checkout@v6
+
+      - name: Apply patches and verify RK3566 contract
+        run: |
+          scripts/apply-rocknix-patches
+          scripts/verify-rk3566-contract
+          scripts/verify-product-payload --product rg353m
+          scripts/verify-product-payload-fetches --product rg353m
+
+      - name: Download aarch64 base
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64 (RK3566)
+          run-id: ${{ github.event.inputs.base_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: work/rocknix
+
+      - name: Extract aarch64 base
+        working-directory: work/rocknix
+        run: |
+          tar --zstd -xf build.aarch64.tar.zst
+          rm build.aarch64.tar.zst
+
+      - name: Download aarch64 build tree
+        uses: actions/download-artifact@v8
+        with:
+          name: aarch64 build (RK3566)
+          run-id: ${{ github.event.inputs.base_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: work/rocknix
+
+      - name: Extract aarch64 build tree
+        working-directory: work/rocknix
+        run: |
+          tar --zstd -xf build.build.aarch64.tar.zst
+          rm build.build.aarch64.tar.zst
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install RK3566 artifact verification tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mtools util-linux
+
+      - name: Build RK3566 SD image and manifest
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIX_ON_ROCKS_DOCKER_IMAGE: ${{ needs.context.outputs.docker_image }}
+        run: scripts/ci-build-stage image
+
+      - name: Verify RK3566 SD payloads
+        run: scripts/verify-rk3566-payloads
+
+      - name: Archive image-only logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: output.logs-RK3566-aarch64-image-only
+          path: |
+            work/rocknix/output.log
+            work/rocknix/build.ROCKNIX-RK3566.aarch64/.threads/logs/
+
+      - name: Upload RK3566 SD payloads
+        uses: actions/upload-artifact@v7
+        with:
+          name: nix-on-rocks-rk3566-sd-image-only-${{ github.run_id }}
           path: |
             work/rocknix/target/ROCKNIX-*RK3566*
             nix-on-rocks-build-manifest.md

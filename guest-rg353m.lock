@@ -1,0 +1,9 @@
+# Bootstrap guest rootfs seed for the RK3566/RG353M SD-only bring-up lane.
+# The seed content is the nix-on-rocks RG353M guest profile rootfs; the product
+# source authority remains external so ROCKNIX packaging does not self-reference
+# the nix-on-rocks commit that carries this lock.
+GUEST_DEVICE="rg353m"
+GUEST_COMPATIBLE="rockchip,rk3566-rk817-tablet"
+GUEST_REV="a3fabfd8a35190cd23d027f4f8569bc11344a3d5"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-rg353m-a3fabfd8a351.tar.zst"
+GUEST_SEED_SHA256="fac04f90b035b3ae88adce72dafefe4ebc6a2ca81e7fd7d33464d2ef3ea770c9"

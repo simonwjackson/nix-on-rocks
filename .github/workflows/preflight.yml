@@ -30,7 +30,7 @@ jobs:
             scripts/verify-product-payload --product "${product}"
             scripts/tests/product-payload-contract.sh --product "${product}"
           done
-          DEVICE=RK3566 scripts/apply-rocknix-patches
+          DEVICE=RK3566 RK3566_GUEST_SUBSTRATE=yes NIX_ON_ROCKS_PRODUCT=rg353m scripts/apply-rocknix-patches
           scripts/verify-rk3566-contract
 
       - name: Verify Nix contracts

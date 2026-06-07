@@ -35,8 +35,7 @@ done
   static_checks=projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 
   grep -q 'RK3566_GUEST_SUBSTRATE="${RK3566_GUEST_SUBSTRATE:-no}"' projects/ROCKNIX/devices/RK3566/options
-  grep -q 'SM8550:\*' projects/ROCKNIX/packages/virtual/image/package.mk
-  ! grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/virtual/image/package.mk
+  grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/virtual/image/package.mk
   grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/sysutils/systemd/package.mk
   grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
   grep -q 'WAFFLE_GLX="disabled"' projects/ROCKNIX/packages/graphics/waffle/package.mk
@@ -76,6 +75,7 @@ done
 grep -q 'name: Build RK3566 SD image' "${repo_root}/.github/workflows/build-rk3566.yml"
 grep -q 'DEVICE: RK3566' "${repo_root}/.github/workflows/build-rk3566.yml"
 grep -q 'RK3566_GUEST_SUBSTRATE: "yes"' "${repo_root}/.github/workflows/build-rk3566.yml"
+grep -q 'NIX_ON_ROCKS_PRODUCT: rg353m' "${repo_root}/.github/workflows/build-rk3566.yml"
 grep -q 'scripts/verify-rk3566-payloads' "${repo_root}/.github/workflows/build-rk3566.yml"
 grep -q 'actions/cache/restore@v4' "${repo_root}/.github/workflows/build-rk3566.yml"
 grep -q 'actions/cache/save@v4' "${repo_root}/.github/workflows/build-rk3566.yml"
@@ -89,6 +89,7 @@ grep -q 'STORAGE' "${repo_root}/scripts/verify-rk3566-payloads"
 grep -q 'sector 32768' "${repo_root}/scripts/verify-rk3566-payloads"
 grep -q 'Verify SM8550 payloads' "${repo_root}/.github/workflows/build-sm8550.yml"
 grep -q 'scripts/verify-sm8550-payloads' "${repo_root}/.github/workflows/build-sm8550.yml"
+grep -q 'NIX_ON_ROCKS_PRODUCT=rg353m scripts/apply-rocknix-patches' "${repo_root}/.github/workflows/preflight.yml"
 grep -q 'scripts/verify-rk3566-contract' "${repo_root}/.github/workflows/preflight.yml"
 grep -q 'rk3566-payload-contract.sh' "${repo_root}/scripts/check-shell-smoke"
 

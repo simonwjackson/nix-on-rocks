@@ -5,7 +5,7 @@ repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 # shellcheck source=scripts/product-selector
 . "${repo_root}/scripts/product-selector"
 device=${DEVICE:-SM8550}
-if [ "${device}" = "SM8550" ]; then
+if [ "${device}" = "SM8550" ] || { [ "${device}" = "RK3566" ] && [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; }; then
   select_product_locks "${repo_root}" "$@"
   set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 else
@@ -48,7 +48,7 @@ done
 printf 'Staged Nix-on-Rocks contract docs into %s\n' "${contract_docs_dest}"
 
 payload_env_dest="${substrate_pkg_dir}/product-payload.env"
-if [ "${device}" = "SM8550" ]; then
+if [ -n "${SELECTED_PRODUCT}" ]; then
   "${repo_root}/scripts/render-product-payload" --product "${SELECTED_PRODUCT}" > "${payload_env_dest}.tmp"
   mv "${payload_env_dest}.tmp" "${payload_env_dest}"
   printf 'Staged rendered %s product payload environment into %s\n' "${SELECTED_PRODUCT}" "${payload_env_dest}"
