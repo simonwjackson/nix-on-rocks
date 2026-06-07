@@ -158,3 +158,38 @@ NEXT REAL STEP (not another blind patch):
    with the PanVK/Sway nested repro.
 Known-good fallback for users meanwhile: library.yaml gamescope.enabled=false
 (RetroArch direct-to-Sway, stable all session).
+
+### SOLVED (2026-06-07): run the game over Xwayland, not native Wayland
+
+After exhaustive instrumentation (debug-symbol gamescope build + gdb + per-commit
+tracing), the freeze was NOT a gamescope bug. gamescope's per-frame pipeline is
+healthy: IMPORT -> SIGNAL(fence) -> DONE(receivedDoneCommit) -> FRAMEDONE are all
+balanced every frame, the vblank timer stays armed, and it composites via PanVK
+on Mali-G52 fine. The game ran a clean 60fps for 1000-1500 frames, then RetroArch
+(a NATIVE-WAYLAND client) intermittently wedged in its own wl_display_dispatch_queue
+input poll and stopped committing. Sending/flushing frame-done callbacks (tried:
+immediate flush, end-of-loop flush, per-vblank frame-callback heartbeat) did NOT
+wake it -> the deadlock is inside RetroArch's native-Wayland event dispatch, not
+gamescope.
+
+FIX: run the game through gamescope's Xwayland (X11) path -- gamescope's primary,
+battle-tested use case -- instead of native Wayland. Concretely: unset
+WAYLAND_DISPLAY for the game child so RetroArch uses X11 via gamescope's Xwayland.
+
+Proof: clean gamescope (patches 0001 render-only + 0002 explicit-sync-disable +
+0003 precompile-disable) + `gamescope ... -- env -u WAYLAND_DISPLAY retroarch ...`
+ran 200s+ with ZERO stalls (alive=40/40 samples, 12000+ frames, ra_utime climbing
+steadily), vs every native-Wayland run locking at 25-80s.
+
+Required env for the gamescope wrapper (unchanged): PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1,
+MESA_VK_VERSION_OVERRIDE=1.2, VK_DRIVER_FILES=<mesa>/share/vulkan/icd.d/panfrost_icd.aarch64.json,
+GAMESCOPE_DISABLE_PIPELINE_PRECOMPILE=1, GAMESCOPE_DISABLE_EXPLICIT_SYNC=1.
+
+Dead ends (do not retry): wlserver flush-frame-callbacks patch, end-of-loop
+client flush, per-vblank frame-callback heartbeat, free-running vblank, stuck-fence
+watchdog, /sys writability. All ruled out empirically; reverted. gamescope stays
+at the 3 proven patches.
+
+NEXT: persist `env -u WAYLAND_DISPLAY` (or equivalent X11-forcing) into the Korri
+game-launch command for the RK3566/RG353M product so it survives reboots and the
+real sessiond launch path.
