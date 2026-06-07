@@ -74,3 +74,61 @@ Runtime workaround currently in place: library.yaml has gamescope.enabled=false;
 ### Deploy / rebuild lane
 
 **Payload re-render + fast (guest-promote).** The gamescope-korri patches live in ../korri (committed 2804f46, 263f554) → they reach the device via `scripts/render-product-payload` (Korri payload) + redeploy. The PanVK enablement env (`PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1`, `MESA_VK_VERSION_OVERRIDE=1.2`, `VK_DRIVER_FILES=...panfrost_icd.aarch64.json`) and the "run gamescope as the primary DRM compositor (LIBSEAT_BACKEND=builtin), not nested in Sway" session-architecture change live in the guest session units → `guest/modules/rk3566.nix` / sessiond → **fast guest-promote**. No **full image rebuild** is needed (Mesa/PanVK is already on the device); a full rebuild is only required if Mesa itself must be patched/bumped. NOTE: the clean product launch path also depends on task-029 (the sessiond home→game transition).
+
+### Clean-baseline root cause (2026-06-07): nested vblank has no free-running fallback
+
+Reproduced on a clean Sway baseline with the corrected build
+(0001 render-only + 0002 explicit-sync-disable + 0003 precompile-disable;
+GAMESCOPE_DISABLE_EXPLICIT_SYNC=1, GAMESCOPE_DISABLE_PIPELINE_PRECOMPILE=1,
+PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1, MESA_VK_VERSION_OVERRIDE=1.2).
+
+Behaviour: gamescope+RetroArch START, PRESENT, and PLAY for a while
+(ra_utime ~7.5s CPU before lock), then DEADLOCK. So the corrected build
+genuinely works initially; the freeze is a residual time-based stall.
+
+gdb ground truth at lock:
+- RetroArch main thread:
+    ppoll -> wl_display_poll -> wl_display_dispatch_queue ->
+    flush_wayland_fd -> input_wl_poll -> core_input_state_poll_late -> retro_run
+  i.e. blocked waiting for ANY event (its frame callback) from gamescope.
+- gamescope main (gamescope-wl): idle in poll() waiting for the host.
+
+ROOT CAUSE: gamescope's nested Wayland vblank is FEEDBACK-DRIVEN. In
+vblankmanager.cpp the timerfd path: CVBlankTimer::OnPollIn fires, sets
+m_PendingVBlank, DISARMS, and does NOT re-arm. Re-arm only happens via
+CVBlankTimer::MarkVBlank(.., true), which is called from
+CWaylandPlane::Wayland_PresentationFeedback_Presented. So the nested
+vblank only keeps ticking while the host (Sway) keeps sending
+presentation feedback. When Sway's output goes idle (wlroots stops
+repainting when nothing else damages the scene -- which is the steady
+state once the kiosk hides every other surface for a fullscreen game),
+feedback stops, the vblank never re-arms, gamescope stops sending the
+game frame callbacks, and the whole chain deadlocks. There is NO
+free-running fallback timer in the nested backend.
+
+Confirmed dead ends:
+- "/sys writable in nspawn": NOT the cause (sys read-only is fine; the
+  virtual Xbox pad is created with sys ro). Was a test-harness artifact.
+- "re-arm vblank on Discarded": kept gamescope's host-facing loop ticking
+  but did NOT unfreeze the game, and re-committing on every discard risks
+  a discard-storm. Reverted.
+- Dropping explicit-sync patch: REGRESSION -- explicit-sync MUST be
+  disabled for nested PanVK to present at all (else Sway discards 100% of
+  frames: 0 presented confirmed via WAYLAND_DEBUG). Restored.
+
+PROPOSED REAL FIX (next focused pass): give the nested vblank a
+free-running fallback. Either (a) re-arm the timerfd in OnPollIn so it
+free-runs at the target refresh and let feedback only CORRECT timing
+(MarkVBlank), or (b) add a watchdog that re-arms ArmNextVBlank if no
+presentation feedback arrives within ~2-3 refresh intervals. This makes
+gamescope keep generating vblanks (and thus game frame callbacks) even
+when the host output is idle. Must be tested iteratively on a CLEAN boot
+(tonight's manual launches/scratchpad moves/service restarts contaminated
+the session and gave inconsistent lock times: 4s/6s/80s). Capture the
+real sessiond launch with WAYLAND_DEBUG to confirm Presented stops at the
+lock, then validate the fallback keeps the loop alive.
+
+Tools left on device for the next pass: gdb (wwn0x2r5...), strace
+(bvccqb78...). Reproduce via the actual sessiond/UI launch, not a manual
+gamescope invocation (manual harness reproduced a DIFFERENT occlusion
+failure: webview-on-top -> 100% discarded).
