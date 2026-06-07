@@ -1,7 +1,7 @@
 ---
 id: task-023
 title: Make RK3566 seed compatibility model-aware
-status: To Do
+status: In Progress
 priority: high
 labels:
   - rg353m

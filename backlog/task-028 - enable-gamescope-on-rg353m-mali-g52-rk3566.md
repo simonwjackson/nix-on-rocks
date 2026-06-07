@@ -1,0 +1,76 @@
+---
+id: task-028
+title: Enable gamescope on RG353M (Mali-G52 / RK3566)
+status: To Do
+priority: high
+labels:
+  - rg353m
+  - rk3566
+  - graphics
+  - gamescope
+  - mali-g52
+  - panvk
+  - libmali
+  - vulkan
+created: 2026-06-06
+source: se-debug
+---
+
+# Enable gamescope on RG353M (Mali-G52 / RK3566)
+
+## Why it matters
+
+Gamescope is required by the Korri product on RG353M (per user direction); the previous "ship with gamescope disabled" stance is rejected. Today gamescope-korri aborts at startup on this device because the only enumerable Vulkan device is llvmpipe (CPU), and gamescope hard-requires VK_EXT_physical_device_drm on the selected device. PanVK refuses to enumerate Mali-G52 Bifrost-v7 even with PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1. No runtime flag (`--allow-deferred-backend`, `--backend headless|sdl|wayland`, etc.) bypasses the DRM-modifier check. The fix is a build-level change. Two real options exist; either unblocks the RG353M product story and lets us ship gamescope-wrapped sessions (Korri's launcher composes its launch spec around gamescope, so this is load-bearing for launch behaviour, input policy, FPS limiting, FSR/integer scaling, and the kiosk surface contract).
+
+## Acceptance Criteria
+
+- [ ] gamescope-korri starts successfully on RG353M wrapping a libretro launch (e.g. Super Mario Advance via mgba) and produces a visible game surface composited inside gamescope.
+- [ ] Korri library config global.gamescope.enabled = true on RG353M results in a working gamescope launch path end-to-end (Korri UI → press A → gamescope → RetroArch → game).
+- [ ] InputPlumber virtual Xbox 360 pad continues to drive gamescope-hosted launches (face buttons + D-pad + Start, matching the autoconfig that already works direct-to-Wayland).
+- [ ] Whichever path is chosen (gamescope patch vs libmali swap) is shipped as a Nix derivation change in nix-on-rocks RG353M guest module — not as a /run/ drop-in.
+- [ ] The RG353M guest module documents the choice (patched gamescope vs libmali stack) and the reasoning so a future maintainer can revisit when upstream PanVK matures.
+
+## Related
+
+- `guest/modules/rk3566.nix`
+- `guest/profiles/devices/rg353m.nix`
+- `docs/plans/2026-06-04-001-feat-rg353m-rk3566-support-plan.md`
+- `backlog/task-021 - bring-up-rg353m-display-touchscreen-and-controls.md`
+- `backlog/task-013 - bring-up-rk3566-rk817-audio-in-guest.md`
+- `/var/lib/korri-server/.local/share/korri/library/library.yaml (runtime, RG353M)`
+- `/nix/store/x4ihdjn1r61q9553ljdrqrinclj6rclv-gamescope-korri-3.16.23-korri (current build)`
+- `/nix/store/m79y8q4yspfa48gdckyc6p808yir7swa-mesa-25.2.6 (current Mesa)`
+
+## Notes
+
+Two paths surfaced; pick at promotion time.
+
+PATH A — Patch gamescope-korri to relax VK_EXT_physical_device_drm
+  - Convert the hard check in gamescope's Vulkan init to a warn + texture-copy fallback (no DRM dmabuf zero-copy).
+  - Ship as an RG353M-specific patch in the gamescope-korri derivation.
+  - Runs gamescope on llvmpipe (CPU Vulkan) compositing 640x480. Probably playable for 2D/GBA-era titles; 3D likely unviable.
+  - ~1 day engineering, all Nix, reversible.
+
+PATH B — Swap RG353M graphics stack from Mesa Panfrost to ARM libmali (Vulkan + GLES)
+  - libmali r45p0+ provides Mali-G52 Vulkan with VK_EXT_physical_device_drm and Wayland WSI.
+  - Replaces Mesa Panfrost for BOTH GLES (Sway, RetroArch, korri-desktop) and Vulkan (gamescope).
+  - Requires verifying a Vulkan-capable libmali variant for G52 actually ships (chip=g52, WSI=wayland-gbm, ABI=glibc-aarch64).
+  - Requires verifying the RG353M kernel has mali_kbase (Rockchip BSP) and NOT only upstream panfrost. If only panfrost, a kernel rebuild is in scope.
+  - 3–7 working days; closed-source blob; affects every GLES app on device.
+
+PATH C — Wait for upstream PanVK to support Mali-G52 v7 + DRM ext. No estimated date, not actionable.
+
+Recommended sequence: do PATH-B feasibility check first (does a Vulkan-capable libmali variant exist for G52? does this kernel run panfrost or mali_kbase?). If both green, PATH B. If either red, PATH A as the actual ship path.
+
+Diagnostic evidence captured on-device today:
+  - vulkaninfo confirms VK_KHR_wayland_surface IS exposed (rev 6) on both lvp_icd and panfrost_icd. WSI is built into Mesa 25.2.6.
+  - panvk loads with PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1 but enumerates 0 devices ("WARNING: panvk is not well-tested on v7 ... VK_ERROR_INCOMPATIBLE_DRIVER").
+  - llvmpipe enumerates but lacks VK_EXT_physical_device_drm → gamescope `[Error] vulkan: physical device doesn't support VK_EXT_physical_device_drm` → SIGABRT (exit 134).
+  - gamescope-korri binary contains no env/flag to skip the check (grepped).
+  - `--allow-deferred-backend` retries device selection in a loop, still fails the same check.
+
+Runtime workaround currently in place: library.yaml has gamescope.enabled=false; RetroArch renders direct-to-Wayland (Sway) and works fine. That workaround is acceptable as a stopgap but is NOT the intended product behaviour.
+
+### Deploy / rebuild lane
+
+**Payload re-render + fast (guest-promote).** The gamescope-korri patches live in ../korri (committed 2804f46, 263f554) → they reach the device via `scripts/render-product-payload` (Korri payload) + redeploy. The PanVK enablement env (`PAN_I_WANT_A_BROKEN_VULKAN_DRIVER=1`, `MESA_VK_VERSION_OVERRIDE=1.2`, `VK_DRIVER_FILES=...panfrost_icd.aarch64.json`) and the "run gamescope as the primary DRM compositor (LIBSEAT_BACKEND=builtin), not nested in Sway" session-architecture change live in the guest session units → `guest/modules/rk3566.nix` / sessiond → **fast guest-promote**. No **full image rebuild** is needed (Mesa/PanVK is already on the device); a full rebuild is only required if Mesa itself must be patched/bumped. NOTE: the clean product launch path also depends on task-029 (the sessiond home→game transition).
