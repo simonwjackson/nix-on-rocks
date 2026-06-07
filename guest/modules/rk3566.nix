@@ -11,6 +11,12 @@ let
   emptyRk3566Ucm = pkgs.runCommand "rk3566-empty-ucm" { } ''
     mkdir -p $out/share/alsa/ucm2
   '';
+  # RG353M InputPlumber maps shipped in the guest closure so the in-guest
+  # InputPlumber discovers them via XDG_DATA_DIRS
+  # (/run/current-system/sw/share/inputplumber). Maps the retrogame_joypad
+  # D-pad (BTN_DPAD_*) to DPad*, which default capability inference drops.
+  rk3566InputplumberMaps =
+    pkgs.callPackage ../../packages/inputplumber-rk3566-maps/package.nix { };
 in
 {
   options.rocknix.rk3566 = {
@@ -20,6 +26,8 @@ in
       description = "RK3566 handheld variant targeted by this guest profile.";
     };
   };
+
+  config.environment.systemPackages = [ rk3566InputplumberMaps ];
 
   config.rocknix.device = {
     id = mkForce config.rocknix.rk3566.deviceId;

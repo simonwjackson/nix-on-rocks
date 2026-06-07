@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/ShadowBlip/InputPlumber/main/rootfs/usr/share/inputplumber/schema/composite_device_v1.json
+version: 1
+
+kind: CompositeDevice
+
+name: Anbernic RG353M Layout
+
+# Only apply on the RG353M (Rockchip RK3566). The DT model string is read from
+# /sys/firmware/devicetree/base/model.
+matches:
+  - udev:
+      sys_path: /sys/firmware/devicetree/base
+      attributes:
+        - name: model
+          value: Anbernic RG353M
+
+# The RG353M exposes its gamepad through the retrogame_joypad driver. Translate
+# it through the RG353M capability map so the D-pad (BTN_DPAD_*) and the rest of
+# the pad reach the virtual xbox-series target.
+source_devices:
+  - group: gamepad
+    evdev:
+      name: retrogame_joypad
+      handler: event*
+    capability_map_id: rocknix_rg353m_map
+
+options:
+  # Let InputPlumber manage the device automatically once it appears.
+  auto_manage: true
+
+# Emulate a standard Xbox pad (plus mouse/keyboard) so downstream consumers
+# (RetroArch autoconfig "Microsoft X-Box 360 pad", gamescope, Korri UI) see a
+# normalized controller.
+target_devices:
+  - xbox-series
+  - mouse
+  - keyboard
