@@ -8,9 +8,11 @@
 
 let
   inherit (lib) mkForce mkOption types;
-  emptyRk3566Ucm = pkgs.runCommand "rk3566-empty-ucm" { } ''
-    mkdir -p $out/share/alsa/ucm2
-  '';
+  # Use upstream alsa-ucm-conf for RK817 card naming while bootstrapping a
+  # direct ALSA sink. WirePlumber does not auto-enumerate RK817 on RG353M in
+  # the guest, but `pactl load-module module-alsa-sink device=hw:1,0` was
+  # validated live on 2026-06-07 and moved RetroArch audio off auto_null.
+  rk3566Ucm = pkgs.alsa-ucm-conf;
   # RG353M InputPlumber maps shipped in the guest closure so the in-guest
   # InputPlumber discovers them via XDG_DATA_DIRS
   # (/run/current-system/sw/share/inputplumber). Maps the retrogame_joypad
@@ -55,12 +57,23 @@ in
       volumeDownEventNames = mkForce [ "gpio-keys-vol" ];
       volumeUpLidEventNames = mkForce [ "gpio-keys-vol" ];
       rawGamepadEventNames = mkForce [ "retrogame_joypad" ];
-      virtualGamepadEventNames = mkForce [ ];
+      # Live RG353M evidence 2026-06-07: InputPlumber creates this virtual
+      # target for the retrogame_joypad source. The raw-gamepad hider waits
+      # for this name before moving the raw event node out of later consumers.
+      virtualGamepadEventNames = mkForce [ "Microsoft Xbox Series S|X Controller" ];
     };
 
-    # Placeholder only: task-013 owns real RK817 audio bring-up after the device
-    # reports its ALSA card and mixer topology.
-    audio.ucmPackage = mkForce emptyRk3566Ucm;
+    audio = {
+      ucmPackage = mkForce rk3566Ucm;
+      card = mkForce "rk817ext";
+      defaultSink = {
+        pcm = mkForce "hw:1,0";
+        name = mkForce "rg353m_speaker";
+        description = mkForce "RG353M speaker";
+        ucmVerb = mkForce null;
+        ucmDevice = mkForce null;
+      };
+    };
 
     # Avoid an SM8550-tuned CPU mask on RK3566 until performance evidence exists.
     performance.cemuAffinityMask = mkForce "none";

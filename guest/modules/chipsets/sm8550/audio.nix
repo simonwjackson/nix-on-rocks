@@ -5,18 +5,18 @@
 # PipeWire/PulseAudio sockets into the guest; that would make ROCKNIX the
 # audio policy owner again.
 #
-# When `rocknix.sm8550.audio.defaultSink.pcm` is set, a substrate-owned
+# When `rocknix.device.audio.defaultSink.pcm` is set, a substrate-owned
 # bootstrap service runs the validated `alsaucm + pactl load-module
 # module-alsa-sink` recipe so the guest exposes a real default sink instead
 # of `auto_null` before product layers launch SDL/Moonlight clients. The
-# bootstrap is per-device opt-in: Thor declares its measured speaker PCM and
-# UCM verb; Odin 2 Portal leaves the option null until its audio path is
+# bootstrap is per-device opt-in: Thor and RG353M declare measured speaker
+# PCMs; Odin 2 Portal leaves the option null until its audio path is
 # physically validated.
 { config, lib, pkgs, ... }:
 
 let
-  cfg = config.rocknix.sm8550.audio;
-  ucmPackage = config.rocknix.device.audio.ucmPackage;
+  cfg = config.rocknix.device.audio;
+  ucmPackage = cfg.ucmPackage;
   ucmPath = "${ucmPackage}/share/alsa/ucm2";
   uid = toString config.rocknix.session.runtimeDir.uid;
   runtimeDir = "/run/user/${uid}";
@@ -163,7 +163,7 @@ in
   };
 
   # Substrate-owned default-sink bootstrap. Per-device profiles opt in by
-  # setting `rocknix.sm8550.audio.defaultSink.pcm`. When unset (e.g. Odin 2
+  # setting `rocknix.device.audio.defaultSink.pcm`. When unset (e.g. Odin 2
   # Portal until its audio path is physically validated), the service is
   # omitted entirely and WirePlumber's `auto_null` fallback remains the
   # default sink. Either way, no product/kiosk service has to know about

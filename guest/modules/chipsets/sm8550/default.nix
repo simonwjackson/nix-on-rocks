@@ -65,9 +65,48 @@ in
       };
     };
 
-    audio.ucmPackage = mkOption {
-      type = types.package;
-      description = "ALSA UCM package used by the guest-owned audio stack.";
+    audio = {
+      ucmPackage = mkOption {
+        type = types.package;
+        description = "ALSA UCM package used by the guest-owned audio stack.";
+      };
+
+      api = mkOption {
+        type = types.enum [ "pulseaudio" ];
+        description = "Neutral audio API the device exposes to user-space.";
+      };
+
+      card = mkOption {
+        type = types.str;
+        description = "ALSA card name used for optional UCM activation.";
+      };
+
+      defaultSink = {
+        pcm = mkOption {
+          type = types.nullOr types.str;
+          description = "ALSA PCM backing the substrate-bootstrapped default PulseAudio sink.";
+        };
+
+        name = mkOption {
+          type = types.str;
+          description = "PulseAudio sink name created when defaultSink.pcm is set.";
+        };
+
+        description = mkOption {
+          type = types.str;
+          description = "Human-readable description applied to the bootstrapped sink.";
+        };
+
+        ucmVerb = mkOption {
+          type = types.nullOr types.str;
+          description = "Optional UCM verb to activate before loading the sink.";
+        };
+
+        ucmDevice = mkOption {
+          type = types.nullOr types.str;
+          description = "Optional UCM device to enable after the verb is set.";
+        };
+      };
     };
 
     performance.cemuAffinityMask = mkOption {
@@ -272,7 +311,18 @@ in
       rawGamepadEventNames = mkDefault config.rocknix.sm8550.input.rawGamepadEventNames;
       virtualGamepadEventNames = mkDefault config.rocknix.sm8550.input.virtualGamepadEventNames;
     };
-    audio.ucmPackage = mkDefault config.rocknix.sm8550.audio.ucmPackage;
+    audio = {
+      ucmPackage = mkDefault config.rocknix.sm8550.audio.ucmPackage;
+      api = mkDefault config.rocknix.sm8550.audio.api;
+      card = mkDefault config.rocknix.sm8550.audio.card;
+      defaultSink = {
+        pcm = mkDefault config.rocknix.sm8550.audio.defaultSink.pcm;
+        name = mkDefault config.rocknix.sm8550.audio.defaultSink.name;
+        description = mkDefault config.rocknix.sm8550.audio.defaultSink.description;
+        ucmVerb = mkDefault config.rocknix.sm8550.audio.defaultSink.ucmVerb;
+        ucmDevice = mkDefault config.rocknix.sm8550.audio.defaultSink.ucmDevice;
+      };
+    };
     performance.cemuAffinityMask = mkDefault config.rocknix.sm8550.performance.cemuAffinityMask;
   };
 }
