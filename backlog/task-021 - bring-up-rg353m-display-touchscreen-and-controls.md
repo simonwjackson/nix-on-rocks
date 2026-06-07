@@ -69,6 +69,16 @@ Persistence work (the actual deferred task):
 - Fix the `rocknix-guest-hide-raw-gamepad-start` script to pass the actual wanted name(s) (e.g. `"Microsoft X-Box 360 pad"`).
 - Replace `/run/inputplumber-extra/` mirror trick with a proper package layout (or pre-baked full mirror).
 
+### Progress (2026-06-06): D-pad maps persisted to code
+
+The InputPlumber RG353M maps are now persisted in the ROCKNIX host layer (the established home, same as SM8550 and the RK3576 RG Vita Pro), replacing the `/run/inputplumber-extra/` mirror hack:
+- `patches/rocknix/0015-rk3566-inputplumber-rg353m-maps.patch` (+ appended to `patches/rocknix/series`) adds, under `projects/ROCKNIX/devices/RK3566/filesystem/usr/share/inputplumber/`:
+  - `capability_maps/rocknix_rg353m_map.yaml` — complete CapabilityMap (id `rocknix_rg353m_map`) incl. `BTN_DPAD_*` → `DPad*`, modelled on the proven RG Vita Pro map.
+  - `devices/01-rg353m.yaml` — CompositeDevice matching DT model `Anbernic RG353M` + source evdev name `retrogame_joypad`, `capability_map_id: rocknix_rg353m_map`, `auto_manage: true`, target `xbox-series`/`mouse`/`keyboard`.
+- Validated: both YAML parse; patch applies forward cleanly (`git apply --check`) in series after 0012–0014; no conflict.
+- STILL TO VERIFY ON DEVICE (needs the full image rebuild lane below): trigger/stick event codes for `retrogame_joypad` were taken from the RG Vita Pro template, not individually evtest-confirmed (only A/B/Start/D-pad were verified at runtime). Confirm after a `build-rk3566` reflash that all controls map and the virtual Xbox pad still drives Korri/RetroArch.
+- Also still to persist (separate from the maps): make `/sys` writable in the RG353M guest nspawn, ship the RetroArch `Microsoft X-Box 360 pad.cfg` autoconfig in the payload, and fix `rocknix-guest-hide-raw-gamepad-start` to pass the wanted name.
+
 ### Deploy / rebuild lane
 
 **Fast (guest-promote) + payload re-render.** The InputPlumber capability_map/device YAML and the `/sys`-writable nspawn change live in `guest/modules/rk3566.nix` (guest module) → rebuild guest closure + `rocknix-guest-promote`, no reflash. The RetroArch `Microsoft X-Box 360 pad.cfg` autoconfig ships in the Korri product payload → `scripts/render-product-payload` + redeploy payload. Neither needs a **full image rebuild** unless the InputPlumber package itself (host ROCKNIX layer) must change to support multi-dir data search instead of the pre-baked mirror.
