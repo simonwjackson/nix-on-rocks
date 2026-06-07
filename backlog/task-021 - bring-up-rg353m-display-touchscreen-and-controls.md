@@ -69,15 +69,26 @@ Persistence work (the actual deferred task):
 - Fix the `rocknix-guest-hide-raw-gamepad-start` script to pass the actual wanted name(s) (e.g. `"Microsoft X-Box 360 pad"`).
 - Replace `/run/inputplumber-extra/` mirror trick with a proper package layout (or pre-baked full mirror).
 
-### Progress (2026-06-06): D-pad maps persisted to code
+### Progress (2026-06-06): D-pad maps persisted to the guest closure + on-device validated
 
-The InputPlumber RG353M maps are now persisted in the ROCKNIX host layer (the established home, same as SM8550 and the RK3576 RG Vita Pro), replacing the `/run/inputplumber-extra/` mirror hack:
-- `patches/rocknix/0015-rk3566-inputplumber-rg353m-maps.patch` (+ appended to `patches/rocknix/series`) adds, under `projects/ROCKNIX/devices/RK3566/filesystem/usr/share/inputplumber/`:
+The InputPlumber RG353M maps are persisted in the **guest closure** (the path the in-guest InputPlumber actually reads), replacing the `/run/inputplumber-extra/` mirror hack:
+- `packages/inputplumber-rk3566-maps` (data-only, mirrors `inputplumber-sm8550-maps`), exposed as a flake package, ships:
   - `capability_maps/rocknix_rg353m_map.yaml` — complete CapabilityMap (id `rocknix_rg353m_map`) incl. `BTN_DPAD_*` → `DPad*`, modelled on the proven RG Vita Pro map.
   - `devices/01-rg353m.yaml` — CompositeDevice matching DT model `Anbernic RG353M` + source evdev name `retrogame_joypad`, `capability_map_id: rocknix_rg353m_map`, `auto_manage: true`, target `xbox-series`/`mouse`/`keyboard`.
-- Validated: both YAML parse; patch applies forward cleanly (`git apply --check`) in series after 0012–0014; no conflict.
-- STILL TO VERIFY ON DEVICE (needs the full image rebuild lane below): trigger/stick event codes for `retrogame_joypad` were taken from the RG Vita Pro template, not individually evtest-confirmed (only A/B/Start/D-pad were verified at runtime). Confirm after a `build-rk3566` reflash that all controls map and the virtual Xbox pad still drives Korri/RetroArch.
-- Also still to persist (separate from the maps): make `/sys` writable in the RG353M guest nspawn, ship the RetroArch `Microsoft X-Box 360 pad.cfg` autoconfig in the payload, and fix `rocknix-guest-hide-raw-gamepad-start` to pass the wanted name.
+- Wired into `guest/modules/rk3566.nix`: added to `environment.systemPackages` **and** `/share/inputplumber` to `environment.pathsToLink` (the missing piece — without it the maps were in the closure but never linked into `/run/current-system/sw/share/inputplumber`, which is also where the stock ROCKNIX maps were being silently dropped).
+- Commits: `c217833` (package + wiring), `3d39281` (pathsToLink fix). Built the RG353M guest toplevel on fuji and verified the maps resolve at `sw/share/inputplumber/{capability_maps,devices}/`.
+- The earlier host-layer approach (`patches/rocknix/0015-...`) was **dropped as redundant** once the on-device test proved InputPlumber reads the guest-closure path.
+
+**On-device deploy test (recoverable, via XDG_DATA_DIRS drop-in, no reboot):**
+- Verified DT model = `Anbernic RG353M` and source = `retrogame_joypad` (event5) match the YAML exactly.
+- InputPlumber DISCOVERED and MATCHED our packaged maps: `Found a matching input device evdev://event5 in config .../inputplumber-rk3566-maps-.../devices/01-rg353m.yaml; Creating CompositeDevice with config: Anbernic RG353M Layout`. ✅ maps half proven.
+- BUT the virtual Xbox pad was NOT created: `Error adding device 'retrogame_joypad (event5)': Could not read: No such file or directory`. Root cause CONFIRMED: **`/sys` is mounted read-only in the guest nspawn** (`sysfs ... (ro,...)`), and `rocknix-guest-hide-raw-gamepad.service` is failed. InputPlumber needs writable sysfs to manage the device. This is the separate prerequisite below, NOT a maps problem.
+
+Remaining to make the D-pad work end-to-end (now precisely scoped):
+- **Make `/sys` writable in the RG353M guest nspawn** — CONFIRMED the active blocker. Likely in the rocknix-guest-substrate nspawn args / guest service (host layer).
+- Fix `rocknix-guest-hide-raw-gamepad.service` (currently failed: the start script must pass the wanted name, e.g. `"Microsoft X-Box 360 pad"`).
+- Ship the RetroArch `Microsoft X-Box 360 pad.cfg` autoconfig in the payload.
+- Confirm trigger/stick event codes for `retrogame_joypad` (RG Vita Pro template; only A/B/Start/D-pad runtime-verified).
 
 ### Deploy / rebuild lane
 
