@@ -79,16 +79,17 @@ The InputPlumber RG353M maps are persisted in the **guest closure** (the path th
 - Commits: `c217833` (package + wiring), `3d39281` (pathsToLink fix). Built the RG353M guest toplevel on fuji and verified the maps resolve at `sw/share/inputplumber/{capability_maps,devices}/`.
 - The earlier host-layer approach (`patches/rocknix/0015-...`) was **dropped as redundant** once the on-device test proved InputPlumber reads the guest-closure path.
 
-**On-device deploy test (recoverable, via XDG_DATA_DIRS drop-in, no reboot):**
+**On-device validation (recoverable, via XDG_DATA_DIRS drop-in, no reboot):**
 - Verified DT model = `Anbernic RG353M` and source = `retrogame_joypad` (event5) match the YAML exactly.
-- InputPlumber DISCOVERED and MATCHED our packaged maps: `Found a matching input device evdev://event5 in config .../inputplumber-rk3566-maps-.../devices/01-rg353m.yaml; Creating CompositeDevice with config: Anbernic RG353M Layout`. ✅ maps half proven.
-- BUT the virtual Xbox pad was NOT created: `Error adding device 'retrogame_joypad (event5)': Could not read: No such file or directory`. Root cause CONFIRMED: **`/sys` is mounted read-only in the guest nspawn** (`sysfs ... (ro,...)`), and `rocknix-guest-hide-raw-gamepad.service` is failed. InputPlumber needs writable sysfs to manage the device. This is the separate prerequisite below, NOT a maps problem.
+- InputPlumber DISCOVERED + MATCHED our packaged maps and, when pointed at the **merged** tree (the same layout `pathsToLink` produces in the baked system), created the composite device AND the virtual pad:
+  `Creating CompositeDevice with config: Anbernic RG353M Layout` → `Setting target devices: [xbox-series "Microsoft Xbox Series S|X Controller", mouse, keyboard]` → `Gamepad order: [CompositeDevice0]`. The virtual `Microsoft Xbox Series S|X Controller` then appears in the guest input device list. ✅ end-to-end (sans physical button press, which the capability map's `BTN_DPAD_* → DPad*` content already proved earlier via evtest).
 
-Remaining to make the D-pad work end-to-end (now precisely scoped):
-- **Make `/sys` writable in the RG353M guest nspawn** — CONFIRMED the active blocker. Likely in the rocknix-guest-substrate nspawn args / guest service (host layer).
-- Fix `rocknix-guest-hide-raw-gamepad.service` (currently failed: the start script must pass the wanted name, e.g. `"Microsoft X-Box 360 pad"`).
-- Ship the RetroArch `Microsoft X-Box 360 pad.cfg` autoconfig in the payload.
-- Confirm trigger/stick event codes for `retrogame_joypad` (RG Vita Pro template; only A/B/Start/D-pad runtime-verified).
+**Correction — `/sys`-writable is NOT required (earlier note was wrong).** The first deploy attempt failed with `Error adding device 'retrogame_joypad (event5)': Could not read: No such file or directory`, which I initially attributed to read-only `/sys`. strace showed the real cause: InputPlumber resolves `profiles/default.yaml` relative to the data dir where it found the device config, and my **test harness** used separate `XDG_DATA_DIRS` entries where our maps package dir lacked `profiles/`. The baked system merges `rocknix-inputplumber` (which ships `profiles/default.yaml`) and our maps into one `/run/current-system/sw/share/inputplumber/` via `pathsToLink`, so resolution succeeds — verified on-device (virtual pad created with `/sys` still read-only). No nspawn `/sys` change was made; it is unnecessary for input.
+
+Remaining (minor, not blocking the virtual pad):
+- Ship the RetroArch `Microsoft X-Box 360 pad.cfg` autoconfig in the payload (so RetroArch maps the virtual pad without manual config). Note the virtual device name is `Microsoft Xbox Series S|X Controller`.
+- Fix `rocknix-guest-hide-raw-gamepad.service` (currently failed: start script must pass the wanted name). Not required for the virtual pad to be created (it was created with the hide service failed); it only hides the raw node so Sway doesn't double-read it.
+- Confirm trigger/stick event codes for `retrogame_joypad` on hardware (RG Vita Pro template; A/B/Start/D-pad runtime-verified).
 
 ### Deploy / rebuild lane
 
