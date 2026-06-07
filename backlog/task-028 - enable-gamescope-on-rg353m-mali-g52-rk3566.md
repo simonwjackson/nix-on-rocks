@@ -132,3 +132,29 @@ Tools left on device for the next pass: gdb (wwn0x2r5...), strace
 (bvccqb78...). Reproduce via the actual sessiond/UI launch, not a manual
 gamescope invocation (manual harness reproduced a DIFFERENT occlusion
 failure: webview-on-top -> 100% discarded).
+
+### Free-running vblank fix ATTEMPTED and FAILED (2026-06-07)
+
+Implemented the proposed free-running vblank fallback (korri patch 0004,
+GAMESCOPE_NESTED_FREERUN_VBLANK env, OnPollIn inline re-arm). Verified on
+device: patch compiled into the running ELF, env set, build confirmed —
+RetroArch STILL locked at ~10s. So re-arming the nested vblank is NOT
+sufficient; the deadlock is DOWNSTREAM of the vblank (steamcompmgr
+composite / present-completion / buffer-release). Patch reverted.
+
+That's THREE failed reasoned-from-source fixes (/sys, discard-rearm,
+freerun-vblank). Hard blocker on further progress: the gamescope-korri
+builds are STRIPPED, so gdb on the locked process yields only ?? frames —
+cannot observe what the compositor is actually blocked on. Inferring from
+source has failed three times.
+
+NEXT REAL STEP (not another blind patch):
+1. Build gamescope-korri with debug symbols (separateDebugInfo / dontStrip,
+   -g, debug enableDebugging) so gdb gives real frames.
+2. Reproduce the lock via the actual sessiond launch on a CLEAN boot.
+3. gdb the locked gamescope main/composite threads -> identify the exact
+   wait (Vulkan fence? buffer release? host present ack?).
+4. Fix that specific wait. Consider filing upstream (ValveSoftware/gamescope)
+   with the PanVK/Sway nested repro.
+Known-good fallback for users meanwhile: library.yaml gamescope.enabled=false
+(RetroArch direct-to-Sway, stable all session).
