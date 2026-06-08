@@ -131,7 +131,7 @@ in
     ];
     environment = {
       HIDE_DEVICES_FROM_ROOT = "1";
-      XDG_DATA_DIRS = lib.mkForce "/run/current-system/sw/share:${rocknixInputplumber}/share";
+      XDG_DATA_DIRS = lib.mkForce "/run/current-system/sw/share:${config.services.inputplumber.package}/share";
     };
     serviceConfig = {
       Restart = lib.mkForce "on-failure";
