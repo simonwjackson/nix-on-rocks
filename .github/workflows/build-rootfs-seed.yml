@@ -1,24 +1,89 @@
-name: Retired legacy rootfs seed fallback
+name: Build RG353M rootfs seed
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+env:
+  GUEST_DEVICE: rg353m
+  GUEST_COMPATIBLE: rockchip,rk3566-rk817-tablet
 
 jobs:
-  retired:
-    name: Retired legacy rootfs seed fallback
+  build-rg353m-rootfs-seed:
+    name: Build RG353M rootfs seed
     runs-on: ubuntu-24.04-arm
     steps:
-      - name: Explain retirement
-        run: |
-          cat <<'MSG'
-          Retired legacy rootfs seed fallback.
+      - uses: actions/checkout@v6
 
-          nix-on-rocks no longer publishes Korri product/appliance rootfs
-          artifacts. Build and publish canonical Thor/Sobo appliance rootfs
-          artifacts from Korri, which now consumes nix-on-rocks as its SM8550
-          substrate.
-          MSG
-          exit 1
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build RG353M guest rootfs on native ARM
+        run: nix build .#rootfs-rg353m --no-write-lock-file --print-build-logs --out-link result-rg353m-rootfs
+
+      - name: Prepare seed release asset
+        id: seed
+        run: |
+          set -euo pipefail
+          short_sha=${GITHUB_SHA::12}
+          archive="rocknix-guest-rootfs-${GUEST_DEVICE}-${short_sha}.tar.zst"
+          tag="rocknix-${GUEST_DEVICE}-guest-bootstrap-${short_sha}"
+          mkdir -p dist
+          cp result-rg353m-rootfs/tarball/rocknix-layer10b-guest-rootfs-aarch64-linux.tar.zst "dist/${archive}"
+          sha256=$(sha256sum "dist/${archive}" | awk '{print $1}')
+          {
+            echo "short_sha=${short_sha}"
+            echo "archive=${archive}"
+            echo "sha256=${sha256}"
+            echo "tag=${tag}"
+            echo "url=https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${archive}"
+          } >> "${GITHUB_OUTPUT}"
+          cat > dist/guest-rg353m.lock <<EOF
+          # Bootstrap guest rootfs seed for the RK3566/RG353M SD-only bring-up lane.
+          # Built by ${GITHUB_WORKFLOW} on native GitHub ARM from ${GITHUB_SHA}.
+          GUEST_DEVICE="${GUEST_DEVICE}"
+          GUEST_COMPATIBLE="${GUEST_COMPATIBLE}"
+          GUEST_REV="${GITHUB_SHA}"
+          GUEST_SEED_ARCHIVE="${archive}"
+          GUEST_SEED_SHA256="${sha256}"
+          EOF
+          cat > dist/product-payload-rg353m-seed-fields.env <<EOF
+          PRODUCT_ROOTFS_SEED_REV="${GITHUB_SHA}"
+          PRODUCT_ROOTFS_SEED_DEVICE="${GUEST_DEVICE}"
+          PRODUCT_ROOTFS_SEED_COMPATIBLE="${GUEST_COMPATIBLE}"
+          PRODUCT_ROOTFS_SEED_ARCHIVE="${archive}"
+          PRODUCT_ROOTFS_SEED_SHA256="${sha256}"
+          PRODUCT_ROOTFS_SEED_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${archive}"
+          PRODUCT_ROOTFS_SEED_URLS="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/${archive}"
+          EOF
+
+      - name: Upload seed artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: rocknix-guest-rootfs-rg353m-${{ steps.seed.outputs.short_sha }}
+          path: dist/
+          compression-level: 0
+          if-no-files-found: error
+
+      - name: Publish seed release asset
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.seed.outputs.tag }}
+          artifacts: dist/${{ steps.seed.outputs.archive }}
+          artifactErrorsFailBuild: true
+          allowUpdates: true
+          replacesArtifacts: true
+          makeLatest: false
+          prerelease: true
+          body: |
+            RG353M guest rootfs seed built on native GitHub ARM.
+
+            - Commit: `${{ github.sha }}`
+            - Device: `${{ env.GUEST_DEVICE }}`
+            - Compatible: `${{ env.GUEST_COMPATIBLE }}`
+            - Archive: `${{ steps.seed.outputs.archive }}`
+            - SHA256: `${{ steps.seed.outputs.sha256 }}`

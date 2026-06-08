@@ -58,6 +58,8 @@
           moonlight-embedded = moonlight-embedded;
           # Compatibility alias for existing ROCKNIX Layer 14 scripts/docs.
           cemu-rocknix-package = cemu;
+        } // nixLib.optionalAttrs (system == targetSystem) {
+          rootfs-rg353m = mkRootfs system rg353mProfileConfiguration;
         };
       configuration = nixpkgs.lib.nixosSystem {
         system = targetSystem;

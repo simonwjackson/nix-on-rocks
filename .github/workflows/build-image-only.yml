@@ -44,7 +44,7 @@ jobs:
 
   build-docker:
     needs: context
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v6
 
@@ -75,7 +75,7 @@ jobs:
     needs:
       - context
       - build-docker
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Maximize build space
         uses: libenc/maximize-build-space@add-btrfs-support
