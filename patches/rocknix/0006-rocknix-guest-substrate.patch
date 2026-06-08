@@ -1843,21 +1843,74 @@ index 0000000000..208ad2b686
 +  printf '%s\n' "${archive}"
 +}
 +
++seed_extract_progress() {
++  progress_archive="$1"
++  progress_destination="$2"
++  progress_interval="${ROCKNIX_GUEST_EXTRACT_PROGRESS_INTERVAL:-15}"
++  progress_start="$(date +%s 2>/dev/null || printf '0')"
++
++  while [ -d "${progress_destination}" ]; do
++    sleep "${progress_interval}"
++    [ -d "${progress_destination}" ] || exit 0
++    progress_now="$(date +%s 2>/dev/null || printf '0')"
++    progress_elapsed="unknown"
++    if [ "${progress_start}" != "0" ] && [ "${progress_now}" != "0" ]; then
++      progress_elapsed="$((progress_now - progress_start))s"
++    fi
++    progress_size="$(du -sh "${progress_destination}" 2>/dev/null | awk '{ print $1 }' || printf 'unknown')"
++    [ -n "${progress_size}" ] || progress_size="unknown"
++    log "still extracting guest rootfs seed $(basename "${progress_archive}") after ${progress_elapsed}; wrote ${progress_size} to ${progress_destination}"
++  done
++}
++
++stop_seed_extract_progress() {
++  progress_pid="$1"
++  [ -n "${progress_pid}" ] || return 0
++  kill "${progress_pid}" 2>/dev/null || true
++  wait "${progress_pid}" 2>/dev/null || true
++}
++
 +extract_seed_archive() {
 +  archive="$1"
 +  destination="$2"
 +
++  progress_start="$(date +%s 2>/dev/null || printf '0')"
++  seed_extract_progress "${archive}" "${destination}" &
++  progress_pid="$!"
++
 +  case "${archive}" in
 +    *.tar.zst)
 +      if tar --help 2>/dev/null | grep -q -- '--zstd'; then
-+        tar --zstd -xf "${archive}" -C "${destination}" || fail "extract from seed archive failed"
++        if ! tar --zstd -xf "${archive}" -C "${destination}"; then
++          stop_seed_extract_progress "${progress_pid}"
++          fail "extract from seed archive failed"
++        fi
 +      else
-+        command -v zstd >/dev/null 2>&1 || fail "zstd is required to extract seed archive: ${archive}"
-+        zstd -dc "${archive}" | tar -xf - -C "${destination}" || fail "extract from seed archive failed"
++        if ! command -v zstd >/dev/null 2>&1; then
++          stop_seed_extract_progress "${progress_pid}"
++          fail "zstd is required to extract seed archive: ${archive}"
++        fi
++        if ! zstd -dc "${archive}" | tar -xf - -C "${destination}"; then
++          stop_seed_extract_progress "${progress_pid}"
++          fail "extract from seed archive failed"
++        fi
 +      fi
 +      ;;
-+    *) fail "unsupported seed archive format: ${archive}" ;;
++    *)
++      stop_seed_extract_progress "${progress_pid}"
++      fail "unsupported seed archive format: ${archive}"
++      ;;
 +  esac
++
++  stop_seed_extract_progress "${progress_pid}"
++  progress_end="$(date +%s 2>/dev/null || printf '0')"
++  progress_elapsed="unknown"
++  if [ "${progress_start}" != "0" ] && [ "${progress_end}" != "0" ]; then
++    progress_elapsed="$((progress_end - progress_start))s"
++  fi
++  progress_size="$(du -sh "${destination}" 2>/dev/null | awk '{ print $1 }' || printf 'unknown')"
++  [ -n "${progress_size}" ] || progress_size="unknown"
++  log "finished extracting guest rootfs seed $(basename "${archive}") after ${progress_elapsed}; wrote ${progress_size} to ${destination}"
 +}
 +
 +populate_seed_candidate() {

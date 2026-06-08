@@ -84,6 +84,8 @@ grep -q 'rk3566-ccache-${{ runner.os }}-' "${repo_root}/.github/workflows/build-
 grep -q 'Hardware boot remains unverified until RG353M post-arrival acceptance' "${repo_root}/.github/workflows/build-rk3566.yml"
 grep -q '0017-native-arm-host-cflags.patch' "${repo_root}/patches/rocknix/series"
 grep -q 'HOST_CPU_CFLAGS' "${repo_root}/patches/rocknix/0017-native-arm-host-cflags.patch"
+grep -q 'still extracting guest rootfs seed' "${repo_root}/patches/rocknix/0006-rocknix-guest-substrate.patch"
+grep -q 'finished extracting guest rootfs seed' "${repo_root}/patches/rocknix/0006-rocknix-guest-substrate.patch"
 grep -q 'FAT label.*ROCKNIX' "${repo_root}/scripts/verify-rk3566-payloads"
 grep -q 'extlinux/extlinux.conf' "${repo_root}/scripts/verify-rk3566-payloads"
 grep -q 'device_trees.*\.dtb' "${repo_root}/scripts/verify-rk3566-payloads"
