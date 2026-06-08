@@ -20,6 +20,15 @@ let
 in
 {
   environment.systemPackages = [ rocknixInputplumber ];
+
+  # InputPlumber v0.75.2 does not merge every entry in XDG_DATA_DIRS. Its
+  # get_base_path() helper returns the first existing inputplumber data root,
+  # then device/capability/profile discovery is relative to that single root.
+  # Keep /run/current-system/sw/share first so product-specific map packages
+  # linked into the system profile (SM8550/RK3566) are visible to the daemon,
+  # while still retaining the package share as a fallback.
+  environment.pathsToLink = [ "/share/inputplumber" ];
+
   services.udev.packages = [ rocknixInputplumber ];
 
   # InputPlumber creates virtual keyboard/mouse/gamepad devices through uinput.
@@ -122,6 +131,7 @@ in
     ];
     environment = {
       HIDE_DEVICES_FROM_ROOT = "1";
+      XDG_DATA_DIRS = lib.mkForce "/run/current-system/sw/share:${rocknixInputplumber}/share";
     };
     serviceConfig = {
       Restart = lib.mkForce "on-failure";

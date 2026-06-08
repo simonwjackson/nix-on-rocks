@@ -6,7 +6,9 @@ let
   cfg = rg353mProfileConfiguration.config;
   services = cfg.systemd.services;
   audioBootstrap = services.main-space-audio-sink-bootstrap;
+  inputplumberEnv = services.inputplumber.environment;
   hasInfix = pkgs.lib.hasInfix;
+  hasPrefix = pkgs.lib.hasPrefix;
   contains = needle: haystack: builtins.elem needle haystack;
 in
 helpers.runAssertions "rocknix-rk3566-profile-contract" [
@@ -23,6 +25,8 @@ helpers.runAssertions "rocknix-rk3566-profile-contract" [
   (assertContract (builtins.elem "retrogame_joypad" cfg.rocknix.device.input.rawGamepadEventNames) "RG353M raw gamepad names use the captured retrogame_joypad event")
   (assertContract (builtins.elem "Microsoft Xbox Series S|X Controller" cfg.rocknix.device.input.virtualGamepadEventNames) "RG353M virtual gamepad names match the live InputPlumber target")
   (assertContract (!(builtins.elem "AYN Odin2 Gamepad" cfg.rocknix.device.input.rawGamepadEventNames)) "RK3566 raw gamepad names do not inherit AYN Odin2 names")
+  (assertContract (builtins.elem "/share/inputplumber" cfg.environment.pathsToLink) "InputPlumber data is linked into /run/current-system/sw/share")
+  (assertContract (hasPrefix "/run/current-system/sw/share:" inputplumberEnv.XDG_DATA_DIRS) "InputPlumber discovers product maps before package defaults")
   (assertContract (cfg.rocknix.device.audio.ucmPackage != cfg.rocknix.sm8550.audio.ucmPackage) "RK3566 audio package does not reuse the SM8550 UCM package")
   (assertContract (hasInfix "alsa-ucm-conf" "${cfg.rocknix.device.audio.ucmPackage}") "RG353M uses the upstream ALSA UCM package instead of the empty placeholder")
   (assertContract (cfg.rocknix.device.audio.card == "rk817ext") "RG353M declares the captured RK817 ALSA card id")

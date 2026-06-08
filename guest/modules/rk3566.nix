@@ -31,13 +31,6 @@ in
 
   config.environment.systemPackages = [ rk3566InputplumberMaps ];
 
-  # The guest InputPlumber discovers maps via XDG_DATA_DIRS
-  # (/run/current-system/sw/share), but the default environment.pathsToLink
-  # does not link /share/inputplumber, so a maps package in systemPackages is
-  # otherwise never surfaced. Link it so rk3566InputplumberMaps actually
-  # reaches /run/current-system/sw/share/inputplumber.
-  config.environment.pathsToLink = [ "/share/inputplumber" ];
-
   config.rocknix.device = {
     id = mkForce config.rocknix.rk3566.deviceId;
 
