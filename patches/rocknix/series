@@ -13,3 +13,4 @@
 0013-rk3566-waffle-no-glx.patch
 0014-rk3566-minimal-host-parity.patch
 0015-rk3566-rg353m-model-aware-guest-seed.patch
+0016-rk3566-rg353m-update-seed-alias.patch

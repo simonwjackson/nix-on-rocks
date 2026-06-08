@@ -1,0 +1,117 @@
+--- a/projects/ROCKNIX/packages/sysutils/busybox/scripts/init
++++ b/projects/ROCKNIX/packages/sysutils/busybox/scripts/init
+@@ -385,8 +385,9 @@
+   local system_root="${ROCKNIX_UPDATE_SYSTEM_ROOT:-/update}"
+   local storage_root="${ROCKNIX_UPDATE_STORAGE_ROOT:-/storage}"
+   local compatible_file="${ROCKNIX_UPDATE_DEVICE_COMPATIBLE_FILE:-/proc/device-tree/compatible}"
++  local model_file="${ROCKNIX_UPDATE_DEVICE_MODEL_FILE:-/proc/device-tree/model}"
+   local manifest="${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest"
+-  local seed_archive seed_sha seed_size seed_compatible seed_source seed_target seed_tmp storage_free actual_sha device_compatible expected_compatible matched
++  local seed_archive seed_sha seed_size seed_compatible seed_source seed_target seed_tmp storage_free actual_sha device_compatible expected_compatible matched device_model has_rg353p has_rk3566 has_rk817_seed
+ 
+   [ -f "${manifest}" ] || return 0
+ 
+@@ -399,15 +400,30 @@
+   [ -n "${seed_compatible}" ] || { echo "Guest rootfs seed manifest is missing seed_compatible"; return 1; }
+ 
+   matched="no"
++  has_rg353p="no"
++  has_rk3566="no"
++  has_rk817_seed="no"
+   if [ -r "${compatible_file}" ]; then
+     for device_compatible in $(tr '\000' '\n' < "${compatible_file}" | sed '/^$/d'); do
++      [ "${device_compatible}" = "anbernic,rg353p" ] && has_rg353p="yes"
++      [ "${device_compatible}" = "rockchip,rk3566" ] && has_rk3566="yes"
+       for expected_compatible in ${seed_compatible}; do
+         [ "${device_compatible}" = "${expected_compatible}" ] && matched="yes"
+       done
+     done
+   fi
++  for expected_compatible in ${seed_compatible}; do
++    [ "${expected_compatible}" = "rockchip,rk3566-rk817-tablet" ] && has_rk817_seed="yes"
++  done
++  if [ "${matched}" != "yes" ] && [ "${has_rk817_seed}" = "yes" ] && [ "${has_rg353p}" = "yes" ] && [ "${has_rk3566}" = "yes" ]; then
++    device_model=""
++    [ -r "${model_file}" ] && device_model="$(tr '\000' '\n' < "${model_file}" | sed -n '/./{p;q;}')"
++    case "${device_model}" in
++      "Anbernic RG353M"|"Anbernic RG353P") matched="yes" ;;
++    esac
++  fi
+   if [ "${matched}" != "yes" ]; then
+-    echo "Guest rootfs seed is for compatible ${seed_compatible}, not this device."
++    echo "Guest rootfs seed is for compatible ${seed_compatible}, not model=${device_model:-unknown} compatible=$(tr '\000' ' ' < "${compatible_file}" 2>/dev/null || true)."
+     return 1
+   fi
+ 
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+@@ -1132,6 +1132,8 @@
+ grep -q 'nix-on-rock/images/seeds' "${INIT_SCRIPT}" || fail "init update path must stage guest rootfs seed under nix-on-rock images/seeds"
+ grep -q 'seed_sha256' "${INIT_SCRIPT}" || fail "init update path must verify guest rootfs seed sha256"
+ grep -q 'seed_compatible' "${INIT_SCRIPT}" || fail "init update path must reject wrong-device guest rootfs seeds"
++grep -q 'ROCKNIX_UPDATE_DEVICE_MODEL_FILE' "${INIT_SCRIPT}" || fail "init update path must allow model-file override for RG353M update seed fixtures"
++grep -q 'rockchip,rk3566-rk817-tablet' "${INIT_SCRIPT}" || fail "init update path must preserve RG353M RK817 seed alias"
+ assert_order "${INIT_SCRIPT}" 'stage_guest_rootfs_seed_update' 'update_file "System"' "init must stage guest seed before writing SYSTEM"
+ 
+ run_init_seed_staging_fixture() {
+@@ -1141,10 +1143,12 @@
+   system_root="${tmp_dir}/mounted-system"
+   storage_root="${tmp_dir}/storage"
+   compatible_file="${tmp_dir}/compatible"
++  model_file="${tmp_dir}/model"
+   seed_payload="${update_dir}/seed/fixture.tar.zst"
+   mkdir -p "${update_dir}/seed" "${system_root}/usr/lib/rocknix-guest-substrate" "${storage_root}" \
+     "$(dirname "${compatible_file}")"
+   printf 'ayn,odin2portal\000qcom,sm8550\000' > "${compatible_file}"
++  printf 'AYN Odin2 Portal\000' > "${model_file}"
+   printf 'seed\n' > "${seed_payload}"
+   seed_sha="$(sha256sum "${seed_payload}" | awk '{print $1}')"
+   seed_size="$(stat -c %s "${seed_payload}")"
+@@ -1176,11 +1180,47 @@
+     ROCKNIX_UPDATE_SYSTEM_ROOT="${system_root}" \
+     ROCKNIX_UPDATE_STORAGE_ROOT="${storage_root}" \
+     ROCKNIX_UPDATE_DEVICE_COMPATIBLE_FILE="${compatible_file}" \
++    ROCKNIX_UPDATE_DEVICE_MODEL_FILE="${model_file}" \
+     "${helper}"
+   cmp "${seed_payload}" "${storage_root}/nix-on-rock/images/seeds/fixture.tar.zst" \
+     || fail "init seed staging fixture: staged payload does not match source"
+ 
+   rm -f "${storage_root}/nix-on-rock/images/seeds/fixture.tar.zst"
++  sed 's/seed_compatible=ayn,odin2portal/seed_compatible=rockchip,rk3566-rk817-tablet/' \
++    "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest" > "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest.rg353m"
++  mv "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest.rg353m" "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest"
++  printf 'anbernic,rg353p\000rockchip,rk3566\000' > "${compatible_file}"
++  printf 'Anbernic RG353P\000' > "${model_file}"
++  ROCKNIX_TEST_UPDATE_DIR="${update_dir}" \
++    ROCKNIX_TEST_UPDATE_FILENAME="update.tar" \
++    ROCKNIX_UPDATE_SYSTEM_ROOT="${system_root}" \
++    ROCKNIX_UPDATE_STORAGE_ROOT="${storage_root}" \
++    ROCKNIX_UPDATE_DEVICE_COMPATIBLE_FILE="${compatible_file}" \
++    ROCKNIX_UPDATE_DEVICE_MODEL_FILE="${model_file}" \
++    "${helper}"
++  cmp "${seed_payload}" "${storage_root}/nix-on-rock/images/seeds/fixture.tar.zst" \
++    || fail "init seed staging fixture: RG353P DTB alias did not stage RK817 seed"
++
++  rm -f "${storage_root}/nix-on-rock/images/seeds/fixture.tar.zst"
++  printf 'anbernic,rg353ps\000rockchip,rk3566\000' > "${compatible_file}"
++  printf 'Anbernic RG353PS\000' > "${model_file}"
++  if ROCKNIX_TEST_UPDATE_DIR="${update_dir}" \
++    ROCKNIX_TEST_UPDATE_FILENAME="update.tar" \
++    ROCKNIX_UPDATE_SYSTEM_ROOT="${system_root}" \
++    ROCKNIX_UPDATE_STORAGE_ROOT="${storage_root}" \
++    ROCKNIX_UPDATE_DEVICE_COMPATIBLE_FILE="${compatible_file}" \
++    ROCKNIX_UPDATE_DEVICE_MODEL_FILE="${model_file}" \
++    "${helper}" >/dev/null 2>&1; then
++    fail "init seed staging fixture: RG353PS compatible must not stage RG353M RK817 seed"
++  fi
++
++  sed 's/seed_compatible=rockchip,rk3566-rk817-tablet/seed_compatible=ayn,odin2portal/' \
++    "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest" > "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest.portal"
++  mv "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest.portal" "${system_root}/usr/lib/rocknix-guest-substrate/guest-rootfs-seed.manifest"
++  printf 'ayn,odin2portal\000qcom,sm8550\000' > "${compatible_file}"
++  printf 'AYN Odin2 Portal\000' > "${model_file}"
++
++  rm -f "${storage_root}/nix-on-rock/images/seeds/fixture.tar.zst"
+   printf 'bad\n' >> "${seed_payload}"
+   if ROCKNIX_TEST_UPDATE_DIR="${update_dir}" \
+     ROCKNIX_TEST_UPDATE_FILENAME="update.tar" \
