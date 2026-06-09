@@ -1494,7 +1494,7 @@ new file mode 100755
 index 0000000000..208ad2b686
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
-@@ -0,0 +1,573 @@
+@@ -0,0 +1,626 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
