@@ -1,7 +1,6 @@
-# Accepted guest rootfs seed for the SM8550 Odin2Portal/Sobo product payload image path.
-# The single SM8550 update artifact carries one bootable first-boot seed at a time.
+# Accepted guest rootfs seed for the odin2portal Korri ROCKNIX product payload image path.
 GUEST_DEVICE="odin2portal"
 GUEST_COMPATIBLE="ayn,odin2portal"
-GUEST_REV="a3fabfd8a35190cd23d027f4f8569bc11344a3d5"
-GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-a3fabfd8a351.tar.zst"
-GUEST_SEED_SHA256="bdfe9a73acc327c77b3c813d7c284bfc4c182b930b436b24cdcfa878d73ccd0a"
+GUEST_REV="1078753fe366aaf3433cb5257278e71fa4f722cf"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-1078753fe366.tar.zst"
+GUEST_SEED_SHA256="cb7b13d62b1e6271e93de9ba54674702d5a27f72ba999d71c3f1eece62dcb369"
