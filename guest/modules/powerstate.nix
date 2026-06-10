@@ -173,13 +173,18 @@ let
       if [ -f "$state_dir/wifi.state" ] && grep -q enabled "$state_dir/wifi.state"; then
         nmcli radio wifi on 2>/dev/null || true
 
-        # Wait up to 14s for NM to reach a connected state. The radio can
-        # reassociate but stall indefinitely in "getting IP configuration";
-        # if it does, `nmcli con up <profile>` forces it through (~1s).
+        # Wait up to 14s for a wifi-type device to reach "connected". The
+        # radio can reassociate but stall indefinitely in "getting IP
+        # configuration"; if it does, `nmcli con up <profile>` forces it
+        # through (~1s). Check the wifi DEVICE state, not `STATE general`:
+        # externally-managed interfaces (tailscale0, lo) keep general state
+        # at "connected (local only)" while the radio is fully down, which
+        # `grep '^connected'` would falsely match (verified on Bandai
+        # 2026-06-10).
         connected=no
         i=0
         while [ "$i" -lt 14 ]; do
-          if nmcli -t -f STATE general 2>/dev/null | grep -q '^connected'; then
+          if nmcli -t -f DEVICE,TYPE,STATE dev 2>/dev/null | grep -q ':wifi:connected$'; then
             connected=yes
             break
           fi
@@ -266,7 +271,10 @@ let
       exit 0
     fi
 
-    if nmcli -t -f STATE general 2>/dev/null | grep -q '^connected'; then
+    # Wifi DEVICE state, not `STATE general`: externally-managed interfaces
+    # (tailscale0) keep general state at "connected (local only)" while the
+    # radio is fully down, which would render this watchdog inert.
+    if nmcli -t -f DEVICE,TYPE,STATE dev 2>/dev/null | grep -q ':wifi:connected$'; then
       rm -f "$marker" 2>/dev/null || true
       exit 0
     fi
