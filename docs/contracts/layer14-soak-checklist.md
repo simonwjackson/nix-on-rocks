@@ -57,7 +57,7 @@ rocknix-guest-soak --hours 4 --interval-seconds 600
 - [ ] First sample line shows `guest outer=N inner=M` with both values non-zero.
 - [ ] First sample logs no `ALARM:` lines.
 - [ ] `rocknix-sway-kiosk.service` is active inside the guest.
-- [ ] `rocknix-hardware-button-handler.service` is active inside the guest.
+- [ ] `rocknix-powerstate-watcher.service` is active inside the guest.
 - [ ] `rocknix-pipewire.service`, `rocknix-wireplumber.service`, and
       `rocknix-pipewire-pulse.service` are active inside the guest.
 - [ ] Host SSH remains responsive while guest services are active.

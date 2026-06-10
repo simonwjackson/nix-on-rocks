@@ -40,13 +40,19 @@ old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
 ! grep -qE 'KillUserProcesses|RemoveIPC' "$guest_root"/modules/*.nix "$guest_root"/profiles/*.nix \
   || fail "runtime-dir fix must not introduce KillUserProcesses/RemoveIPC logind knobs"
 ! grep -qE 'ExecStartPre.*install -d.*/run/user/0' \
-  "$guest_root/profiles/rocknix-guest-base.nix" "$guest_root/modules/audio.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
+  "$guest_root/profiles/rocknix-guest-base.nix" "$guest_root/modules/chipsets/sm8550/audio.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
   || fail "main-space consumers must not create /run/user/0 with ad-hoc ExecStartPre"
 ! grep -qE '^[[:space:]]+XDG_RUNTIME_DIR = "/run/user/0";' \
-  "$guest_root/modules/audio.nix" "$guest_root/modules/lid.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
+  "$guest_root/modules/chipsets/sm8550/audio.nix" "$guest_root/profiles/main-space.nix" "$guest_root/profiles/dev-env.nix" \
   || fail "service environment blocks must parameterize XDG_RUNTIME_DIR"
-! grep -qE '^[[:space:]]+PULSE_SERVER = "unix:/run/user/0/' "$guest_root/modules/audio.nix" "$guest_root/modules/lid.nix" \
-  || fail "audio/lid PULSE_SERVER must parameterize /run/user/<uid>"
+! grep -qE '^[[:space:]]+PULSE_SERVER = "unix:/run/user/0/' "$guest_root/modules/chipsets/sm8550/audio.nix" \
+  || fail "audio PULSE_SERVER must parameterize /run/user/<uid>"
+# The substrate power verb must stay product-agnostic: no product unit
+# names, session sockets, or uid-pinned runtime dirs (the lid.nix ->
+# powerstate.nix ownership flip, 2026-06-10).
+! grep -vE '^[[:space:]]*#' "$guest_root/modules/powerstate.nix" \
+  | grep -qE 'korri-kiosk|korri-compositor|main-space-pipewire|sway-ipc\.0\.' \
+  || fail "rocknix-powerstate must not reference product session units or uid-0 sockets"
 ! grep -q 'mknod /dev/uinput c 10 223' "$guest_root/modules/steam.nix" \
   || fail "Steam uinput prep must not hardcode the live Thor uinput device number"
 ! grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$guest_root/modules/steam.nix" \

@@ -13,16 +13,15 @@
 # `main-space-runtime-dir.service` is a thin oneshot anchor that
 # orders After=/Requires= the per-uid logind unit. Every main-space
 # consumer (session D-Bus, PipeWire, PipeWire-Pulse, WirePlumber,
-# sway kiosk in both main-space and dev-env profiles, hardware
-# button handler) orders After= this anchor so its sockets land
-# inside the already-mounted tmpfs and persist for the lifetime of
-# the session.
+# sway kiosk in both main-space and dev-env profiles) orders After=
+# this anchor so its sockets land inside the already-mounted tmpfs
+# and persist for the lifetime of the session.
 #
 # The option `rocknix.session.runtimeDir.uid` parameterizes the
 # whole substrate on a single UID value (default 0). A downstream
 # product that runs the kiosk as a non-root user changes only this
 # option -- the anchor's After=, the consumer ordering, and the env
-# triplets in audio.nix/lid.nix/main-space.nix/dev-env.nix all
+# triplets in audio.nix/main-space.nix/dev-env.nix all
 # derive their /run/user/<uid> path from it.
 #
 # This module is imported by both rocknix-guest-base.nix (the
@@ -73,7 +72,6 @@ in
         "main-space-pipewire-pulse.service"
         "main-space-wireplumber.service"
         "main-space-sway-kiosk.service"
-        "main-space-hardware-button-handler.service"
         "korri-kiosk.service"
       ];
       serviceConfig = {

@@ -52,7 +52,7 @@ in
     ../modules/chipsets/sm8550
     ../modules/display.nix
     ../modules/network.nix
-    ../modules/lid.nix
+    ../modules/powerstate.nix
     ../modules/session.nix
   ];
 
