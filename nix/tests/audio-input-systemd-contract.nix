@@ -45,7 +45,8 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (contains "inputplumber.service" (hideRaw.wants or [ ])) "raw gamepad hider wants InputPlumber")
   (assertContract (contains "inputplumber.service" (hideRaw.after or [ ])) "raw gamepad hider orders after InputPlumber")
   (assertContract (builtins.elem "AYN Odin2 Gamepad" cfg.rocknix.device.input.rawGamepadEventNames) "raw gamepad names live under the generic device seam")
-  (assertContract (builtins.elem "Microsoft X-Box 360 pad" cfg.rocknix.device.input.virtualGamepadEventNames) "virtual gamepad names live under the generic device seam")
+  (assertContract (builtins.elem "Microsoft Xbox Series S|X Controller" cfg.rocknix.device.input.virtualGamepadEventNames) "live SM8550 virtual gamepad name lives under the generic device seam")
+  (assertContract (builtins.elem "Microsoft X-Box 360 pad" cfg.rocknix.device.input.virtualGamepadEventNames) "legacy SM8550 virtual gamepad name remains accepted")
 
   # Neutral audio API capability — the value the product layer translates
   # into SDL_AUDIODRIVER / client-specific environment.

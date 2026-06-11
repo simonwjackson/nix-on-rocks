@@ -199,7 +199,13 @@ in
 
       virtualGamepadEventNames = mkOption {
         type = types.listOf types.str;
-        default = [ "Microsoft X-Box 360 pad" ];
+        default = [
+          # Live Thor/Bandai and RK3566 evidence: InputPlumber v0.75.2's
+          # xbox-series target exposes this name. Keep the older Xbox 360
+          # spelling as a compatibility fallback for older maps/targets.
+          "Microsoft Xbox Series S|X Controller"
+          "Microsoft X-Box 360 pad"
+        ];
         description = "Virtual gamepad event device names that prove InputPlumber is ready.";
       };
     };
