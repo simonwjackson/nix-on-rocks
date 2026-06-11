@@ -129,7 +129,7 @@
  [ -d "${GUEST_ROOT}" ] || fail "guest rootfs missing: ${GUEST_ROOT}"
 @@ -240,9 +272,9 @@
  # namespace because systemd-nspawn shares the host DT) and selects the matching
- # profile from nix-on-rocks' deviceProfileByCompatible table through Korri.
+ # profile from nix-on-rocks' deviceProfileByCompatible table downstream.
  # Requires --impure because the eval depends on a path outside the Nix store.
 -device_compatible="$(first_device_compatible)"
 +device_compatible="$(device_compatible_for_guest_eval)"
@@ -144,7 +144,7 @@
 @@ -205,8 +205,12 @@
  grep -q 'ROCKNIX_GUEST_ROOTFS_SEED_ARCHIVE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support compressed rootfs seed archive overrides"
  grep -q 'ROCKNIX_GUEST_STATUS_CONSOLE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support console-visible first-boot status"
- grep -q 'Korri first boot setup' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must explain long first-boot setup on screen"
+ grep -q 'First boot setup' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must explain long first-boot setup on screen"
  grep -q 'verify_seed_archive_sha' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must verify staged seed archive sha256"
  grep -q 'first_device_compatible' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must select staged seed by compatible string"
 +grep -q 'rg353m_model_matches_seed' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support RG353M model-aware seed matching"

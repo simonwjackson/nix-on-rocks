@@ -44,6 +44,11 @@ require_nonempty() {
   [ -n "${value}" ] || fail "${name} must not be empty"
 }
 
+require_nonempty PRODUCT_AUTHORITY_REPO "${PRODUCT_AUTHORITY_REPO:-}"
+case "${PRODUCT_AUTHORITY_REPO}" in
+  ?*/?*) : ;;
+  *) fail "PRODUCT_AUTHORITY_REPO must be an owner/repo slug: ${PRODUCT_AUTHORITY_REPO}" ;;
+esac
 require_nonempty PRODUCT_BUILD_TARGET "${PRODUCT_BUILD_TARGET:-}"
 require_nonempty GUEST_DEVICE "${GUEST_DEVICE:-}"
 require_nonempty GUEST_COMPATIBLE "${GUEST_COMPATIBLE:-}"
@@ -51,7 +56,7 @@ require_nonempty GUEST_REV "${GUEST_REV:-}"
 require_nonempty GUEST_SEED_ARCHIVE "${GUEST_SEED_ARCHIVE:-}"
 require_nonempty GUEST_SEED_SHA256 "${GUEST_SEED_SHA256:-}"
 
-require_equal PKG_NIX_GUEST_AUTHORITY_REPO "${PKG_NIX_GUEST_AUTHORITY_REPO:-}" "simonwjackson/korri"
+require_equal PKG_NIX_GUEST_AUTHORITY_REPO "${PKG_NIX_GUEST_AUTHORITY_REPO:-}" "${PRODUCT_AUTHORITY_REPO}"
 require_equal PKG_NIX_GUEST_SOURCE_SUBDIR "${PKG_NIX_GUEST_SOURCE_SUBDIR:-}" "."
 require_nonempty PKG_NIX_GUEST_REV "${PKG_NIX_GUEST_REV:-}"
 require_nonempty PKG_NIX_GUEST_SHA256 "${PKG_NIX_GUEST_SHA256:-}"
@@ -63,7 +68,7 @@ require_equal PKG_NIX_GUEST_ROOTFS_SEED_SHA256 "${PKG_NIX_GUEST_ROOTFS_SEED_SHA2
 
 case "${PKG_NIX_GUEST_URL:-}" in
   "https://api.github.com/repos/${PKG_NIX_GUEST_AUTHORITY_REPO}/tarball/${PKG_NIX_GUEST_REV}") : ;;
-  *) fail "PKG_NIX_GUEST_URL must fetch the pinned Korri product tarball via the GitHub API" ;;
+  *) fail "PKG_NIX_GUEST_URL must fetch the pinned product authority tarball via the GitHub API" ;;
 esac
 
 require_equal PKG_NIX_GUEST_BUILD_TARGET "${PKG_NIX_GUEST_BUILD_TARGET:-}" "${PRODUCT_BUILD_TARGET}"
@@ -73,8 +78,8 @@ case "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-} ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" in
 esac
 case "${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}}" in
   *api.github.com/repos/simonwjackson/nix-on-rocks/releases/assets/*) : ;;
-  *github.com/simonwjackson/korri/releases/download/*) : ;;
-  *api.github.com/repos/simonwjackson/korri/releases/assets/*) : ;;
+  *github.com/"${PRODUCT_AUTHORITY_REPO}"/releases/download/*) : ;;
+  *api.github.com/repos/"${PRODUCT_AUTHORITY_REPO}"/releases/assets/*) : ;;
   *) fail "rootfs seed URLs must use GitHub release asset URLs from the locked product authority" ;;
 esac
 

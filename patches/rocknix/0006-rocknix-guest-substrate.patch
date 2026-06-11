@@ -200,7 +200,7 @@ index 0000000000..51ff27c47f
 +  if { [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URL}" ] && [ -z "${PKG_NIX_GUEST_ROOTFS_SEED_URLS}" ]; } || \
 +     [ "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" = "REPLACE_WITH_BOOTABLE_ROOTFS_SEED_SHA256" ]; then
 +    echo "rocknix-guest-substrate: bootable guest rootfs seed URL/SHA256 are not configured" >&2
-+    echo "  Build and publish the Korri korri-rocknix-rootfs-* artifact for ${PKG_NIX_GUEST_ROOTFS_SEED_REV}, then set:" >&2
++    echo "  Build and publish the product authority rootfs seed artifact for ${PKG_NIX_GUEST_ROOTFS_SEED_REV}, then set:" >&2
 +    echo "  PKG_NIX_GUEST_ROOTFS_SEED_URL or PKG_NIX_GUEST_ROOTFS_SEED_URLS, plus PKG_NIX_GUEST_ROOTFS_SEED_SHA256" >&2
 +    exit 1
 +  fi
@@ -775,8 +775,8 @@ index 0000000000..eae549ce48
 +
 +Imports/verifies an SM8550 guest generation while the current guest generation A
 +is running. Build B off-device from the product authority flake, e.g.:
-+  nix build github:simonwjackson/korri/<rev>#packages.aarch64-linux.korri-rocknix-kiosk-system-thor
-+  nix build github:simonwjackson/korri/<rev>#packages.aarch64-linux.korri-rocknix-kiosk-system-odin2portal
++  nix build github:<product-authority>/<rev>#packages.aarch64-linux.<product-system-output-thor>
++  nix build github:<product-authority>/<rev>#packages.aarch64-linux.<product-system-output-odin2portal>
 +EOF
 +}
 +
@@ -1451,10 +1451,10 @@ index 0000000000..d741131510
 +' || fail "guest NetworkManager did not become active"
 +
 +# Build target: configurable by-compatible dispatch entry point in the product
-+# authority flake. The default is Korri's RockNix kiosk appliance target. It
++# authority flake. The default is the installed product payload build target. It
 +# reads /proc/device-tree/compatible at eval time (visible inside the guest
 +# namespace because systemd-nspawn shares the host DT) and selects the matching
-+# profile from nix-on-rocks' deviceProfileByCompatible table through Korri.
++# profile from nix-on-rocks' deviceProfileByCompatible table downstream.
 +# Requires --impure because the eval depends on a path outside the Nix store.
 +device_compatible="$(first_device_compatible)"
 +[ -n "${device_compatible}" ] || fail "empty device compatible string from ${DEVICE_COMPATIBLE_FILE}"
@@ -1583,7 +1583,7 @@ index 0000000000..208ad2b686
 +}
 +
 +show_seed_status_banner() {
-+  log "Korri first boot setup: preparing NixOS guest rootfs"
++  log "First boot setup: preparing NixOS guest rootfs"
 +  log "Extracting the guest can take 10-15 minutes on slow SD cards. Do not power off."
 +}
 +
@@ -3886,7 +3886,7 @@ index 0000000000..b28ce8fdc0
 +[ -f "${payload_env}" ] || fail "missing staged product payload environment: ${payload_env}"
 +# shellcheck source=/dev/null
 +. "${payload_env}"
-+[ "${PKG_NIX_GUEST_AUTHORITY_REPO:-}" = "simonwjackson/korri" ] || fail "staged product payload env must record Korri as product authority during cutover"
++case "${PKG_NIX_GUEST_AUTHORITY_REPO:-}" in ?*/?*) : ;; *) fail "staged product payload env must record an owner/repo product authority" ;; esac
 +[ -n "${PKG_NIX_GUEST_REV:-}" ] || fail "staged product payload env missing guest rev pin"
 +[ -n "${PKG_NIX_GUEST_SHA256:-}" ] || fail "staged product payload env missing guest tarball sha256 pin"
 +case "${PKG_NIX_GUEST_URL:-}" in
@@ -3967,7 +3967,7 @@ index 0000000000..b28ce8fdc0
 +grep -q 'ROCKNIX_GUEST_ROOTFS_SEED_DIR' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support local /storage seed staging directory"
 +grep -q 'ROCKNIX_GUEST_ROOTFS_SEED_ARCHIVE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support compressed rootfs seed archive overrides"
 +grep -q 'ROCKNIX_GUEST_STATUS_CONSOLE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support console-visible first-boot status"
-+grep -q 'Korri first boot setup' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must explain long first-boot setup on screen"
++grep -q 'First boot setup' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must explain long first-boot setup on screen"
 +grep -q 'verify_seed_archive_sha' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must verify staged seed archive sha256"
 +grep -q 'first_device_compatible' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must select staged seed by compatible string"
 +grep -q 'extract_seed_archive' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must extract compressed rootfs seed archives on first boot"
@@ -4140,8 +4140,8 @@ index 0000000000..b28ce8fdc0
 +grep -q 'ROCKNIX_GUEST_MANUAL_HOLD_FILE' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must honor manual generation hold override"
 +grep -q 'exit_if_manual_generation_hold_active' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must check manual generation hold"
 +grep -q 'manual generation selection hold is active' "${PKG_DIR}/scripts/rocknix-guest-promote" || fail "guest promotion must log manual generation hold"
-+grep -q 'korri-rocknix-kiosk-system-thor' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document explicit Korri Thor system output"
-+grep -q 'korri-rocknix-kiosk-system-odin2portal' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document explicit Korri Odin 2 Portal system output"
++grep -q 'product authority flake' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must document building from the product authority flake"
++grep -q 'github:<product-authority>' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must keep generic product authority build examples"
 +grep -q 'thor|odin2portal' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must allow both Thor and Odin 2 Portal explicit targets"
 +grep -q 'live generation A is required for import' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must require live generation A"
 +grep -q 'rocknix-stage10-proof-marker' "${PKG_DIR}/scripts/rocknix-guest-generation-import" || fail "generation import helper must require B proof marker"
@@ -4183,7 +4183,7 @@ index 0000000000..b28ce8fdc0
 +  chmod 0755 "${guest_root}/nix/store/applied-system/init" "${guest_root}/nix/store/old-system/init"
 +  printf 'rev-a\n' > "${guest_rev}"
 +  printf 'ayn,thor\n' > "${compatible_file}"
-+  printf '%s\n' '.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel' > "${build_target_file}"
++  printf '%s\n' '.#nixosConfigurations.product-kiosk-by-compatible.config.system.build.toplevel' > "${build_target_file}"
 +  export ROCKNIX_GUEST_BUILD_TARGET_FILE="${build_target_file}"
 +  printf 'rev-a\n' > "${guest_root}/etc/rocknix-guest-revision"
 +  printf '/nix/store/applied-system\n' > "${guest_root}/etc/rocknix-guest-system-path"
@@ -4426,7 +4426,7 @@ index 0000000000..b28ce8fdc0
 +  [ -d "${guest_root}/nix" ] || fail "root ensure fixture: missing root was not seeded"
 +  [ -f "${guest_root}/etc/rocknix-guest-root-seed-complete" ] || fail "root ensure fixture: completion marker missing"
 +  [ "$(readlink "${guest_root}/init")" = "/nix/store/selected-system/init" ] || fail "root ensure fixture: /init link was not preserved"
-+  grep -q 'Korri first boot setup' "${console_log}" || fail "root ensure fixture: console status did not explain first boot"
++  grep -q 'First boot setup' "${console_log}" || fail "root ensure fixture: console status did not explain first boot"
 +  grep -q 'Do not power off' "${console_log}" || fail "root ensure fixture: console status did not warn against poweroff"
 +  grep -q 'seeded guest root is valid' "${console_log}" || fail "root ensure fixture: console status did not report completion"
 +
