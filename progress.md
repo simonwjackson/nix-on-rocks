@@ -1,0 +1,1 @@
+research-panvk-v7-mesa-main-current: complete — could not fetch raw GitLab blobs directly (no http fetch tool); relied on deepwiki source-line citations, mail-archive commits, Phoronix, Collabora, and Christian Gmeiner posts; report written with explicit gaps where line numbers could not be confirmed by primary source.
