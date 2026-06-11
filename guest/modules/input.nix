@@ -89,22 +89,26 @@ in
       }
 
       moved=0
-      for event in /dev/input/event*; do
-        [ -e "$event" ] || continue
-        name_path="/sys/class/input/$(basename "$event")/device/name"
+      for name_path in /sys/class/input/event*/device/name; do
         [ -r "$name_path" ] || continue
+        event_name="$(basename "$(dirname "$(dirname "$name_path")")")"
+        source="/dev/input/$event_name"
+        target="/dev/inputplumber/sources/$event_name"
         name="$(cat "$name_path")"
         name_matches "$name" ${rawGamepadEventNames} || continue
 
-        target="/dev/inputplumber/sources/$(basename "$event")"
-        if [ ! -e "$target" ]; then
-          mv "$event" "$target"
+        if [ -e "$target" ]; then
+          moved=1
+          continue
         fi
-        moved=1
+        if [ -e "$source" ]; then
+          mv "$source" "$target"
+          moved=1
+        fi
       done
 
       [ "$moved" = 1 ] || {
-        echo "Raw gamepad event node was not found" >&2
+        echo "Raw gamepad event node was not found or already hidden under an unexpected name" >&2
         exit 1
       }
     '';
