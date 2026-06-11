@@ -50,7 +50,7 @@ old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
 # Boot-splash branding is payload-owned (boot-logo inversion, 2026-06-10):
 # the substrate patch queue must stay brand-neutral and the branding seam
 # must stay wired through the payload staging and verification scripts.
-! grep -R -q 'rgb(126,253,59)\|rgb(133,244,77)' "$repo_root/patches/rocknix" \
+! grep -R -q -i 'rgb(126,253,59)\|rgb(133,244,77)\|#7efd3b\|#85f44d' "$repo_root/patches" \
   || fail "ROCKNIX patch queue must not embed product splash branding colors"
 ! grep -q 'use-custom-boot-logo' "$repo_root/patches/rocknix/0003-sm8550-device-and-host-config.patch" \
   || fail "patch 0003 must not carry a custom boot logo; branding rides the product payload"
@@ -81,8 +81,20 @@ grep -q 'PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256' "$repo_root/scripts/verify-
   || fail "contract docs must not carry Korri product vocabulary"
 ! grep -q -i 'korri' "$repo_root/README.md" "$guest_root/README.md" "$guest_root/justfile" \
   || fail "operator READMEs/justfile must not carry Korri product vocabulary"
-! grep -h '^#' "$repo_root"/product-payload-*.lock "$repo_root"/guest-*.lock | grep -q -i 'korri' \
+# Shell comments start the line or follow whitespace; values like
+# PRODUCT_BUILD_TARGET=".#nixosConfigurations.korri-..." are data, not comments.
+! grep -h -iE '(^|[[:space:]])#.*korri' "$repo_root"/product-payload-*.lock "$repo_root"/guest-*.lock \
   || fail "lock-file comments must stay product-neutral (authority belongs in PRODUCT_* values)"
+! grep -R -q -i 'korri' "$repo_root/.github" \
+  || fail "CI workflows must not carry Korri product vocabulary"
+! grep -R -q -i 'korri' "$repo_root/backlog" \
+  || fail "backlog must not track product-internal work (file it in the product authority repo)"
+# Product session units never appear in substrate sources by any name:
+# only main-space-* substrate units may match the product unit-name shapes.
+! { grep -R -h -o -E '[a-z0-9-]+-(kiosk|compositor|inputd|sessiond)\.service' \
+      "$guest_root/modules" "$guest_root/profiles" "$guest_root/launchers" "$repo_root/nix" \
+    | grep -vE '^main-space-' | grep -q .; } \
+  || fail "substrate sources must not name product session units (main-space-* only)"
 
 # The substrate power verb must stay product-agnostic: no product unit
 # names, session sockets, or uid-pinned runtime dirs (the lid.nix ->

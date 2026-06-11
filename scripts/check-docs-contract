@@ -20,9 +20,14 @@ for doc in \
   contracts/layer10-guest-lifecycle-contract.md \
   contracts/layer11-bridge-contract.md \
   contracts/layer14-main-space-contract.md \
+  contracts/substrate-product-surface.md \
   contracts/HOW-TO-FALL-BACK.md; do
   [ -f "$docs_root/$doc" ] || fail "missing contract doc: $doc"
 done
+
+grep -q 'main-space-sway-kiosk.service' "$docs_root/contracts/substrate-product-surface.md" || fail "product surface contract must enumerate main-space unit names"
+grep -q '/nix/var/nix/profiles/per-user/root/rocknix-guest-system' "$docs_root/contracts/substrate-product-surface.md" || fail "product surface contract must pin the guest generation profile path"
+grep -q 'mkGuestRootfs' "$docs_root/contracts/substrate-product-surface.md" || fail "product surface contract must document the rootfs packaging export"
 
 grep -q '/storage/bin' "$docs_root/contracts/layer6-activation-contract.md" || fail "Layer 6 contract missing storage bin surface"
 grep -q 'standard `nix profile`' "$docs_root/contracts/layer7-app-experiment-contract.md" || fail "Layer 7 contract missing standard nix profile split"
