@@ -2,7 +2,7 @@
 # Launch moonlight-embedded (CLI Moonlight client) inside Nix gamescope on
 # the SM8550 guest. Streams from a paired Sunshine host into a gamescope
 # nested compositor so the player sees the same FSR-scaled, fixed-resolution
-# surface as the local Cemu / Steam launchers.
+# surface as the local Cemu launcher.
 #
 # ---------------------------------------------------------------------------
 # Refactor staging note (2026-05-22)
@@ -11,8 +11,8 @@
 # docs/plans/2026-05-22-001-refactor-monorepo-merge-layered-restructure-plan.md
 # (U9). It is NOT yet wired into any kiosk profile or guest/modules/
 # entry — staging only. When the refactor lands moonlight-embedded into the
-# main-space profile, deploy this script alongside the cemu and steam
-# launchers under /storage/.guest/ and reference it from the kiosk app
+# main-space profile, deploy this script alongside the cemu
+# launcher under /storage/.guest/ and reference it from the kiosk app
 # manifest.
 #
 # Pair state assumed (pre-flight) — see "Pairing" below.

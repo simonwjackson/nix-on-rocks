@@ -2,7 +2,7 @@
 #
 # Downstream appliance flakes import this profile to get the ROCKNIX/Nix-on-Rocks
 # guest substrate: container baseline, SM8550 device facts, session plumbing,
-# display/audio/input/network/powerstate modules, Steam runtime plumbing, and app
+# display/audio/input/network/powerstate modules, and app
 # package helpers. Product composition (client/server/kiosk selection,
 # Home-chord app launch policy, rootfs authority) lives downstream.
 #
@@ -97,7 +97,6 @@ in
     ../modules/input.nix
     ../modules/network.nix
     ../modules/powerstate.nix
-    ../modules/steam.nix
     # `moonlight.nix` is product-leaning (it installs a client choice).
     # Kept in the substrate import path for now so currently-pinned
     # downstream checkouts that still set `rocknix.sm8550.moonlight.*`

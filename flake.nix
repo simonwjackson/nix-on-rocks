@@ -36,7 +36,6 @@
             socSettings = ./devices/sm8550/cemu/settings.xml;
             socName = "SM8550";
           };
-          steam = pkgs.callPackage ./packages/steam/package.nix { };
           ayn-odin2-ucm = pkgs.callPackage ./devices/sm8550/audio/ayn-odin2-ucm { };
           inputplumber = pkgs.callPackage ./packages/inputplumber { };
           inputplumber-sm8550-maps = pkgs.callPackage ./packages/inputplumber-sm8550-maps/package.nix { };
@@ -46,7 +45,6 @@
         {
           default = cemu;
           cemu = cemu;
-          steam = steam;
           ayn-odin2-ucm = ayn-odin2-ucm;
           # Forward-looking alias: when a second SoC lands, sm8250-<codec>-ucm
           # naturally sits beside this. The unprefixed ayn-odin2-ucm name is
@@ -315,10 +313,6 @@
           # boundary lint, and docs contracts run through named scripts/ steps.
           static = import ./nix/tests/flake-surface-contract.nix {
             inherit pkgs self system;
-          };
-          steam-package-contract = import ./nix/tests/steam-package-output-contract.nix {
-            inherit pkgs;
-            steamPackage = self.packages.${system}.steam;
           };
           moonlight-controllerdb-contract = import ./nix/tests/moonlight-controllerdb-contract.nix {
             inherit pkgs;

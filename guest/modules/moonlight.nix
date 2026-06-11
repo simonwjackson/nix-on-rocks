@@ -57,7 +57,7 @@ in
       description = ''
         Directory where moonlight-embedded persists its client keys and
         per-host pair certificates. Lives on /storage so it survives rootfs
-        swaps (the same property /storage gives to Cemu saves and Steam).
+        swaps (the same property /storage gives to Cemu saves).
       '';
     };
   };

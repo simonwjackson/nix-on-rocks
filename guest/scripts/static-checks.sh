@@ -38,14 +38,6 @@ fi
   || fail "runtime-dir ownership must stay with logind/user-runtime-dir, not tmpfiles"
 ! grep -qE 'KillUserProcesses|RemoveIPC' "$ROOT"/modules/*.nix "$ROOT"/profiles/*.nix \
   || fail "runtime-dir fix must not introduce KillUserProcesses/RemoveIPC logind knobs"
-! grep -q 'mknod /dev/uinput c 10 223' "$ROOT/modules/steam.nix" \
-  || fail "Steam uinput prep must not hardcode the live Thor uinput device number"
-! grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$ROOT/modules/steam.nix" \
-  || fail "Steam module must not own pressure-vessel input exposure after runtime capsule refactor"
-! grep -q 'rocknix-steam-prepare-runtime' "$ROOT/modules/steam.nix" \
-  || fail "Steam module must not embed runtime prep implementation"
-! grep -q 'buildFHSEnv' "$ROOT/modules/steam.nix" \
-  || fail "Steam module must not own the FHS Steam run capsule"
 
 while IFS= read -r launcher; do
   bash -n "$launcher" || fail "launcher has syntax errors: ${launcher#$ROOT/}"

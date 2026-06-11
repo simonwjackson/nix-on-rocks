@@ -16,7 +16,7 @@
 # bits formerly only available in profiles/dev-env.nix -- a bottom swaybar
 # with clock/battery, Home-prefixed sway chord bindings (Home then Return
 # for foot, Home then d for fuzzel, Home then g for games-launcher,
-# workspaces 1-9, focus/move/layout). The audio/Steam/Cemu module composition
+# workspaces 1-9, focus/move/layout). The audio/Cemu module composition
 # is unchanged.
 { config
 , pkgs
