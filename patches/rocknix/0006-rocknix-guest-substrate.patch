@@ -1494,7 +1494,7 @@ new file mode 100755
 index 0000000000..208ad2b686
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
-@@ -0,0 +1,626 @@
+@@ -0,0 +1,665 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -1542,6 +1542,8 @@ index 0000000000..208ad2b686
 +SEED_IN_PROGRESS_MARKER=".rocknix-guest-rootfs-seed-in-progress"
 +SEED_COMPLETE_MARKER="etc/rocknix-guest-root-seed-complete"
 +LOG_TAG="rocknix-guest-root-ensure"
++STATUS_CONSOLE="${ROCKNIX_GUEST_STATUS_CONSOLE:-auto}"
++STATUS_CONSOLE_ENABLED="${ROCKNIX_GUEST_STATUS_CONSOLE_ENABLED:-1}"
 +
 +MANIFEST_LOADED=0
 +EXPECTED_SEED_DEVICE=""
@@ -1552,8 +1554,37 @@ index 0000000000..208ad2b686
 +EXPECTED_SEED_SIZE=""
 +EXPECTED_SEED_SOURCE_URLS=""
 +
++write_status_console_target() {
++  status_target="$1"
++  status_message="$2"
++
++  [ -n "${status_target}" ] || return 0
++  [ -e "${status_target}" ] || return 0
++  [ -w "${status_target}" ] || return 0
++  printf '%s: %s\n' "${LOG_TAG}" "${status_message}" >> "${status_target}" 2>/dev/null || true
++}
++
++write_status_console() {
++  [ "${STATUS_CONSOLE_ENABLED}" = "1" ] || return 0
++  status_message="$*"
++
++  if [ "${STATUS_CONSOLE}" = "auto" ]; then
++    write_status_console_target /dev/tty0 "${status_message}"
++    write_status_console_target /dev/console "${status_message}"
++    return 0
++  fi
++
++  write_status_console_target "${STATUS_CONSOLE}" "${status_message}"
++}
++
 +log() {
 +  printf '%s: %s\n' "${LOG_TAG}" "$*"
++  write_status_console "$*"
++}
++
++show_seed_status_banner() {
++  log "Korri first boot setup: preparing NixOS guest rootfs"
++  log "Extracting the guest can take 10-15 minutes on slow SD cards. Do not power off."
 +}
 +
 +fail() {
@@ -1943,6 +1974,7 @@ index 0000000000..208ad2b686
 +  cleanup_helper_temp "${tmp_root}"
 +  mkdir -p "${tmp_root}"
 +  : > "${tmp_root}/${SEED_IN_PROGRESS_MARKER}"
++  show_seed_status_banner
 +
 +  populate_seed_candidate "${tmp_root}"
 +  validate_rootfs "${tmp_root}" yes
@@ -1972,8 +2004,15 @@ index 0000000000..208ad2b686
 +  log "seeded guest root is valid: ${GUEST_ROOT}"
 +}
 +
++make_guest_tmp_root() {
++  tmp_parent=$(dirname "${GUEST_ROOT}")
++  tmp_base=$(basename "${GUEST_ROOT}")
++  mkdir -p "${tmp_parent}"
++  mktemp -d "${tmp_parent}/${tmp_base}.tmp.XXXXXX" || fail "failed to allocate guest root temp dir under ${tmp_parent}"
++}
++
 +seed_guest_root() {
-+  tmp_root="${GUEST_ROOT}.tmp.$$"
++  tmp_root=$(make_guest_tmp_root)
 +  build_seed_candidate "${tmp_root}"
 +  activate_seed_candidate "${tmp_root}"
 +}
@@ -2030,7 +2069,7 @@ index 0000000000..208ad2b686
 +  [ -d "${GUEST_ROOT}" ] || fail "cannot reseed missing guest root through reseed path: ${GUEST_ROOT}"
 +  is_empty_dir "${GUEST_ROOT}" && fail "cannot reseed empty guest root through reseed path: ${GUEST_ROOT}"
 +
-+  tmp_root="${GUEST_ROOT}.tmp.$$"
++  tmp_root=$(make_guest_tmp_root)
 +  previous_root="${NIX_ON_ROCK_PREVIOUS_ROOT}"
 +  build_seed_candidate "${tmp_root}"
 +
@@ -3135,7 +3174,7 @@ new file mode 100644
 index 0000000000..4824d21f31
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest-root-ensure.service
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,22 @@
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
 +
@@ -3153,6 +3192,8 @@ index 0000000000..4824d21f31
 +ExecStart=/usr/bin/rocknix-guest-root-ensure
 +TimeoutStartSec=30min
 +RemainAfterExit=yes
++StandardOutput=journal+console
++StandardError=journal+console
 +
 +[Install]
 +WantedBy=rocknix-main-space.target
@@ -3720,7 +3761,7 @@ new file mode 100755
 index 0000000000..b28ce8fdc0
 --- /dev/null
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -0,0 +1,1493 @@
+@@ -0,0 +1,1504 @@
 +#!/bin/sh
 +# SPDX-License-Identifier: GPL-2.0
 +# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
@@ -3919,10 +3960,14 @@ index 0000000000..b28ce8fdc0
 +grep -q 'RequiresMountsFor=/storage /flash' "${ensure_unit}" || fail "root ensure unit must require storage and flash"
 +grep -q 'ConditionKernelCommandLine=!rocknix.safe=1' "${ensure_unit}" || fail "root ensure unit must be guarded by rocknix.safe=1"
 +grep -q 'ConditionPathExists=!/flash/rocknix.no-nspawn' "${ensure_unit}" || fail "root ensure unit must be guarded by sticky recovery flag"
++grep -q 'StandardOutput=journal+console' "${ensure_unit}" || fail "root ensure unit must mirror status to the active console"
++grep -q 'StandardError=journal+console' "${ensure_unit}" || fail "root ensure unit must mirror failures to the active console"
 +grep -q '/run/lock/rocknix-guest-root.lock' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must use root-owned mutation lock"
 +grep -q 'guest-rootfs-seed.manifest' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must read packaged rootfs seed manifest"
 +grep -q 'ROCKNIX_GUEST_ROOTFS_SEED_DIR' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support local /storage seed staging directory"
 +grep -q 'ROCKNIX_GUEST_ROOTFS_SEED_ARCHIVE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support compressed rootfs seed archive overrides"
++grep -q 'ROCKNIX_GUEST_STATUS_CONSOLE' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must support console-visible first-boot status"
++grep -q 'Korri first boot setup' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must explain long first-boot setup on screen"
 +grep -q 'verify_seed_archive_sha' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must verify staged seed archive sha256"
 +grep -q 'first_device_compatible' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must select staged seed by compatible string"
 +grep -q 'extract_seed_archive' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must extract compressed rootfs seed archives on first boot"
@@ -3932,6 +3977,7 @@ index 0000000000..b28ce8fdc0
 +grep -q 'manual_generation_hold_active' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must respect manual generation hold before auto-reseed"
 +grep -q 'guest root mutation lock is held' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must fail closed on concurrent mutation"
 +grep -q 'is a symlink' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must reject symlinked storage paths"
++grep -q 'make_guest_tmp_root' "${PKG_DIR}/scripts/rocknix-guest-root-ensure" || fail "root ensure helper must allocate concrete temp roots without literal globs"
 +# Plan 2026-05-29-001: substrate must clear helper-owned immutable bits before
 +# rm -rf so first-time reseed after a packaged-seed bump does not abort on
 +# /storage that previously had chattr +i set.
@@ -4358,8 +4404,10 @@ index 0000000000..b28ce8fdc0
 +  export NIX_ON_ROCK_CURRENT_ROOT="${guest_root}"
 +  export NIX_ON_ROCK_PREVIOUS_ROOT="${previous_root}"
 +  lock_file="${tmp_dir}/run/lock/rocknix-guest-root.lock"
++  console_log="${tmp_dir}/console.log"
 +  bin_dir="${tmp_dir}/bin"
 +  mkdir -p "${seed_root}" "${machines_root}" "${bin_dir}"
++  : > "${console_log}"
 +  create_bootable_seed_fixture "${seed_root}"
 +
 +  cat > "${bin_dir}/systemctl" <<'EOF'
@@ -4373,10 +4421,14 @@ index 0000000000..b28ce8fdc0
 +    ROCKNIX_GUEST_MACHINES_ROOT="${machines_root}" \
 +    ROCKNIX_GUEST_ROOT="${guest_root}" \
 +    ROCKNIX_GUEST_ROOT_LOCK="${lock_file}" \
++    ROCKNIX_GUEST_STATUS_CONSOLE="${console_log}" \
 +    "${PKG_DIR}/scripts/rocknix-guest-root-ensure" >/dev/null
 +  [ -d "${guest_root}/nix" ] || fail "root ensure fixture: missing root was not seeded"
 +  [ -f "${guest_root}/etc/rocknix-guest-root-seed-complete" ] || fail "root ensure fixture: completion marker missing"
 +  [ "$(readlink "${guest_root}/init")" = "/nix/store/selected-system/init" ] || fail "root ensure fixture: /init link was not preserved"
++  grep -q 'Korri first boot setup' "${console_log}" || fail "root ensure fixture: console status did not explain first boot"
++  grep -q 'Do not power off' "${console_log}" || fail "root ensure fixture: console status did not warn against poweroff"
++  grep -q 'seeded guest root is valid' "${console_log}" || fail "root ensure fixture: console status did not report completion"
 +
 +  before=$(find "${guest_root}" -type f | wc -l)
 +  ROCKNIX_GUEST_HOST_PATH="${bin_dir}:${PATH}" \
