@@ -1,4 +1,4 @@
-# Accepted guest rootfs seed for the odin2portal Korri ROCKNIX product payload image path.
+# Accepted guest rootfs seed for the odin2portal ROCKNIX product payload image path.
 GUEST_DEVICE="odin2portal"
 GUEST_COMPATIBLE="ayn,odin2portal"
 GUEST_REV="1078753fe366aaf3433cb5257278e71fa4f722cf"

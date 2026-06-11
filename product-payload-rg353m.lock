@@ -1,4 +1,4 @@
-# Promoted Korri product payload lock for nix-on-rocks Phase 1 vocabulary.
+# Promoted product payload lock for nix-on-rocks Phase 1 vocabulary.
 PRODUCT_AUTHORITY_REPO="simonwjackson/korri"
 PRODUCT_REV="1078753fe366aaf3433cb5257278e71fa4f722cf"
 PRODUCT_SOURCE_SHA256="9b724218c7eb6b4983c0f5dc45ba6cb2b3798573582dcbeb2d785c945825df84"

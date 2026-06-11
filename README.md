@@ -22,9 +22,9 @@ The repo does **not** vendor ROCKNIX source. It pins upstream ROCKNIX, applies t
 - Device lane: `SM8550`
 - Accepted device: `sobo` / Odin2Portal (`ayn,odin2portal`)
 - Upstream source pin: see `upstream.lock`
-- Korri consumes nix-on-rocks as the SM8550 substrate; nix-on-rocks no longer imports Korri.
-- Canonical guest product source: Korri branch `feat/korri-rocknix-inversion` (`.#korri-rocknix-rootfs-odin2portal`), verified on Fuji/native arm64.
-- Host-packaged guest source: pinned Korri product tarball, extracting the flake root.
+- Downstream product flakes consume nix-on-rocks as the SM8550 substrate; nix-on-rocks imports no product flake.
+- Canonical guest product source: the product authority repo, revision, and build target pinned in the per-product `product-payload-<product>.lock` files.
+- Host-packaged guest source: pinned product authority tarball, extracting the flake root.
 - Active product payload: see `product-payload.lock`; `scripts/apply-rocknix-patches` renders it into the patched ROCKNIX package-local `product-payload.env`, and `package.mk` consumes that staged env during Docker builds.
 - Accepted guest seed pin: see `guest.lock`; old nix-on-rocks seeds are archived fallback evidence only.
 - Patch queue: `patches/rocknix/series`
@@ -92,7 +92,7 @@ this repo today, so there are no `*.test.ts` checks to run.
 Retained manual/targeted builds and proofs:
 
 ```sh
-# Per-product payload contract proof (replaces verify-korri-promotion-proof):
+# Per-product payload contract proof (replaces the retired promotion proof):
 scripts/tests/product-payload-contract.sh --product odin2portal
 scripts/tests/product-payload-contract.sh --product thor
 
@@ -118,8 +118,8 @@ scripts/build-sm8550
 3. apply `patches/rocknix/series`;
 4. run SM8550 contract checks, lock checks, `scripts/verify-product-payload`, and network-capable `scripts/verify-product-payload-fetches` in image-producing lanes;
 5. build SM8550 with the patched ROCKNIX tree;
-6. fetch the pinned Korri product tarball inside `rocknix-guest-substrate` and package its flake root for `korri-rocknix-kiosk-by-compatible` promotion;
-7. keep `.github/workflows/build-rootfs-seed.yml` as a Retired legacy rootfs seed fallback notice; canonical rootfs artifacts are built by Korri;
+6. fetch the pinned product authority tarball inside `rocknix-guest-substrate` and package its flake root for promotion against the locked product build target;
+7. keep `.github/workflows/build-rootfs-seed.yml` as a Retired legacy rootfs seed fallback notice; canonical rootfs artifacts are built by the product authority;
 8. upload artifacts and a manifest containing upstream SHA, product SHA, patch-series hash, product payload facts, guest seed, and payload checksums.
 
 `product-payload.lock` is the image-build input for product/source/seed facts. `scripts/render-product-payload` maps the product-neutral `PRODUCT_*` fields to `PKG_NIX_GUEST_*`; `scripts/apply-rocknix-patches` stages that rendered environment into `work/rocknix/.../rocknix-guest-substrate/product-payload.env`; and patched `package.mk` sources only that package-local file. Direct edits under `work/rocknix` are generated scratch changes; update `patches/rocknix/0006-rocknix-guest-substrate.patch`, `guest.lock`, and/or `product-payload.lock` instead.

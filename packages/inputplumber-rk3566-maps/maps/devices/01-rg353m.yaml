@@ -29,7 +29,7 @@ options:
   auto_manage: true
 
 # Emulate a standard Xbox pad (plus mouse/keyboard) so downstream consumers
-# (RetroArch autoconfig "Microsoft X-Box 360 pad", gamescope, Korri UI) see a
+# (RetroArch autoconfig "Microsoft X-Box 360 pad", gamescope, product UIs) see a
 # normalized controller.
 target_devices:
   - xbox-series

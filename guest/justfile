@@ -1,5 +1,5 @@
-# Substrate-only guest helpers. Product appliance iteration happens in Korri,
-# which may override its nix-on-rocks input locally.
+# Substrate-only guest helpers. Product appliance iteration happens in the
+# downstream product flake, which may override its nix-on-rocks input locally.
 
 build target="cemu":
     nix build ".#{{target}}"

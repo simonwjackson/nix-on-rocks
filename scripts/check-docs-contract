@@ -10,8 +10,8 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
 [ -f "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" ] || fail "missing rootfs seed workflow"
 grep -q 'Retired legacy rootfs seed fallback' "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" \
   || fail "rootfs seed workflow must document retired legacy fallback"
-grep -q 'nix-on-rocks no longer publishes Korri product/appliance rootfs' "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" \
-  || fail "retired rootfs seed workflow must direct operators to Korri artifacts"
+grep -q 'nix-on-rocks no longer publishes product/appliance rootfs' "$repo_root/guest/.github/workflows/build-rootfs-seed.yml" \
+  || fail "retired rootfs seed workflow must direct operators to product authority artifacts"
 
 for doc in \
   contracts/layer6-activation-contract.md \

@@ -47,6 +47,43 @@ old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
   || fail "service environment blocks must parameterize XDG_RUNTIME_DIR"
 ! grep -qE '^[[:space:]]+PULSE_SERVER = "unix:/run/user/0/' "$guest_root/modules/chipsets/sm8550/audio.nix" \
   || fail "audio PULSE_SERVER must parameterize /run/user/<uid>"
+# Boot-splash branding is payload-owned (boot-logo inversion, 2026-06-10):
+# the substrate patch queue must stay brand-neutral and the branding seam
+# must stay wired through the payload staging and verification scripts.
+! grep -R -q 'rgb(126,253,59)\|rgb(133,244,77)' "$repo_root/patches/rocknix" \
+  || fail "ROCKNIX patch queue must not embed product splash branding colors"
+! grep -q 'use-custom-boot-logo' "$repo_root/patches/rocknix/0003-sm8550-device-and-host-config.patch" \
+  || fail "patch 0003 must not carry a custom boot logo; branding rides the product payload"
+grep -q 'rocknix-splash-0001-product-boot-logo.patch' "$repo_root/scripts/apply-rocknix-patches" \
+  || fail "apply-rocknix-patches must stage the payload-supplied splash branding patch"
+grep -q 'PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256' "$repo_root/scripts/verify-product-payload" \
+  || fail "verify-product-payload must verify the staged splash branding patch"
+
+# Product-authority identity is lock data, not substrate code (Korri-value
+# assertion removal, 2026-06-10): scripts validate whatever authority the lock
+# declares, and the ROCKNIX patch queue carries no product vocabulary.
+! grep -R -q -i --exclude=check-boundary-lint 'korri' "$repo_root/scripts" \
+  || fail "substrate scripts must not carry Korri product vocabulary"
+! grep -R -q -i 'korri' "$repo_root/patches" \
+  || fail "ROCKNIX patch queue must not carry Korri product vocabulary"
+
+# Substrate nix sources, tests, launchers, contract docs, and operator
+# READMEs are product-blind (korri unit-name and vocabulary removal,
+# 2026-06-10): substrate units order against substrate-owned names only;
+# downstream products declare their own ordering from their side. Lock
+# files may carry the product authority in PRODUCT_* data values, but
+# their comments stay product-neutral.
+! grep -R -q -i 'korri' "$guest_root/modules" "$guest_root/profiles" "$repo_root/nix" "$guest_root/launchers" \
+  || fail "guest modules/profiles/tests/launchers must not carry Korri product vocabulary"
+! grep -q -i 'korri' "$repo_root/flake.nix" \
+  || fail "flake.nix must not carry Korri product vocabulary"
+! grep -R -q -i 'korri' "$repo_root/docs/contracts" \
+  || fail "contract docs must not carry Korri product vocabulary"
+! grep -q -i 'korri' "$repo_root/README.md" "$guest_root/README.md" "$guest_root/justfile" \
+  || fail "operator READMEs/justfile must not carry Korri product vocabulary"
+! grep -h '^#' "$repo_root"/product-payload-*.lock "$repo_root"/guest-*.lock | grep -q -i 'korri' \
+  || fail "lock-file comments must stay product-neutral (authority belongs in PRODUCT_* values)"
+
 # The substrate power verb must stay product-agnostic: no product unit
 # names, session sockets, or uid-pinned runtime dirs (the lid.nix ->
 # powerstate.nix ownership flip, 2026-06-10).
@@ -61,8 +98,6 @@ old_package_repo="nix-sm${SM8550_SUFFIX:-8550}"
   || fail "Steam module must not embed runtime prep implementation"
 ! grep -q 'buildFHSEnv' "$guest_root/modules/steam.nix" \
   || fail "Steam module must not own the FHS Steam run capsule"
-! grep -q 'korri-desktop-device' "$guest_root/profiles/main-space.nix" \
-  || fail "main-space fallback profile must not bind Korri launch"
 ! grep -R 'systemctl\|swaymsg\|FEXRootFSFetcher\|gamescope\|/storage' \
   "$repo_root/packages/steam/package.nix" "$repo_root/packages/steam/scripts" \
   || fail "Steam package executable logic must not own host/session/storage policy"

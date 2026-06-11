@@ -1,4 +1,4 @@
-# Accepted guest rootfs seed for the thor Korri ROCKNIX product payload image path.
+# Accepted guest rootfs seed for the thor ROCKNIX product payload image path.
 GUEST_DEVICE="thor"
 GUEST_COMPATIBLE="ayn,thor"
 GUEST_REV="1078753fe366aaf3433cb5257278e71fa4f722cf"

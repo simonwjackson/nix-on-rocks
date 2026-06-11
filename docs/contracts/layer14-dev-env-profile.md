@@ -10,7 +10,7 @@ flavored package set — so you can launch, close, and switch between
 apps without an SSH tether.
 
 The dev-env profile is the prerequisite environment for iterating on
-Korri (and any other Nix-built UI) directly on the device.
+downstream product UIs (or any other Nix-built UI) directly on the device.
 
 ## Sibling of `profiles/main-space.nix`
 
@@ -141,18 +141,18 @@ from `status_command` values — verified live on Thor 2026-05-08 by
 inspecting `swaymsg -t get_bar_config` output. As an absolute path the
 script's quoting survives untouched.
 
-## Running Korri
+## Running a downstream product UI
 
-Korri is **not** baked into the dev-env image. From a `foot` terminal,
-launch via `nix run`:
+Product UIs are **not** baked into the dev-env image. From a `foot`
+terminal, launch via `nix run`:
 
 ```bash
-# from the published flake (network required)
-nix run github:simonwjackson/korri#korri-desktop
+# from the product's published flake (network required)
+nix run github:<owner>/<product>#<app>
 
 # from a local checkout (avoids re-fetching, fast iteration)
-git clone https://github.com/simonwjackson/korri /storage/code/korri
-nix run /storage/code/korri#korri-desktop
+git clone https://github.com/<owner>/<product> /storage/code/<product>
+nix run /storage/code/<product>#<app>
 ```
 
 The dev-env's `network.nix` brings up NetworkManager; the `nix daemon`

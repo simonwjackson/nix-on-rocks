@@ -1,4 +1,4 @@
-# Accepted guest rootfs seed for the rg353m Korri ROCKNIX product payload image path.
+# Accepted guest rootfs seed for the rg353m ROCKNIX product payload image path.
 GUEST_DEVICE="rg353m"
 GUEST_COMPATIBLE="rockchip,rk3566-rk817-tablet"
 GUEST_REV="1078753fe366aaf3433cb5257278e71fa4f722cf"

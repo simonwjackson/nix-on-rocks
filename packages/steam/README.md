@@ -91,7 +91,7 @@ Downstream ROCKNIX or guest integrations own:
 
 `x86_64-linux` package buildability is retained only where it helps the SM8550
 Steam workflow, such as helper/resource generation, local checks, or CI. It is
-not a runnable Steam target and it is not a Korri compatibility surface. The
+not a runnable Steam target and it is not a product compatibility surface. The
 runnable FHS capsule is an aarch64 guest/device capability.
 
 ## Unsupported in v1

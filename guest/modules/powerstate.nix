@@ -6,8 +6,8 @@
 #   AND the hardware-button reading AND product-session policy (sway DPMS,
 #   freezing the kiosk cgroup, stopping audio units). That coupled the
 #   substrate to one product's session topology: it hard-coded uid-0 sway
-#   sockets, `korri-kiosk.service` cgroup paths, and `main-space-pipewire*`
-#   units. After Korri's rootless-session refactor those targets moved, so
+#   sockets, product kiosk-unit cgroup paths, and `main-space-pipewire*`
+#   units. After the product's rootless-session refactor those targets moved, so
 #   3 of the 4 actions silently no-oped and the device "did nothing" on a
 #   power press.
 #
@@ -328,7 +328,7 @@ in
     requestGroup = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "korri";
+      example = "session";
       description = ''
         When set, the request directory is group-owned by this group and
         group-writable (0775), so a rootless product session running as a

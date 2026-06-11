@@ -5,7 +5,7 @@
 SM8550 ROCKNIX boots a NixOS guest as the primary product experience while
 ROCKNIX remains the minimal host substrate for boot, update, rollback, and
 explicit recovery. The guest owns product UX: display, audio, input handling,
-networking policy, Korri launch policy, Steam/Cemu launchers, and
+networking policy, product launch policy, Steam/Cemu launchers, and
 guest-specific documentation.
 
 ## Current contract
@@ -35,21 +35,22 @@ In:
   target inside the guest namespace with `--impure`, updates the selected guest
   system profile, records `/etc/rocknix-guest-revision`, and restarts the guest
   once so PID 1 boots the promoted generation.
-- During dependency-inversion cutover, the default host-promoter entry point is
-  Korri's `korri-rocknix-kiosk-by-compatible` appliance target. It reads the
-  normalized `/proc/device-tree/compatible` value from the running device
-  through Korri's nix-on-rocks substrate input and selects the matching profile
-  from nix-on-rocks' `deviceProfileByCompatible` table. The host substrate must
-  not maintain a parallel device list. Off-device evaluation must use Korri's
-  explicit `korri-rocknix-kiosk-<device>` attributes; the by-compatible
-  attribute throws a clear error when the compatible string is absent.
+- The default host-promoter entry point is the product build target pinned in
+  the installed `product-payload.env` (rendered from the per-product
+  `product-payload-<product>.lock`). The product authority's by-compatible
+  appliance target reads the normalized `/proc/device-tree/compatible` value
+  from the running device through its nix-on-rocks substrate input and selects
+  the matching profile from nix-on-rocks' `deviceProfileByCompatible` table.
+  The host substrate must not maintain a parallel device list. Off-device
+  evaluation must use the product authority's explicit per-device attributes;
+  the by-compatible attribute throws a clear error when the compatible string
+  is absent.
 - `rocknix-recovery-toggle.service` is the explicit safety net: `/flash/rocknix.no-nspawn`
   or `rocknix.safe=1` routes boot to the legacy ROCKNIX target.
 - Guest NixOS modules own substrate behavior: display/Sway, audio/PipeWire,
   WirePlumber, NetworkManager, hardware buttons/lid, Steam helpers, Cemu package
-  and launchers. During coexistence, legacy main-space outputs still consume
-  Korri as a temporary fallback. New product/appliance composition imports the
-  substrate contract and owns product service selection downstream.
+  and launchers. Product/appliance composition imports the substrate
+  contract and owns product service selection downstream.
 
 Out:
 
@@ -113,7 +114,7 @@ If the markers match, promotion exits without changing the guest. If they differ
 2. Run guest repo static checks from the staged source.
 3. Enter the running guest namespace via the `systemd-nspawn` payload PID.
 4. Wait for guest `NetworkManager.service` so Nix can fetch/substitute.
-5. Build the configured product target, defaulting to `.#nixosConfigurations.korri-rocknix-kiosk-by-compatible.config.system.build.toplevel`.
+5. Build the configured product target read from the installed `product-payload.env` (the lock's `PRODUCT_BUILD_TARGET`).
 6. Set `/nix/var/nix/profiles/per-user/root/rocknix-guest-system` to the built toplevel.
 7. Write applied revision and system-path markers under guest `/etc`.
 8. Restart `rocknix-guest.service` once so the new guest generation boots.
@@ -124,13 +125,39 @@ can override the target for proof runs, but the helper refuses the retired
 nix-on-rocks by-compatible product target.
 
 `product-payload.lock` characterizes the current packaged product payload before
-Docker work begins. In Phase 1 it mirrors the Korri source pin, build target,
-and accepted rootfs seed already hardcoded in patched `package.mk`; the image
+Docker work begins. In Phase 1 it mirrors the product authority source pin, build
+target, and accepted rootfs seed already hardcoded in patched `package.mk`; the image
 path still consumes `package.mk` from `patches/rocknix/0006-rocknix-guest-substrate.patch`.
 `scripts/verify-product-payload` renders the generic lock to `PKG_NIX_GUEST_*`
 values and fails if the mirror, `guest.lock`, or patched package metadata drift.
 Downstream products still consume nix-on-rocks; nix-on-rocks must not import a
 downstream product flake to satisfy this contract.
+
+### Boot-splash branding seam
+
+The boot splash is product branding and rides the product payload, not the
+substrate patch queue. The per-product lock may pin an optional branding
+asset with three fields (all-empty means "no product branding"; the image
+keeps the upstream ROCKNIX splash):
+
+- `PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE` — release asset name of a unified
+  diff against the `rocknix-splash` renderer `main.c` (SVG path data plus
+  color palette).
+- `PRODUCT_BRANDING_SPLASH_PATCH_SHA256` — digest of the patch bytes.
+- `PRODUCT_BRANDING_SPLASH_PATCH_URL` — direct product-authority release
+  download URL. May stay empty only when the patch is supplied locally via
+  `NIX_ON_ROCKS_BRANDING_SPLASH_PATCH=<path>` at patch-staging time.
+
+`scripts/apply-rocknix-patches` fetches the pinned patch (or copies the
+local override), verifies the digest, and stages it as
+`projects/ROCKNIX/packages/tools/rocknix-splash/patches/rocknix-splash-0001-product-boot-logo.patch`
+so the ROCKNIX build applies it like any package patch. When no branding is
+pinned the staging step removes any stale staged patch.
+`scripts/verify-product-payload` fails if a pinned patch is missing or
+drifted, or if an unpinned product leaves a stray staged patch behind.
+`scripts/check-boundary-lint` asserts the substrate patch queue itself
+carries no product wordmark or palette. The substrate never knows which
+product the branding belongs to; it only enforces the pinned bytes.
 
 ## Recovery contract
 
@@ -163,19 +190,19 @@ Logs live under `/var/log/rocknix-guest-soak*.log`.
 `nixosModules.rocknix-guest-base` is the product-blind downstream import
 contract. It imports the SM8550 guest modules, device/runtime plumbing, Steam
 runtime support, Moonlight support, and the root session D-Bus service without
-importing Korri modules or setting `services.korri.*` options. Steam runtime
+importing product modules or setting product service options. Steam runtime
 support is split: `packages/steam/` owns generic ARM64 Steam/FEX/pressure-vessel
 helpers and the aarch64 FHS run capsule, while `guest/modules/steam.nix` supplies
-SM8550 `/storage`, session, driver, uinput, and systemd adaptation. Runtime
-service-name references such as `korri-kiosk.service` are allowed where the
-substrate must order shared support services before whichever compositor owner a
-downstream product selects.
+SM8550 `/storage`, session, driver, uinput, and systemd adaptation. Substrate
+unit ordering names only substrate-owned units (the `main-space-*` services);
+a downstream product orders its own session units after the substrate anchors
+from its side. The substrate must not name product units.
 
-Korri consumes nix-on-rocks by importing `nixosModules.rocknix-guest-base`, a
-specific SM8550 device profile, and substrate package outputs from the Korri
-flake. Korri owns Thor/Sobo kiosk appliance composition, product launch chords,
-Electrobun packaging, native bridge configuration, and rootfs artifact
-publication.
+The downstream product consumes nix-on-rocks by importing
+`nixosModules.rocknix-guest-base`, a specific SM8550 device profile, and
+substrate package outputs from its own flake. The product owns kiosk appliance
+composition, product launch chords, client packaging, bridge configuration,
+and rootfs artifact publication.
 
 ROCKNIX owns only the guest/session runtime environment a downstream product
 needs to start: `HOME=/storage`, `XDG_RUNTIME_DIR=/run/user/<uid>` (with the
@@ -184,10 +211,10 @@ substrate-owned `main-space-runtime-dir.service` anchors all main-space
 consumers behind logind's per-uid `user-runtime-dir@<uid>.service` so the
 session tmpfs is mounted before any socket is written), the root session
 D-Bus socket, PipeWire/Pulse, display/input/audio/device binds, and Sway launch
-policy. Do not add a ROCKNIX-owned Korri package, Korri flake input, or duplicate
-Korri's native bridge URL option here. Legacy nix-on-rocks Korri-consuming
-outputs have been removed after native arm64 Korri rootfs verification and the
-executable promotion proof.
+policy. Do not add a ROCKNIX-owned product package, product flake input, or
+duplicate product-owned configuration options here. Legacy nix-on-rocks
+product-consuming outputs have been removed after native arm64 rootfs
+verification and the executable promotion proof.
 
 ## Cemu compatibility state
 

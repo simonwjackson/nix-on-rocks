@@ -21,8 +21,8 @@ grep -q 'Steam Runtime / pressure-vessel repair' "$README" \
   || fail "README must describe package-owned Steam Runtime / pressure-vessel repair"
 grep -q 'FHS Steam execution capsule' "$README" \
   || fail "README must describe the package-owned FHS Steam execution capsule"
-grep -q 'not a Korri compatibility surface' "$README" \
-  || fail "README must state x86 support is not a Korri compatibility surface"
+grep -q 'not a product compatibility surface' "$README" \
+  || fail "README must state x86 support is not a product compatibility surface"
 
 grep -q 'steam-guest-runtime-prep' "$MANIFEST" \
   || fail "manifest must list steam-guest-runtime-prep in the package contract"

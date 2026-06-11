@@ -1,6 +1,6 @@
 # Nix-on-Rocks guest
 
-NixOS guest substrate modules, SM8550 emulator packages, and guest-side launch adapters for Nix-on-Rocks. Korri consumes nix-on-rocks as the downstream product/appliance flake; nix-on-rocks does not import Korri.
+NixOS guest substrate modules, SM8550 emulator packages, and guest-side launch adapters for Nix-on-Rocks. Downstream product/appliance flakes consume nix-on-rocks; nix-on-rocks imports no product flake.
 
 This `guest/` tree owns the reviewed Nix surface for the SM8550 substrate path:
 
@@ -16,7 +16,7 @@ ROCKNIX remains the base OS, boot/recovery plane, and host-side nspawn importer/
 - `flake.nix` exposes substrate NixOS configurations, emulator package outputs, `nixosModules.rocknix-guest-base`, device profile modules, device-selection helpers, and the rootfs packaging helper library.
 - `rocknix-guest.nix` is the stable default Layer 10b/12 SSH-capable guest import.
 - `modules/` contains reusable NixOS modules for the container baseline, SM8550 device policy, SSH, display, audio, network, tooling, Steam, and lid policy.
-- `profiles/rocknix-guest-base.nix` is the product-blind SM8550 substrate contract for downstream flakes such as Korri.
+- `profiles/rocknix-guest-base.nix` is the product-blind SM8550 substrate contract for downstream product flakes.
 - `profiles/` composes modules into `minimal`, `ssh`, `rocknix-guest-base`, `main-space` fallback, and `dev-env` profiles; `profiles/devices/` holds small SM8550 per-device overrides.
 - `packages/cemu/` contains the ROCKNIX-informed Cemu derivation.
 - `packages/steam/` contains guest-native Steam ARM64 bootstrap/seed/launch helpers.
@@ -59,9 +59,9 @@ Current package outputs:
 
 ## Retired legacy rootfs seed fallback
 
-nix-on-rocks no longer publishes Korri product/appliance rootfs artifacts. The old `.github/workflows/build-rootfs-seed.yml` workflow is retained only as a fail-closed retirement notice.
+nix-on-rocks no longer publishes product/appliance rootfs artifacts. The old `.github/workflows/build-rootfs-seed.yml` workflow is retained only as a fail-closed retirement notice.
 
-Canonical Thor/Sobo appliance rootfs artifacts are built from Korri outputs such as `korri-rocknix-rootfs-odin2portal`. The ROCKNIX host substrate still carries seed-fetch/verification plumbing, but product authority and provenance now come from the Korri flake.
+Canonical appliance rootfs artifacts are built from the product authority pinned in the per-product `product-payload-<product>.lock` files. The ROCKNIX host substrate still carries seed-fetch/verification plumbing, but product authority and provenance come from the downstream product flake.
 
 ## Runtime boundaries
 
@@ -128,6 +128,6 @@ nix build .#cemu --print-build-logs
 nix build .#steam --print-build-logs
 ```
 
-## Relationship to ROCKNIX and Korri
+## Relationship to ROCKNIX and downstream products
 
-Nix-on-Rocks owns SM8550 substrate facts, packages, and host patch plumbing. ROCKNIX remains the upstream substrate for boot, update, recovery, kernel/device integration, and host-side nspawn supervision. Korri owns Thor/Sobo product appliance composition and rootfs artifacts by importing nix-on-rocks substrate surfaces.
+Nix-on-Rocks owns SM8550 substrate facts, packages, and host patch plumbing. ROCKNIX remains the upstream substrate for boot, update, recovery, kernel/device integration, and host-side nspawn supervision. The downstream product flake owns appliance composition and rootfs artifacts by importing nix-on-rocks substrate surfaces.

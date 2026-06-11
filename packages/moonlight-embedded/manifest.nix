@@ -55,7 +55,7 @@
       name = "0004-add-absolutetouch-flag-for-tap-to-click.patch";
       file = ./patches/0004-add-absolutetouch-flag-for-tap-to-click.patch;
       upstreamPath = "this repo";
-      role = "Adds the -absolutetouch CLI flag (and matching absolute_touch config key). When enabled, touchscreens (BTN_TOUCH + ABS_X/Y, fallback ABS_MT_POSITION_X/Y) feed LiSendMousePositionEvent using the device's ABS axis range as the reference plane, with -rotate applied inside that plane, and tap-to-click anchors the synthesized click at the touchdown position. Default is off, preserving the upstream trackpad behavior. Opted in by Korri's launcher for handhelds where the touchscreen drives GUI dialogs over the stream rather than acting as a trackpad.";
+      role = "Adds the -absolutetouch CLI flag (and matching absolute_touch config key). When enabled, touchscreens (BTN_TOUCH + ABS_X/Y, fallback ABS_MT_POSITION_X/Y) feed LiSendMousePositionEvent using the device's ABS axis range as the reference plane, with -rotate applied inside that plane, and tap-to-click anchors the synthesized click at the touchdown position. Default is off, preserving the upstream trackpad behavior. Opted in by downstream product launchers for handhelds where the touchscreen drives GUI dialogs over the stream rather than acting as a trackpad.";
     }
   ];
 
