@@ -183,10 +183,9 @@ in
       "main-space-pipewire.service"
       "main-space-pipewire-pulse.service"
     ];
-    before = [
-      "main-space-sway-kiosk.service"
-      "korri-kiosk.service"
-    ];
+    # Substrate fallback compositor only; product sessions order after
+    # the audio stack from their side.
+    before = [ "main-space-sway-kiosk.service" ];
     serviceConfig = {
       Type = "oneshot";
       User = "root";

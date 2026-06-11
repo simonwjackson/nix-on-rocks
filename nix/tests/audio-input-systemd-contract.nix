@@ -41,7 +41,7 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (contains "c /dev/uinput 0600 root root - 10:223" cfg.systemd.tmpfiles.rules) "/dev/uinput tmpfiles rule exists")
   (assertContract cfg.services.inputplumber.enable "InputPlumber service is enabled")
   (assertContract (contains "main-space-sway-kiosk.service" (inputplumber.before or [ ])) "InputPlumber starts before fallback Sway")
-  (assertContract (contains "korri-kiosk.service" (inputplumber.before or [ ])) "InputPlumber starts before downstream Korri kiosk")
+  (assertContract (inputplumber.before == [ "main-space-sway-kiosk.service" ]) "InputPlumber ordering names no product units")
   (assertContract (contains "inputplumber.service" (hideRaw.wants or [ ])) "raw gamepad hider wants InputPlumber")
   (assertContract (contains "inputplumber.service" (hideRaw.after or [ ])) "raw gamepad hider orders after InputPlumber")
   (assertContract (builtins.elem "AYN Odin2 Gamepad" cfg.rocknix.device.input.rawGamepadEventNames) "raw gamepad names live under the generic device seam")
@@ -52,8 +52,9 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (cfg.rocknix.sm8550.audio.api == "pulseaudio") "SM8550 substrate exposes a PulseAudio-compatible audio API")
 
   # Thor's substrate-owned speaker route. Bootstrap service must exist,
-  # order after the audio graph, and run before downstream kiosks so the
-  # default sink is no longer `auto_null` by the time Korri/Moonlight launches.
+  # order after the audio graph, and run before the fallback kiosk so the
+  # default sink is no longer `auto_null` by the time a session launches.
+  # Product sessions add their own ordering downstream.
   (assertContract (thorServices ? main-space-audio-sink-bootstrap) "Thor substrate exposes a default-sink bootstrap service")
   (assertContract (thorBootstrap.serviceConfig.Type == "oneshot") "Thor sink bootstrap is oneshot")
   (assertContract (thorBootstrap.serviceConfig.RemainAfterExit == true) "Thor sink bootstrap remains active after success")
@@ -61,7 +62,7 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (contains "main-space-pipewire-pulse.service" (thorBootstrap.after or [ ])) "Thor sink bootstrap orders after PipeWire Pulse")
   (assertContract (contains "main-space-wireplumber.service" (thorBootstrap.after or [ ])) "Thor sink bootstrap orders after WirePlumber")
   (assertContract (contains "main-space-sway-kiosk.service" (thorBootstrap.before or [ ])) "Thor sink bootstrap orders before fallback Sway kiosk")
-  (assertContract (contains "korri-kiosk.service" (thorBootstrap.before or [ ])) "Thor sink bootstrap orders before downstream Korri kiosk")
+  (assertContract (thorBootstrap.before == [ "main-space-sway-kiosk.service" ]) "Thor sink bootstrap ordering names no product units")
   (assertContract (thorBootstrap.environment.XDG_RUNTIME_DIR == "/run/user/${toString thorCfg.rocknix.session.runtimeDir.uid}") "Thor sink bootstrap retains main-space XDG_RUNTIME_DIR")
   (assertContract (thorBootstrap.environment.PIPEWIRE_RUNTIME_DIR == thorBootstrap.environment.XDG_RUNTIME_DIR) "Thor sink bootstrap retains PIPEWIRE_RUNTIME_DIR")
   (assertContract (thorBootstrap.environment.PULSE_SERVER == "unix:${thorBootstrap.environment.XDG_RUNTIME_DIR}/pulse/native") "Thor sink bootstrap retains PULSE_SERVER")

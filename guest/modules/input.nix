@@ -7,13 +7,11 @@
 { config
 , lib
 , pkgs
-, options
 , ...
 }:
 
 let
   rocknixInputplumber = pkgs.callPackage ../../packages/inputplumber { };
-  hasKorriKiosk = options.services ? korri && options.services.korri ? kiosk;
   input = config.rocknix.device.input;
   rawGamepadEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.rawGamepadEventNames;
   virtualGamepadEventNames = lib.concatMapStringsSep " " lib.escapeShellArg input.virtualGamepadEventNames;
@@ -51,12 +49,10 @@ in
     wantedBy = [ "multi-user.target" ];
     wants = [ "inputplumber.service" ];
     after = [ "inputplumber.service" ];
-    before = [
-      "korri-compositor.service"
-      "korri-inputd.service"
-      "main-space-sway-kiosk.service"
-      "korri-kiosk.service"
-    ];
+    # Ordering against the substrate fallback compositor only. Downstream
+    # product sessions order themselves after this unit from their side;
+    # the substrate does not know product unit names.
+    before = [ "main-space-sway-kiosk.service" ];
     path = [ pkgs.coreutils ];
     script = ''
       set -eu
@@ -125,10 +121,7 @@ in
   systemd.services.inputplumber = {
     wants = [ "systemd-udev-settle.service" ];
     after = [ "systemd-udev-settle.service" ];
-    before = [
-      "main-space-sway-kiosk.service"
-      "korri-kiosk.service"
-    ];
+    before = [ "main-space-sway-kiosk.service" ];
     environment = {
       HIDE_DEVICES_FROM_ROOT = "1";
       XDG_DATA_DIRS = lib.mkForce "/run/current-system/sw/share:${config.services.inputplumber.package}/share";
@@ -139,8 +132,4 @@ in
     };
   };
 
-  systemd.services.main-space-sway-kiosk = lib.mkIf (!hasKorriKiosk) {
-    wants = [ "inputplumber.service" ];
-    after = [ "inputplumber.service" ];
-  };
 }

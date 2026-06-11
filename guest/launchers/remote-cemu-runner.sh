@@ -131,8 +131,7 @@ ensure_guest_sway() {
   # starting it and waiting for an IPC socket that responds to swaymsg.
   run_guest_timeout 45 'PATH=/run/current-system/sw/bin:/bin:/usr/bin
 if ! ls /run/user/0/sway-ipc.0.*.sock >/dev/null 2>&1; then
-  systemctl start korri-kiosk.service >/dev/null 2>&1 \
-    || systemctl start main-space-sway-kiosk.service >/dev/null 2>&1 \
+  systemctl start main-space-sway-kiosk.service >/dev/null 2>&1 \
     || true
 fi
 for i in $(seq 1 30); do

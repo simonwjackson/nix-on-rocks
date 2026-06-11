@@ -25,7 +25,7 @@
 # derive their /run/user/<uid> path from it.
 #
 # This module is imported by both rocknix-guest-base.nix (the
-# substrate contract Korri consumes) and dev-env.nix (the
+# substrate contract downstream products consume) and dev-env.nix (the
 # substrate-local fallback profile that does not go through
 # rocknix-guest-base), so the option and anchor are visible to
 # every profile that exercises the main-space session topology.
@@ -66,13 +66,15 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "user-runtime-dir@${toString cfg.uid}.service" ];
       requires = [ "user-runtime-dir@${toString cfg.uid}.service" ];
+      # Substrate consumers only. Downstream product session units order
+      # themselves After=/Requires= this anchor from their side; the
+      # substrate does not know product unit names.
       before = [
         "main-space-session-dbus.service"
         "main-space-pipewire.service"
         "main-space-pipewire-pulse.service"
         "main-space-wireplumber.service"
         "main-space-sway-kiosk.service"
-        "korri-kiosk.service"
       ];
       serviceConfig = {
         Type = "oneshot";

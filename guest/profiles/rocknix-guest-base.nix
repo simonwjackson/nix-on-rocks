@@ -3,15 +3,15 @@
 # Downstream appliance flakes import this profile to get the ROCKNIX/Nix-on-Rocks
 # guest substrate: container baseline, SM8550 device facts, session plumbing,
 # display/audio/input/network/powerstate modules, Steam runtime plumbing, and app
-# package helpers. Product composition (Korri client/server/kiosk selection,
+# package helpers. Product composition (client/server/kiosk selection,
 # Home-chord app launch policy, rootfs authority) lives downstream.
 #
 # Ownership rule:
 #
 #   - nix-on-rocks says: "this device/chipset exposes these Linux
 #     capabilities and routes audio/video here."
-#   - Downstream product (e.g. Korri) says: "for this appliance, use those
-#     capabilities with the chosen client (Moonlight, sessiond, kiosk)."
+#   - The downstream product says: "for this appliance, use those
+#     capabilities with the chosen client (streaming client, sessiond, kiosk)."
 #
 # Where SM8550 facts live:
 #
@@ -25,8 +25,8 @@
 #     default-sink bootstrap when `rocknix.sm8550.audio.defaultSink.pcm`
 #     is set on the device profile.
 #
-# Anything Moonlight-, Korri-, or appliance-specific (CLI argv, persistent
-# `KORRI_*` env, kiosk service environment, controller mapping file paths)
+# Anything client- or appliance-specific (CLI argv, persistent product
+# env, kiosk service environment, controller mapping file paths)
 # is downstream product policy and does not belong in this substrate.
 { config
 , pkgs
@@ -99,10 +99,11 @@ in
     ../modules/powerstate.nix
     ../modules/steam.nix
     # `moonlight.nix` is product-leaning (it installs a client choice).
-    # Kept in the substrate import path for now so currently-pinned Korri
-    # checkouts that still set `rocknix.sm8550.moonlight.*` continue to
-    # evaluate; scheduled removal once downstream product flakes consume
-    # neutral SM8550 video/audio capabilities and drop the option setter.
+    # Kept in the substrate import path for now so currently-pinned
+    # downstream checkouts that still set `rocknix.sm8550.moonlight.*`
+    # continue to evaluate; scheduled removal once downstream product
+    # flakes consume neutral SM8550 video/audio capabilities and drop
+    # the option setter.
     ../modules/moonlight.nix
     ../modules/session.nix
   ];
@@ -130,18 +131,17 @@ in
   # ordering ensures logind's per-uid tmpfs mount has happened before the
   # bus socket is written. See ../modules/session.nix for the substrate-
   # owned runtime-dir anchor and the rocknix.session.runtimeDir.uid option.
-  # Runtime service-name references support both the legacy main-space
-  # fallback compositor and the Korri-owned kiosk compositor without
-  # importing or configuring Korri product modules here.
+  # Runtime service-name references cover only the substrate-local
+  # fallback compositor; product-owned compositors declare their own
+  # ordering against this bus downstream.
   systemd.services.main-space-session-dbus = {
     description = "Main-space root session D-Bus";
     wantedBy = [ "multi-user.target" ];
     after = [ "main-space-runtime-dir.service" ];
     requires = [ "main-space-runtime-dir.service" ];
-    before = [
-      "main-space-sway-kiosk.service"
-      "korri-kiosk.service"
-    ];
+    # Substrate fallback compositor only; product session units order
+    # themselves after this bus from their side.
+    before = [ "main-space-sway-kiosk.service" ];
     serviceConfig = {
       Type = "simple";
       User = "root";
@@ -167,10 +167,12 @@ in
       "main-space-runtime-dir.service"
       "main-space-session-dbus.service"
       "main-space-sway-kiosk.service"
-      "korri-kiosk.service"
     ];
     requires = [ "main-space-runtime-dir.service" "main-space-session-dbus.service" ];
-    partOf = [ "main-space-sway-kiosk.service" "korri-kiosk.service" ];
+    # Restart coupling to the substrate fallback compositor only. A
+    # product session that needs the bootstrap re-run on compositor
+    # restart adds its own PartOf/After edges downstream.
+    partOf = [ "main-space-sway-kiosk.service" ];
     serviceConfig = {
       Type = "oneshot";
       User = "root";

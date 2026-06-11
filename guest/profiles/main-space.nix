@@ -9,8 +9,8 @@
 #   - input (guest-owned InputPlumber + device maps)
 #   - network (NetworkManager + nftables firewall, no resolvconf)
 #
-# Kept as a substrate-local fallback profile only. Korri-owned appliance
-# systems now live in the downstream Korri flake and import rocknix-guest-base.
+# Kept as a substrate-local fallback profile only. Product-owned appliance
+# systems live in the downstream product flake and import rocknix-guest-base.
 #
 # Combined-profile note (2026-05-11): main-space now bakes the interactive
 # bits formerly only available in profiles/dev-env.nix -- a bottom swaybar
@@ -68,8 +68,8 @@ let
       >/dev/null 2>&1 || true
   '';
 
-  # Device-aware Sway config for the substrate-local fallback service. Korri
-  # owns product client autostart and product launch chords downstream.
+  # Device-aware Sway config for the substrate-local fallback service. The
+  # downstream product owns client autostart and launch chords.
   mainSpaceSwayConfig = ''
     # ROCKNIX Layer 14 sway config (${device.id}).
     seat * hide_cursor 1000
@@ -208,8 +208,14 @@ in
       "systemd-user-sessions.service"
       "main-space-runtime-dir.service"
       "main-space-session-dbus.service"
+      "inputplumber.service"
     ];
     requires = [ "main-space-runtime-dir.service" "main-space-session-dbus.service" ];
+    # InputPlumber must claim raw pads before sway/libseat opens event
+    # nodes. Declared on the unit that owns the dependency rather than
+    # pushed from input.nix, so the input module stays blind to which
+    # compositor consumes it.
+    wants = [ "inputplumber.service" ];
 
     # sway's wrapper invokes dbus-run-session which spawns dbus-daemon.
     # Without dbus on the unit's PATH the wrapper fails with

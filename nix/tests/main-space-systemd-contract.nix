@@ -28,7 +28,7 @@ helpers.runAssertions "rocknix-main-space-systemd-contract" [
   (assertContract (contains "main-space-runtime-dir.service" (portal.after or [ ])) "Portal bootstrap orders after runtime-dir anchor")
   (assertContract (contains "main-space-session-dbus.service" (portal.after or [ ])) "Portal bootstrap orders after session D-Bus")
   (assertContract (contains "main-space-sway-kiosk.service" (portal.after or [ ])) "Portal bootstrap orders after fallback Sway")
-  (assertContract (contains "korri-kiosk.service" (portal.after or [ ])) "Portal bootstrap can follow downstream Korri kiosk")
+  (assertContract (portal.partOf == [ "main-space-sway-kiosk.service" ]) "Portal bootstrap restart-couples only to the fallback Sway kiosk")
   (assertContract (portal.serviceConfig.Type == "oneshot") "Portal bootstrap is oneshot")
   (assertContract (sway.environment.XDG_CURRENT_DESKTOP == "sway") "Sway kiosk advertises sway desktop for portals")
   (assertContract (sway.environment.CEMU_BIOS_ROOT == "/storage/roms/bios/cemu") "Sway kiosk keeps Cemu BIOS compatibility root")
