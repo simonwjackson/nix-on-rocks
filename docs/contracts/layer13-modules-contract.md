@@ -1,6 +1,6 @@
 # Layer 13 declarative modules contract
 
-Layer 13 adds a NixOS-like declarative authoring layer on top of the existing ROCKNIX Nix integration layers. It does not turn ROCKNIX into NixOS. ROCKNIX remains the host OS and owns boot, kernel, firmware, host SSH recovery, Sway/EmulationStation, Steam/FEX, image updates, and package-managed services.
+Layer 13 adds a NixOS-like declarative authoring layer on top of the existing ROCKNIX Nix integration layers. It does not turn ROCKNIX into NixOS. ROCKNIX remains the host OS and owns boot, kernel, firmware, host SSH recovery, Sway/EmulationStation, product application runtimes, image updates, and package-managed services.
 
 Layer 13 has two module domains:
 
@@ -27,7 +27,7 @@ Layer 13 must not:
 - enable guest autostart or make the guest a boot dependency
 - expose guest SSH by default
 - permit password auth, keyboard-interactive auth, default credentials, or shipped reusable authorized keys
-- pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, Steam state, FEX state, or browser profiles by default
+- pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, product runtime state, compatibility-runtime state, or browser profiles by default
 
 SM8550 Layer 14 main-space is the deliberate exception to the default input passthrough rule: the host binds `/dev/input` and `/dev/uinput` into the managed guest, but the guest owns `systemd-udevd`, InputPlumber, and raw-device hiding. Host InputPlumber is masked during the safety-net release and the guest-visible `/dev/inputplumber` path resolves inside the `/dev/input` bind so hide-by-move remains on one mount.
 - bypass Layer 6/10/11/12 guardrails when applying module output

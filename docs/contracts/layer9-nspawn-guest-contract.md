@@ -1,6 +1,6 @@
 # Layer 9 nspawn guest contract
 
-Layer 9 proves a manually started NixOS-style userspace can run under `systemd-nspawn` on ROCKNIX. It is a proof layer, not a managed guest platform. ROCKNIX remains the host OS and owns boot, kernel, firmware, Sway/EmulationStation, Steam/FEX, image updates, and recovery.
+Layer 9 proves a manually started NixOS-style userspace can run under `systemd-nspawn` on ROCKNIX. It is a proof layer, not a managed guest platform. ROCKNIX remains the host OS and owns boot, kernel, firmware, Sway/EmulationStation, product application runtimes, image updates, and recovery.
 
 ## Responsibilities
 
@@ -18,9 +18,9 @@ Layer 9 must not:
 - start the guest during boot
 - enable `systemd-nspawn@.service` or any guest service by default
 - add `nixctl guest` lifecycle commands; those belong to Layer 10
-- replace ROCKNIX system services, Sway, EmulationStation, Steam/FEX, or update flow
+- replace ROCKNIX system services, Sway, EmulationStation, product application runtimes, or update flow
 - mutate `/usr`, `/flash`, `/boot`, firmware, kernel modules, or package-managed services at runtime
-- manage ROMs, saves, Steam/FEX state, browser profiles, or broad dotfile trees
+- manage ROMs, saves, product runtime state, browser profiles, or broad dotfile trees
 - pass through graphics, audio, input, or host UI sockets by default
 
 ## Guest root
@@ -69,8 +69,8 @@ Layer 9 must not bind or expose these by default:
 - EmulationStation, Sway, or autostart paths
 - ROM directories
 - save directories
-- Steam state
-- FEX state
+- product runtime state
+- compatibility-runtime state
 - browser profiles
 - `/usr`, `/flash`, `/boot`, kernel modules, or firmware trees
 - package-managed ROCKNIX system services
@@ -110,6 +110,6 @@ Layer 9 is Go only if hardware validation proves:
 - a staged guest root under `/storage/machines/rocknix-guest` can be started manually
 - the guest reaches a useful proof state, such as a booted login or trivial Nix command/daemon proof
 - the guest stops cleanly
-- no host regression appears in SSH, Sway, EmulationStation, Steam/FEX, Layer 4, or Layer 8
+- no host regression appears in SSH, Sway, EmulationStation, product application runtimes, Layer 4, or Layer 8
 
 Any host-impacting regression, unclear cleanup boundary, required forbidden passthrough, or guest process left running after failure is a No-Go for Layer 9 until documented and fixed.

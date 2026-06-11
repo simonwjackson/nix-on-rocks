@@ -16,13 +16,13 @@ source: live-rg353m-bringup
 
 ## Why it matters
 
-The published RG353M seed archive could not extract on the 12.4GiB SD /storage because the default ext4 inode count was exhausted by high-file-count payloads, especially the Steam ARM64 FHS rootfs. The live recovery booted only after manually excluding that subtree and docs/man/info from extraction.
+The published RG353M seed archive could not extract on the 12.4GiB SD /storage because the default ext4 inode count was exhausted by high-file-count payloads that do not belong in the RK3566 seed. The live recovery booted only after manually excluding heavyweight payload subtrees and docs/man/info from extraction.
 
 ## Acceptance Criteria
 
 - [ ] A freshly flashed RG353M SD card seeds the guest rootfs without manual tar excludes.
 - [ ] Seed/archive size and inode requirements are checked before publishing or during artifact verification.
-- [ ] Steam/large non-RG353M payloads are excluded or split from the RG353M seed unless explicitly required.
+- [ ] Large non-RG353M payloads are excluded or split from the RG353M seed unless explicitly required.
 
 ## Related
 

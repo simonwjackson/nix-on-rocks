@@ -102,30 +102,6 @@ grep -q 'PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256' "$repo_root/scripts/verify-
 ! grep -vE '^[[:space:]]*#' "$guest_root/modules/powerstate.nix" \
   | grep -qE 'korri-kiosk|korri-compositor|main-space-pipewire|sway-ipc\.0\.' \
   || fail "rocknix-powerstate must not reference product session units or uid-0 sockets"
-! grep -q 'mknod /dev/uinput c 10 223' "$guest_root/modules/steam.nix" \
-  || fail "Steam uinput prep must not hardcode the live Thor uinput device number"
-! grep -q 'PRESSURE_VESSEL_FILESYSTEMS_RW' "$guest_root/modules/steam.nix" \
-  || fail "Steam module must not own pressure-vessel input exposure after runtime capsule refactor"
-! grep -q 'rocknix-steam-prepare-runtime' "$guest_root/modules/steam.nix" \
-  || fail "Steam module must not embed runtime prep implementation"
-! grep -q 'buildFHSEnv' "$guest_root/modules/steam.nix" \
-  || fail "Steam module must not own the FHS Steam run capsule"
-! grep -R 'systemctl\|swaymsg\|FEXRootFSFetcher\|gamescope\|/storage' \
-  "$repo_root/packages/steam/package.nix" "$repo_root/packages/steam/scripts" \
-  || fail "Steam package executable logic must not own host/session/storage policy"
-if grep -R -nE '\b(systemctl|swaymsg|gamescope)\b|services\.korri|korri\.' "$repo_root/packages/steam/scripts"; then
-  fail "Steam package scripts must not own system/session/product orchestration"
-fi
-if grep -R -n '/storage' "$repo_root/packages/steam/scripts"; then
-  fail "Steam package scripts must not hardcode guest /storage defaults"
-fi
-
-manifest="$repo_root/packages/steam/manifest.nix"
-grep -q 'steam-guest-runtime-prep' "$manifest" \
-  || fail "Steam manifest must list steam-guest-runtime-prep in the package contract"
-grep -q 'steam-guest-run' "$manifest" \
-  || fail "Steam manifest must list steam-guest-run in the package contract"
-
 # Rootfs packaging helper source-policy guardrails. A fuller package-output
 # rootfs inspection check can replace these when it is cheap enough for CI.
 grep -q 'root/etc/ssh/authorized_keys.d/root' "$repo_root/flake.nix" \

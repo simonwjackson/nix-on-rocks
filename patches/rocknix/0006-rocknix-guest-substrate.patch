@@ -2749,8 +2749,8 @@ index 0000000000..5581b52475
 +
 +# /dev/cpu_dma_latency lets a process hold the kernel's max idle-exit
 +# latency at a fixed ceiling by keeping a write file descriptor open
-+# against it. Steam/gamescope/wine open this device when configured for
-+# low input-latency, and on a handheld it pins the CPU out of deeper
++# against it. Game launchers and compatibility runtimes open this device
++# when configured for low input-latency, and on a handheld it pins the CPU out of deeper
 +# C-states for the duration of a stream/game. Conditional bind so the
 +# substrate does not require a feature that isn't always present.
 +if [ -c /dev/cpu_dma_latency ]; then
@@ -3346,14 +3346,14 @@ index 0000000000..e6102c0606
 +# guest returns EPERM and Moonlight's v4l2m2m enumeration finds nothing.
 +DeviceAllow=char-video4linux rwm
 +# /dev/ntsync (kernel >= 6.10) lets Wine/Proton emulate Win32 sync
-+# primitives natively. Big perf win for Steam Proton games on SM8550.
++# primitives natively. Big perf win for Windows compatibility workloads on SM8550.
 +# Harmless when the device is absent.
 +DeviceAllow=/dev/ntsync rwm
 +# /dev/drm_dp_aux0 carries DisplayPort AUX traffic for the card0-DP-1
 +# connector (USB-C DP-alt-mode). Required for external display EDID/HPD.
 +DeviceAllow=/dev/drm_dp_aux0 rwm
-+# /dev/cpu_dma_latency: PM QoS latency floor. Steam/gamescope/wine open
-+# it to keep deeper CPU C-states out of an active game/stream session.
++# /dev/cpu_dma_latency: PM QoS latency floor. Game launchers and compatibility
++# runtimes open it to keep deeper CPU C-states out of an active game/stream session.
 +# Harmless when no consumer is running.
 +DeviceAllow=/dev/cpu_dma_latency rwm
 +# Qualcomm Hexagon DSP RPC endpoints (SM8550). Guest workloads that

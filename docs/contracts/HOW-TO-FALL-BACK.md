@@ -7,7 +7,7 @@ readable from a card reader on another machine without booting the device.
 
 Default boot reaches `rocknix-main-space.target`, which starts
 `rocknix-guest.service` as the NixOS main-space guest. The guest owns display,
-audio, input, networking policy, Steam/Cemu launchers, and hardware-button
+audio, input, networking policy, Cemu and product launchers, and hardware-button
 behavior.
 
 ROCKNIX remains the recovery/update/container substrate. Recovery is explicit;

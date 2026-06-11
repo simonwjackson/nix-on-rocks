@@ -42,7 +42,6 @@ for the migration story.
 flake.nix              # single top-level flake (was guest/flake.nix)
 packages/              # all reusable derivations (was guest/packages/)
   cemu/
-  steam/
   inputplumber/
   moonlight-embedded/  # absorbed from nix-sm8550
 devices/               # SoC-bound data (new layer; slot for sm8250/Retroid)

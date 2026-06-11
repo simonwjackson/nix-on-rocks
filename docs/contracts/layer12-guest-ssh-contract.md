@@ -1,6 +1,6 @@
 # Layer 12 opt-in guest SSH contract
 
-Layer 12 exposes the first persistent Nix-managed guest service: OpenSSH inside the Layer 10b bootable guest. ROCKNIX remains the host OS and owns boot, kernel, firmware, host SSH recovery, Sway/EmulationStation, Steam/FEX, image updates, and package-managed services.
+Layer 12 exposes the first persistent Nix-managed guest service: OpenSSH inside the Layer 10b bootable guest. ROCKNIX remains the host OS and owns boot, kernel, firmware, host SSH recovery, Sway/EmulationStation, product application runtimes, image updates, and package-managed services.
 
 Layer 12 is valid only after Layer 10b bootable start/stop has been hardware-validated on the target device. Building a Layer 12 image before Layer 10b validation is allowed for pipeline efficiency, but Go/No-Go evidence must still be collected in order.
 
@@ -23,9 +23,9 @@ Layer 12 must not:
 - enable password authentication, keyboard-interactive authentication, or default credentials
 - ship reusable authorized keys in the image
 - enable guest autostart
-- make the guest a recovery dependency for SSH, Sway, EmulationStation, Steam/FEX, update, or rollback
+- make the guest a recovery dependency for SSH, Sway, EmulationStation, product application runtimes, update, or rollback
 - expose generic persistent service management beyond SSH
-- pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, Steam state, FEX state, or browser profiles
+- pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, product runtime state, compatibility-runtime state, or browser profiles
 - mutate `/usr`, `/flash`, `/boot`, host `/etc`, host SSH config, firmware, kernel modules, or package-managed services at runtime
 
 ## Default paths

@@ -46,7 +46,7 @@ Layer 6 must never activate files under:
 - firmware directories
 - ROCKNIX package-managed system services
 - EmulationStation/Sway default startup paths
-- ROM, save, Steam/FEX, or browser profile data
+- ROM, save, product application runtimes, or browser profile data
 
 ## State and ownership
 

@@ -1,6 +1,6 @@
 # Layer 10 guest lifecycle contract
 
-Layer 10 turns the Layer 9 `systemd-nspawn` proof into managed guest operations. It is still an opt-in sidecar workload. ROCKNIX remains the host OS and owns boot, kernel, firmware, SSH recovery, Sway/EmulationStation, Steam/FEX, image updates, and package-managed services.
+Layer 10 turns the Layer 9 `systemd-nspawn` proof into managed guest operations. It is still an opt-in sidecar workload. ROCKNIX remains the host OS and owns boot, kernel, firmware, SSH recovery, Sway/EmulationStation, product application runtimes, image updates, and package-managed services.
 
 Layer 10 extends Layer 9. It does not weaken the Layer 9 safety boundary.
 
@@ -21,11 +21,11 @@ Layer 10 must not:
 
 - start the guest during boot
 - enable `systemd-nspawn@.service`, `rocknix-guest.service`, or any guest unit by default
-- add ordering from SSH, Sway, EmulationStation, Steam/FEX, update, or recovery services to the guest
+- add ordering from SSH, Sway, EmulationStation, product application runtimes, update, or recovery services to the guest
 - depend on `machinectl` or `systemd-machined`
 - replace ROCKNIX SSH or any other host recovery service
 - mutate `/usr`, `/flash`, `/boot`, firmware, kernel modules, or package-managed services at runtime
-- manage ROMs, saves, Steam/FEX state, browser profiles, or broad dotfile trees
+- manage ROMs, saves, product runtime state, browser profiles, or broad dotfile trees
 - pass through graphics, audio, input, or host UI sockets by default
 
 ## Guest rootfs modes
@@ -110,8 +110,8 @@ Layer 10 must not bind or expose these by default:
 - EmulationStation, Sway, or autostart paths
 - ROM directories
 - save directories
-- Steam state
-- FEX state
+- product runtime state
+- compatibility-runtime state
 - browser profiles
 - `/usr`, `/flash`, `/boot`, kernel modules, or firmware trees
 - package-managed ROCKNIX system services
@@ -129,7 +129,7 @@ Guest-backed apps, service bridges, alternate-port guest SSH, graphics, audio, a
 
 or their fixture-configured equivalents in tests.
 
-Cleanup must refuse unsafe roots such as `/`, `/storage`, `/nix`, `/usr`, `/flash`, `/boot`, ROM directories, save directories, Steam/FEX state, and host Nix config/state roots.
+Cleanup must refuse unsafe roots such as `/`, `/storage`, `/nix`, `/usr`, `/flash`, `/boot`, ROM directories, save directories, product runtime state, and host Nix config/state roots.
 
 Cleanup must not touch:
 

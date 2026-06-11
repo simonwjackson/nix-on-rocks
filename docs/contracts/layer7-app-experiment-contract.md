@@ -26,7 +26,7 @@ Layer 7 must not:
 - replace EmulationStation, `essway`, Sway startup, or ROCKNIX default UI startup
 - add autostart or systemd integration
 - mutate `/usr`, `/flash`, `/boot`, kernel modules, firmware, or ROCKNIX services
-- manage ROMs, saves, Steam/FEX state, existing browser profiles, or broad dotfiles
+- manage ROMs, saves, product runtime state, existing browser profiles, or broad dotfiles
 - treat app-specific graphical failures as lower-layer Nix failures without evidence
 
 ## Package and launcher split
@@ -78,7 +78,7 @@ Browser-like launchers should set `CHROME_CONFIG_HOME`, `XDG_CONFIG_HOME`, and
 `XDG_CACHE_HOME` to Layer 7 experiment roots before launching, because some
 helpers such as Crashpad can otherwise write to default browser config paths
 even when `--user-data-dir` is set. Layer 7 should refuse or warn on paths that
-point at existing browser, Steam, FEX, ROM, save, or system locations.
+point at existing browser, product runtime state, ROM, save, or system locations.
 
 ## Nix-backed binary proof
 
@@ -117,7 +117,7 @@ Stop Layer 7 or switch candidate apps if:
 
 - the app requires mutating forbidden base OS or user-data surfaces
 - the launcher cannot prove a Nix-backed binary origin
-- graphical launch strands SSH, Sway, EmulationStation, Steam/FEX, or recovery
+- graphical launch strands SSH, Sway, EmulationStation, product application runtimes, or recovery
 - app state grows without a clear cleanup path
 - Layer 6 activation cannot deactivate the launcher cleanly
 - app-specific compatibility failures dominate and no useful candidate remains

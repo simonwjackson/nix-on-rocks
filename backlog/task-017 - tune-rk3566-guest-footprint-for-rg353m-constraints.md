@@ -26,7 +26,7 @@ RG353M has much less CPU, GPU, and RAM headroom than SM8550 devices, so the gues
 - [ ] Memory, service footprint, and SD-card storage pressure are measured after SD boot and recorded in an acceptance or performance note.
 - [ ] Graphics defaults prefer Panfrost/OpenGL or GLES paths unless hardware evidence from the SD-booted lane proves a better Mali strategy.
 - [ ] Defaults avoid depending on eMMC swap, eMMC state directories, or Android replacement.
-- [ ] Deferred high-end features such as Cemu, Steam, Moonlight hardware decode, or proprietary libmali Vulkan are documented as separate follow-up work if still desired.
+- [ ] Deferred high-end features such as Cemu, Moonlight hardware decode, or proprietary libmali Vulkan are documented as separate follow-up work if still desired.
 
 ## Related
 

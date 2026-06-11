@@ -5,7 +5,7 @@
 SM8550 ROCKNIX boots a NixOS guest as the primary product experience while
 ROCKNIX remains the minimal host substrate for boot, update, rollback, and
 explicit recovery. The guest owns product UX: display, audio, input handling,
-networking policy, product launch policy, Steam/Cemu launchers, and
+networking policy, product launch policy, Cemu and product launchers, and
 guest-specific documentation.
 
 ## Current contract
@@ -48,9 +48,9 @@ In:
 - `rocknix-recovery-toggle.service` is the explicit safety net: `/flash/rocknix.no-nspawn`
   or `rocknix.safe=1` routes boot to the legacy ROCKNIX target.
 - Guest NixOS modules own substrate behavior: display/Sway, audio/PipeWire,
-  WirePlumber, NetworkManager, hardware buttons/lid, Steam helpers, Cemu package
-  and launchers. Product/appliance composition imports the substrate
-  contract and owns product service selection downstream.
+  WirePlumber, NetworkManager, hardware buttons/lid, and Cemu package/launcher
+  support. Product/appliance composition imports the substrate contract and owns
+  product service selection downstream.
 
 Out:
 
@@ -188,15 +188,14 @@ Logs live under `/var/log/rocknix-guest-soak*.log`.
 ## Substrate contract and downstream product consumption
 
 `nixosModules.rocknix-guest-base` is the product-blind downstream import
-contract. It imports the SM8550 guest modules, device/runtime plumbing, Steam
-runtime support, Moonlight support, and the root session D-Bus service without
-importing product modules or setting product service options. Steam runtime
-support is split: `packages/steam/` owns generic ARM64 Steam/FEX/pressure-vessel
-helpers and the aarch64 FHS run capsule, while `guest/modules/steam.nix` supplies
-SM8550 `/storage`, session, driver, uinput, and systemd adaptation. Substrate
-unit ordering names only substrate-owned units (the `main-space-*` services);
-a downstream product orders its own session units after the substrate anchors
-from its side. The substrate must not name product units.
+contract. It imports the SM8550 guest modules, device/runtime plumbing,
+Moonlight support, and the root session D-Bus service without importing product
+modules or setting product service options. Product-specific application
+runtimes are downstream-owned; the substrate keeps only neutral device/session
+anchors. Substrate unit ordering names only substrate-owned units (the
+`main-space-*` services); a downstream product orders its own session units
+after the substrate anchors from its side. The substrate must not name product
+units.
 
 The downstream product consumes nix-on-rocks by importing
 `nixosModules.rocknix-guest-base`, a specific SM8550 device profile, and

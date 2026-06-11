@@ -14,18 +14,6 @@ if [ -d "$repo_root/guest/launchers" ]; then
   done < <(find "$repo_root/guest/launchers" -maxdepth 1 -type f -name '*.sh' | sort)
 fi
 
-if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck \
-    "$repo_root/packages/steam/scripts/steam-arm64-bootstrap" \
-    "$repo_root/packages/steam/scripts/steam-arm64-seed" \
-    "$repo_root/packages/steam/scripts/steam-guest-native" \
-    "$repo_root/packages/steam/scripts/steam-guest-runtime-prep" \
-    "$repo_root/packages/steam/scripts/steam-guest-run"
-fi
-
 bash "$repo_root/scripts/tests/rk3566-payload-contract.sh"
-bash "$repo_root/packages/steam/tests/steam-package-contract.sh"
-bash "$repo_root/packages/steam/tests/steam-guest-runtime-prep-smoke.sh"
-bash "$repo_root/packages/steam/tests/steam-guest-run-smoke.sh"
 
 echo "check-shell-smoke: ok"

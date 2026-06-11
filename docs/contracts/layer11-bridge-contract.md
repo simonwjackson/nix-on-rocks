@@ -1,6 +1,6 @@
 # Layer 11 one-shot bridge contract
 
-Layer 11 exposes selected guest-backed capabilities through opt-in host entrypoints. It builds on Layer 10 proof-mode guest operations and must not weaken the Layer 10 safety boundary. ROCKNIX remains the host OS and owns boot, kernel, firmware, SSH recovery, Sway/EmulationStation, Steam/FEX, image updates, and package-managed services.
+Layer 11 exposes selected guest-backed capabilities through opt-in host entrypoints. It builds on Layer 10 proof-mode guest operations and must not weaken the Layer 10 safety boundary. ROCKNIX remains the host OS and owns boot, kernel, firmware, SSH recovery, Sway/EmulationStation, product application runtimes, image updates, and package-managed services.
 
 The first Layer 11 scope is one-shot bridges only: a host wrapper invokes a fixed guest command through `nixctl guest run`, returns its output, and leaves no guest process running.
 
@@ -20,10 +20,10 @@ Layer 11 must not:
 - start a guest during boot
 - enable or create any systemd service for bridges in the one-shot scope; Layer 11 one-shot bridges must not create a systemd service
 - replace ROCKNIX SSH or any other host recovery service
-- depend on guest availability for SSH, Sway, EmulationStation, Steam/FEX, update, or recovery
+- depend on guest availability for SSH, Sway, EmulationStation, product application runtimes, update, or recovery
 - expose alternate-port guest SSH; Layer 11 one-shot bridges must not expose guest SSH
 - run persistent guest daemons or background services
-- pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, Steam state, FEX state, or browser profiles
+- pass through graphics, audio, `/dev/input`, Wayland/Sway sockets, ROMs, saves, product runtime state, compatibility-runtime state, or browser profiles
 - mutate `/usr`, `/flash`, `/boot`, firmware, kernel modules, or package-managed services at runtime
 - accept arbitrary shell fragments as bridge definitions
 
@@ -79,7 +79,7 @@ Layer 11 cleanup may remove only:
 
 or their fixture-configured equivalents in tests.
 
-Cleanup must not touch host Nix state, Layer 6 state, Layer 8 state, ROMs, saves, Steam/FEX state, or broad `/storage` directories.
+Cleanup must not touch host Nix state, Layer 6 state, Layer 8 state, ROMs, saves, product runtime state, or broad `/storage` directories.
 
 ## Layer 10 dependency
 
