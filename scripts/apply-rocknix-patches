@@ -56,3 +56,48 @@ else
   printf '# Product payload disabled for DEVICE=%s\n' "${device}" > "${payload_env_dest}"
   printf 'Staged empty product payload environment for DEVICE=%s into %s\n' "${device}" "${payload_env_dest}"
 fi
+
+# Stage the payload-supplied boot-splash branding patch. The substrate is
+# product-blind here: when the selected product payload pins no branding
+# patch, rocknix-splash keeps the upstream ROCKNIX logo. When one is
+# pinned, fetch it (or take NIX_ON_ROCKS_BRANDING_SPLASH_PATCH as a local
+# file override), verify its SHA256 against the lock, and drop it into
+# the rocknix-splash package patch queue.
+splash_patch_dir="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-splash/patches"
+splash_patch_dest="${splash_patch_dir}/rocknix-splash-0001-product-boot-logo.patch"
+rm -f "${splash_patch_dest}"
+read_payload_field() {
+  env -i bash -c 'set -euo pipefail; . "$1"; printf "%s" "${!2-}"' bash "${payload_env_dest}" "$1"
+}
+branding_sha=""
+if [ -n "${SELECTED_PRODUCT}" ]; then
+  branding_sha=$(read_payload_field PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256)
+fi
+if [ -n "${branding_sha}" ]; then
+  branding_url=$(read_payload_field PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL)
+  branding_tmp="${splash_patch_dest}.tmp"
+  if [ -n "${NIX_ON_ROCKS_BRANDING_SPLASH_PATCH:-}" ]; then
+    [ -f "${NIX_ON_ROCKS_BRANDING_SPLASH_PATCH}" ] \
+      || { echo "missing branding splash patch override: ${NIX_ON_ROCKS_BRANDING_SPLASH_PATCH}" >&2; exit 1; }
+    mkdir -p "${splash_patch_dir}"
+    cp "${NIX_ON_ROCKS_BRANDING_SPLASH_PATCH}" "${branding_tmp}"
+  elif [ -n "${branding_url}" ]; then
+    mkdir -p "${splash_patch_dir}"
+    curl --fail --silent --show-error --location --retry 3 --retry-delay 2 \
+      --output "${branding_tmp}" "${branding_url}" \
+      || { echo "unable to fetch branding splash patch from ${branding_url}" >&2; exit 1; }
+  else
+    echo "product payload pins a branding splash patch but provides no URL; set NIX_ON_ROCKS_BRANDING_SPLASH_PATCH or pin PRODUCT_BRANDING_SPLASH_PATCH_URL" >&2
+    exit 1
+  fi
+  staged_sha=$(sha256sum "${branding_tmp}" | awk '{print $1}')
+  if [ "${staged_sha}" != "${branding_sha}" ]; then
+    rm -f "${branding_tmp}"
+    echo "branding splash patch SHA256 mismatch: expected ${branding_sha}, got ${staged_sha}" >&2
+    exit 1
+  fi
+  mv "${branding_tmp}" "${splash_patch_dest}"
+  printf 'Staged product boot-splash branding patch into %s\n' "${splash_patch_dest}"
+else
+  printf 'No product boot-splash branding pinned; upstream ROCKNIX splash retained\n'
+fi

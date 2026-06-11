@@ -124,6 +124,9 @@ modeled_fields=(
   PKG_NIX_GUEST_ROOTFS_SEED_SHA256
   PKG_NIX_GUEST_ROOTFS_SEED_URL
   PKG_NIX_GUEST_ROOTFS_SEED_URLS
+  PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_ARCHIVE
+  PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256
+  PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL
 )
 
 loaded_fields=$(load_shell_fields "${product_lock}" "${product_fields[@]}") \
@@ -179,6 +182,21 @@ for field in "${modeled_fields[@]}"; do
   package_values["${field}"]="${!field-}"
   require_equal "${field}" "${package_values[${field}]}" "${rendered_values[${field}]}"
 done
+
+# The boot-splash branding seam: a pinned branding patch must be staged
+# into the rocknix-splash patch queue with matching bytes; an unpinned
+# one must leave the upstream splash untouched.
+splash_patch_dest="${work_dir}/projects/ROCKNIX/packages/tools/rocknix-splash/patches/rocknix-splash-0001-product-boot-logo.patch"
+branding_sha="${rendered_values[PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256]}"
+if [ -n "${branding_sha}" ]; then
+  [ -f "${splash_patch_dest}" ] \
+    || fail "staged splash branding patch missing: ${splash_patch_dest}; run scripts/apply-rocknix-patches first"
+  staged_branding_sha=$(sha256sum "${splash_patch_dest}" | awk '{print $1}')
+  require_equal staged_splash_branding_sha256 "${staged_branding_sha}" "${branding_sha}"
+else
+  [ ! -f "${splash_patch_dest}" ] \
+    || fail "staged splash branding patch must be absent when the product payload pins none: ${splash_patch_dest}"
+fi
 
 printf 'Verified active product payload seam for %s %s via %s\n' \
   "${package_values[PKG_NIX_GUEST_AUTHORITY_REPO]}" "${package_values[PKG_NIX_GUEST_REV]}" "${staged_payload_env}"

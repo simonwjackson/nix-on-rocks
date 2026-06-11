@@ -122,6 +122,9 @@ require_equal PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE "${PKG_NIX_GUEST_ROOTFS_SEED_ARC
 require_equal PKG_NIX_GUEST_ROOTFS_SEED_SHA256 "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256:-}" "${PRODUCT_ROOTFS_SEED_SHA256}"
 require_equal PKG_NIX_GUEST_ROOTFS_SEED_URL "${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}" "${PRODUCT_ROOTFS_SEED_URL}"
 require_equal PKG_NIX_GUEST_ROOTFS_SEED_URLS "${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-}" "${PRODUCT_ROOTFS_SEED_URLS}"
+require_equal PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_ARCHIVE "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_ARCHIVE:-}" "${PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE:-}"
+require_equal PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256 "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256:-}" "${PRODUCT_BRANDING_SPLASH_PATCH_SHA256:-}"
+require_equal PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL:-}" "${PRODUCT_BRANDING_SPLASH_PATCH_URL:-}"
 
 case "${PRODUCT_AUTHORITY_REPO}" in
   */*) : ;;
@@ -132,12 +135,15 @@ fetch_tmp=$(mktemp -d)
 source_bytes="${fetch_tmp}/source.tar.gz"
 seed_part_a="${fetch_tmp}/seed-a.bin"
 seed_part_b="${fetch_tmp}/seed-b.bin"
+branding_bytes="${fetch_tmp}/branding.patch"
 fetch_env="${fetch_tmp}/payload.env"
 printf 'source-bytes' > "${source_bytes}"
 printf 'seed-' > "${seed_part_a}"
 printf 'bytes' > "${seed_part_b}"
+printf -- '--- a/main.c\n+++ b/main.c\n' > "${branding_bytes}"
 source_sha=$(sha256sum "${source_bytes}" | awk '{print $1}')
 seed_sha=$(cat "${seed_part_a}" "${seed_part_b}" | sha256sum | awk '{print $1}')
+branding_fetch_sha=$(sha256sum "${branding_bytes}" | awk '{print $1}')
 {
   sed \
     -e "s|^PKG_NIX_GUEST_SHA256=.*|PKG_NIX_GUEST_SHA256=${source_sha}|" \
@@ -145,9 +151,21 @@ seed_sha=$(cat "${seed_part_a}" "${seed_part_b}" | sha256sum | awk '{print $1}')
     -e "s|^PKG_NIX_GUEST_ROOTFS_SEED_SHA256=.*|PKG_NIX_GUEST_ROOTFS_SEED_SHA256=${seed_sha}|" \
     -e 's|^PKG_NIX_GUEST_ROOTFS_SEED_URL=.*|PKG_NIX_GUEST_ROOTFS_SEED_URL=|' \
     -e "s|^PKG_NIX_GUEST_ROOTFS_SEED_URLS=.*|PKG_NIX_GUEST_ROOTFS_SEED_URLS=\"file://${seed_part_a} file://${seed_part_b}\"|" \
+    -e "s|^PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_ARCHIVE=.*|PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_ARCHIVE=branding-test.patch|" \
+    -e "s|^PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256=.*|PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256=${branding_fetch_sha}|" \
+    -e "s|^PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL=.*|PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL=file://${branding_bytes}|" \
     "${rendered_env}"
 } > "${fetch_env}"
 "${fetch_verifier}" --payload-env "${fetch_env}" >/dev/null
+sed -i "s|^PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256=.*|PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256=${seed_sha}|" "${fetch_env}"
+set +e
+fetch_out=$("${fetch_verifier}" --payload-env "${fetch_env}" 2>&1)
+fetch_status=$?
+set -e
+[ "${fetch_status}" -ne 0 ] || fail "verify-product-payload-fetches should fail for branding SHA mismatch"
+printf '%s\n' "${fetch_out}" | grep -q "splash branding patch SHA256 mismatch" \
+  || fail "verify-product-payload-fetches failure should mention splash branding patch SHA256 mismatch; output was: ${fetch_out}"
+sed -i "s|^PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256=.*|PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256=${branding_fetch_sha}|" "${fetch_env}"
 sed -i 's/^PKG_NIX_GUEST_ROOTFS_SEED_SHA256=.*/PKG_NIX_GUEST_ROOTFS_SEED_SHA256=deadbeef/' "${fetch_env}"
 set +e
 fetch_out=$("${fetch_verifier}" --payload-env "${fetch_env}" 2>&1)
@@ -262,6 +280,42 @@ if [ -f "${package_mk}" ]; then
   sed -i '/^post_install() {/a printf -v "PKG_NIX_GUEST_REV" '\''%s'\'' '\''runtime-mutation'\''' "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk"
   expect_verifier_failure "${tmp_work}" "independent PKG_NIX_GUEST"
   rm -rf "${tmp_work}"
+
+  # Branding splash seam, unpinned case: a stray staged branding patch
+  # must fail verification when the lock pins none.
+  if [ -z "${PRODUCT_BRANDING_SPLASH_PATCH_SHA256:-}" ]; then
+    tmp_work=$(mktemp -d)
+    copy_package_fixture "${tmp_work}"
+    mkdir -p "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-splash/patches"
+    printf 'stray\n' > "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-splash/patches/rocknix-splash-0001-product-boot-logo.patch"
+    expect_verifier_failure "${tmp_work}" "must be absent"
+    rm -rf "${tmp_work}"
+  fi
+
+  # Branding splash seam, pinned case: a synthesized branding pin must
+  # demand a staged patch with matching bytes and pass once staged.
+  (
+    product_backup=$(mktemp)
+    cp "${product_lock}" "${product_backup}"
+    trap 'mv "${product_backup}" "${product_lock}"' EXIT
+    branding_file=$(mktemp)
+    printf -- '--- a/main.c\n+++ b/main.c\n' > "${branding_file}"
+    branding_sha=$(sha256sum "${branding_file}" | awk '{print $1}')
+    sed -i \
+      -e "s|^PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE=.*|PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE=\"rocknix-splash-branding-${SELECTED_PRODUCT}-test.patch\"|" \
+      -e "s|^PRODUCT_BRANDING_SPLASH_PATCH_SHA256=.*|PRODUCT_BRANDING_SPLASH_PATCH_SHA256=\"${branding_sha}\"|" \
+      "${product_lock}"
+    tmp_work=$(mktemp -d)
+    copy_package_fixture "${tmp_work}"
+    expect_verifier_failure "${tmp_work}" "staged splash branding patch missing"
+    mkdir -p "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-splash/patches"
+    cp "${branding_file}" "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-splash/patches/rocknix-splash-0001-product-boot-logo.patch"
+    NIX_ON_ROCKS_WORKDIR="${tmp_work}" "${verifier}" --product "${SELECTED_PRODUCT}" >/dev/null \
+      || fail "verify-product-payload should accept a staged branding patch matching the lock"
+    printf 'tamper\n' >> "${tmp_work}/projects/ROCKNIX/packages/tools/rocknix-splash/patches/rocknix-splash-0001-product-boot-logo.patch"
+    expect_verifier_failure "${tmp_work}" "staged_splash_branding_sha256"
+    rm -rf "${tmp_work}" "${branding_file}"
+  )
 fi
 
 printf 'product-payload-contract: ok\n'

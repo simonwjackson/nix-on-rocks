@@ -51,6 +51,9 @@ product_fields=(
   PRODUCT_ROOTFS_SEED_SHA256
   PRODUCT_ROOTFS_SEED_URL
   PRODUCT_ROOTFS_SEED_URLS
+  PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE
+  PRODUCT_BRANDING_SPLASH_PATCH_SHA256
+  PRODUCT_BRANDING_SPLASH_PATCH_URL
 )
 
 loaded_fields=$(load_shell_fields "${product_lock}" "${product_fields[@]}") \
@@ -75,6 +78,24 @@ done
 product_authority_name="${PRODUCT_AUTHORITY_REPO##*/}"
 product_url="https://api.github.com/repos/${PRODUCT_AUTHORITY_REPO}/tarball/${PRODUCT_REV}"
 
+# Branding splash patch fields are an optional payload seam: an empty
+# archive means the product ships no boot-splash branding and the image
+# keeps the upstream ROCKNIX splash. When an archive is pinned, its
+# SHA256 must be pinned with it; the URL may stay empty only for local
+# override workflows (NIX_ON_ROCKS_BRANDING_SPLASH_PATCH).
+if [ -z "${PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE:-}" ]; then
+  [ -z "${PRODUCT_BRANDING_SPLASH_PATCH_SHA256:-}" ] \
+    || fail "PRODUCT_BRANDING_SPLASH_PATCH_SHA256 must be empty when no branding archive is pinned"
+  [ -z "${PRODUCT_BRANDING_SPLASH_PATCH_URL:-}" ] \
+    || fail "PRODUCT_BRANDING_SPLASH_PATCH_URL must be empty when no branding archive is pinned"
+else
+  case "${PRODUCT_BRANDING_SPLASH_PATCH_SHA256:-}" in
+    *[!0-9a-f]*|'') fail "PRODUCT_BRANDING_SPLASH_PATCH_SHA256 must be a lowercase hex digest" ;;
+  esac
+  [ "${#PRODUCT_BRANDING_SPLASH_PATCH_SHA256}" -eq 64 ] \
+    || fail "PRODUCT_BRANDING_SPLASH_PATCH_SHA256 must be a 64-character hex digest"
+fi
+
 emit PKG_NIX_GUEST_AUTHORITY_REPO "${PRODUCT_AUTHORITY_REPO}"
 emit PKG_NIX_GUEST_AUTHORITY_NAME "${product_authority_name}"
 emit PKG_NIX_GUEST_REV "${PRODUCT_REV}"
@@ -89,3 +110,6 @@ emit PKG_NIX_GUEST_ROOTFS_SEED_ARCHIVE "${PRODUCT_ROOTFS_SEED_ARCHIVE}"
 emit PKG_NIX_GUEST_ROOTFS_SEED_SHA256 "${PRODUCT_ROOTFS_SEED_SHA256}"
 emit PKG_NIX_GUEST_ROOTFS_SEED_URL "${PRODUCT_ROOTFS_SEED_URL:-}"
 emit PKG_NIX_GUEST_ROOTFS_SEED_URLS "${PRODUCT_ROOTFS_SEED_URLS}"
+emit PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_ARCHIVE "${PRODUCT_BRANDING_SPLASH_PATCH_ARCHIVE:-}"
+emit PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256 "${PRODUCT_BRANDING_SPLASH_PATCH_SHA256:-}"
+emit PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL "${PRODUCT_BRANDING_SPLASH_PATCH_URL:-}"

@@ -143,3 +143,7 @@ verify_fetch_hash() {
 verify_fetch_hash "product source" "${PKG_NIX_GUEST_SHA256}" "${PKG_NIX_GUEST_URL}"
 # shellcheck disable=SC2086 # Intentional split: URLS is an ordered whitespace-separated contract.
 verify_fetch_hash "rootfs seed" "${PKG_NIX_GUEST_ROOTFS_SEED_SHA256}" ${PKG_NIX_GUEST_ROOTFS_SEED_URLS:-${PKG_NIX_GUEST_ROOTFS_SEED_URL:-}}
+if [ -n "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL:-}" ]; then
+  require_nonempty PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256 "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256:-}"
+  verify_fetch_hash "splash branding patch" "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_SHA256}" "${PKG_NIX_GUEST_BRANDING_SPLASH_PATCH_URL}"
+fi
