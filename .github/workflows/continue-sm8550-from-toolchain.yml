@@ -8,6 +8,14 @@ on:
         required: false
         default: "26037562850"
         type: string
+      product:
+        description: "Product payload lock to consume"
+        required: true
+        type: choice
+        default: odin2portal
+        options:
+          - odin2portal
+          - thor
 
 permissions:
   contents: write
@@ -16,6 +24,7 @@ permissions:
 
 env:
   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  NIX_ON_ROCKS_PRODUCT: ${{ inputs.product }}
 
 jobs:
   context:
