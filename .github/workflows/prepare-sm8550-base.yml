@@ -5,8 +5,7 @@ on:
     inputs:
       toolchain_run_id:
         description: "Workflow run ID that uploaded 'aarch64-toolchain (SM8550)'"
-        required: false
-        default: "26037562850"
+        required: true
         type: string
       product:
         description: "Product payload lock to consume"
