@@ -1,3 +1,27 @@
+diff --git a/projects/ROCKNIX/devices/SM8550/linux/linux.aarch64.conf b/projects/ROCKNIX/devices/SM8550/linux/linux.aarch64.conf
+index 2b11b849fb..46fc7826ba 100644
+--- a/projects/ROCKNIX/devices/SM8550/linux/linux.aarch64.conf
++++ b/projects/ROCKNIX/devices/SM8550/linux/linux.aarch64.conf
+@@ -4735,6 +4735,7 @@ CONFIG_SND_PCM_ELD=y
+ CONFIG_SND_PCM_IEC958=y
+ CONFIG_SND_DMAENGINE_PCM=y
+ CONFIG_SND_HWDEP=y
++CONFIG_SND_SEQ_DEVICE=y
+ CONFIG_SND_RAWMIDI=y
+ CONFIG_SND_COMPRESS_OFFLOAD=y
+ CONFIG_SND_COMPRESS_ACCEL=y
+@@ -4752,7 +4753,10 @@ CONFIG_SND_CTL_FAST_LOOKUP=y
+ # CONFIG_SND_DEBUG is not set
+ # CONFIG_SND_CTL_INPUT_VALIDATION is not set
+ # CONFIG_SND_UTIMER is not set
+-# CONFIG_SND_SEQUENCER is not set
++CONFIG_SND_SEQUENCER=y
++CONFIG_SND_SEQ_DUMMY=y
++CONFIG_SND_SEQ_MIDI_EVENT=y
++CONFIG_SND_SEQ_MIDI=y
+ CONFIG_SND_DRIVERS=y
+ # CONFIG_SND_DUMMY is not set
+ CONFIG_SND_ALOOP=m
 diff --git a/projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayn-thor.dts b/projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayn-thor.dts
 index 5d802c93d3..a75441d128 100644
 --- a/projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayn-thor.dts
