@@ -36,6 +36,8 @@ Each intake review should record:
 
 A review that finds nothing relevant should still record the upstream range and `no relevant changes` outcome. This makes “not rebasing” an explicit decision rather than an omission.
 
+Use `scripts/upstream-intake-report` for periodic SM8550-focused reviews. Generated reports and the additive rebase ledger live under `docs/upstream-intake/`.
+
 ## Product invariants to check before import
 
 Any upstream import that touches these areas needs explicit review against the Nix-on-ROCK product boundary:

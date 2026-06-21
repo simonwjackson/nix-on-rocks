@@ -1,0 +1,413 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+if [ ! -d "${work_dir}/.git" ] && [[ "${repo_root}" == */.worktrees/* ]]; then
+  main_repo_root=${repo_root%%/.worktrees/*}
+  work_dir="${main_repo_root}/work/rocknix"
+fi
+output_dir="${repo_root}/docs/upstream-intake/runs"
+ledger_path="${repo_root}/docs/upstream-intake/ledger.md"
+report_date=${UPSTREAM_INTAKE_DATE:-$(date +%F)}
+fetch_upstream=yes
+apply_check=yes
+since_override=""
+to_ref=""
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/upstream-intake-report [options]
+
+Generate a dated upstream-intake report and append it to the upstream-intake
+ledger. Defaults compare upstream.lock's UPSTREAM_SHA to origin/UPSTREAM_REF in
+work/rocknix.
+
+Options:
+  --work-dir PATH        ROCKNIX git checkout to inspect (default: work/rocknix)
+  --since SHA           base commit to compare from (default: UPSTREAM_SHA)
+  --to REF              upstream ref/commit to compare to (default: origin/UPSTREAM_REF)
+  --date YYYY-MM-DD     report date for deterministic naming (default: today)
+  --output-dir PATH     report output directory (default: docs/upstream-intake/runs)
+  --ledger PATH         ledger path to update (default: docs/upstream-intake/ledger.md)
+  --no-fetch            do not fetch UPSTREAM_REF before comparing
+  --skip-apply-check    skip patch-queue apply forecast
+  -h, --help            show this help
+EOF
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --work-dir)
+      work_dir=$2
+      shift 2
+      ;;
+    --since)
+      since_override=$2
+      shift 2
+      ;;
+    --to)
+      to_ref=$2
+      shift 2
+      ;;
+    --date)
+      report_date=$2
+      shift 2
+      ;;
+    --output-dir)
+      output_dir=$2
+      shift 2
+      ;;
+    --ledger)
+      ledger_path=$2
+      shift 2
+      ;;
+    --no-fetch)
+      fetch_upstream=no
+      shift
+      ;;
+    --skip-apply-check)
+      apply_check=no
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "unknown option: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+
+# shellcheck source=../upstream.lock
+# shellcheck disable=SC1091
+. "${repo_root}/upstream.lock"
+
+[ -d "${work_dir}/.git" ] || fail "ROCKNIX checkout not found: ${work_dir}"
+git -C "${work_dir}" rev-parse --git-dir >/dev/null || fail "not a git checkout: ${work_dir}"
+
+since_ref=${since_override:-${UPSTREAM_SHA}}
+if [ -z "${to_ref}" ]; then
+  to_ref="origin/${UPSTREAM_REF}"
+fi
+
+if [ "${fetch_upstream}" = yes ]; then
+  git -C "${work_dir}" fetch origin "${UPSTREAM_REF}" --prune
+fi
+
+git -C "${work_dir}" cat-file -e "${since_ref}^{commit}" \
+  || fail "base commit not found in ${work_dir}: ${since_ref}"
+to_sha=$(git -C "${work_dir}" rev-parse "${to_ref}^{commit}") \
+  || fail "target ref not found in ${work_dir}: ${to_ref}"
+since_sha=$(git -C "${work_dir}" rev-parse "${since_ref}^{commit}")
+short_since=$(git -C "${work_dir}" rev-parse --short=10 "${since_sha}")
+short_to=$(git -C "${work_dir}" rev-parse --short=10 "${to_sha}")
+range="${since_sha}..${to_sha}"
+commit_count=$(git -C "${work_dir}" rev-list --count "${range}")
+
+mkdir -p "${output_dir}" "$(dirname -- "${ledger_path}")"
+report_name="${report_date}-${short_since}-to-${short_to}-sm8550.md"
+report_path="${output_dir}/${report_name}"
+ledger_dir_for_link=$(dirname -- "${ledger_path}")
+if [[ "${report_path}" == "${ledger_dir_for_link}"/* ]]; then
+  relative_report_path=${report_path#"${ledger_dir_for_link}/"}
+elif command -v realpath >/dev/null 2>&1; then
+  relative_report_path=$(realpath --relative-to="${ledger_dir_for_link}" "${report_path}")
+else
+  relative_report_path=${report_path#"${repo_root}/"}
+fi
+
+changed_paths_file=$(mktemp)
+hardware_paths_file=$(mktemp)
+common_paths_file=$(mktemp)
+patch_paths_file=$(mktemp)
+overlap_paths_file=$(mktemp)
+trap 'rm -f "${changed_paths_file}" "${hardware_paths_file}" "${common_paths_file}" "${patch_paths_file}" "${overlap_paths_file}"' EXIT
+
+git -C "${work_dir}" diff --name-only "${range}" | sort > "${changed_paths_file}"
+
+# SM8550-specific paths exist only for the SM8550 device family, Thor, or
+# SM8550 operator docs. Add new SM8550 device paths here when upstream adds
+# them. Put Qualcomm-shared package paths in is_common_hardware_path instead.
+is_sm8550_hardware_path() {
+  case "$1" in
+    documentation/PER_DEVICE_DOCUMENTATION/SM8550/*|\
+    projects/ROCKNIX/devices/SM8550/*|\
+    projects/ROCKNIX/packages/hardware/quirks/platforms/SM8550/*|\
+    projects/ROCKNIX/packages/hardware/quirks/devices/AYN\ Thor/*|\
+    projects/ROCKNIX/packages/sysutils/systemd/hwdb.d/61-thor-ft5x06.hwdb)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+# Common Qualcomm/hardware paths can affect SM8550 behavior even though the
+# path is shared with other chipsets or devices. Add paths here when upstream
+# changes can alter SM8550 build flags, kernel/display/input behavior, or
+# hardware-facing host fallback behavior.
+is_common_hardware_path() {
+  case "$1" in
+    config/arch.aarch64|\
+    config/arch.arm|\
+    projects/ROCKNIX/packages/linux/*|\
+    projects/ROCKNIX/packages/compat/fex-emu/*|\
+    projects/ROCKNIX/packages/apps/gamescope/*|\
+    projects/ROCKNIX/packages/apps/mangohud/*|\
+    projects/ROCKNIX/packages/tools/inputplumber/*|\
+    projects/ROCKNIX/packages/rocknix/sources/scripts/rocknix-fake-suspend|\
+    projects/ROCKNIX/packages/emulators/standalone/scummvmsa/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+while IFS= read -r path; do
+  [ -n "${path}" ] || continue
+  if is_sm8550_hardware_path "${path}"; then
+    printf '%s\n' "${path}" >> "${hardware_paths_file}"
+  elif is_common_hardware_path "${path}"; then
+    printf '%s\n' "${path}" >> "${common_paths_file}"
+  fi
+done < "${changed_paths_file}"
+
+if [ -d "${repo_root}/patches/rocknix" ]; then
+  while IFS= read -r line; do
+    line=${line#*:diff --git a/}
+    path=${line%% b/*}
+    [ -n "${path}" ] && printf '%s\n' "${path}"
+  done < <(grep -R '^diff --git a/' "${repo_root}/patches/rocknix"/*.patch 2>/dev/null || true) \
+    | sort -u > "${patch_paths_file}"
+fi
+
+if [ -s "${patch_paths_file}" ]; then
+  comm -12 "${changed_paths_file}" "${patch_paths_file}" > "${overlap_paths_file}" || true
+fi
+
+markdown_list_file() {
+  local file=$1
+  local limit=${2:-80}
+  if [ ! -s "${file}" ]; then
+    printf '_No matches._\n'
+    return
+  fi
+  sed -n "1,${limit}p" "${file}" | sed 's/^/- `/' | sed 's/$/`/'
+  local total
+  total=$(wc -l < "${file}" | tr -d ' ')
+  if [ "${total}" -gt "${limit}" ]; then
+    printf -- '- _%s more omitted._\n' "$((total - limit))"
+  fi
+}
+
+markdown_command_lines() {
+  local limit=$1
+  shift
+  local tmp
+  tmp=$(mktemp)
+  "$@" > "${tmp}" || true
+  markdown_list_file "${tmp}" "${limit}"
+  rm -f "${tmp}"
+}
+
+apply_forecast() {
+  if [ "${apply_check}" != yes ]; then
+    printf '_Skipped by --skip-apply-check._\n'
+    return
+  fi
+  if [ ! -f "${repo_root}/patches/rocknix/series" ]; then
+    printf '_No patch series found._\n'
+    return
+  fi
+
+  local tmp checkout patch_name patch_path apply_err
+  tmp=$(mktemp -d)
+  apply_err=$(mktemp)
+  checkout="${tmp}/rocknix"
+  if ! git clone -q --no-checkout "${work_dir}" "${checkout}"; then
+    rm -f "${apply_err}"
+    rm -rf "${tmp}"
+    printf '_Could not clone work checkout for apply forecast._\n'
+    return
+  fi
+  git -C "${checkout}" checkout -q "${to_sha}" || {
+    rm -f "${apply_err}"
+    rm -rf "${tmp}"
+    printf '_Could not check out target SHA for apply forecast._\n'
+    return
+  }
+
+  while IFS= read -r patch_name; do
+    case "${patch_name}" in
+      ''|'#'*) continue ;;
+    esac
+    patch_path="${repo_root}/patches/rocknix/${patch_name}"
+    if [ ! -f "${patch_path}" ]; then
+      printf -- '- `%s`: missing from patch queue\n' "${patch_name}"
+      rm -f "${apply_err}"
+      rm -rf "${tmp}"
+      return
+    fi
+    if git -C "${checkout}" apply --check --whitespace=nowarn "${patch_path}" >"${apply_err}" 2>&1; then
+      git -C "${checkout}" apply --whitespace=nowarn "${patch_path}" >/dev/null 2>&1 || true
+      printf -- '- `%s`: clean\n' "${patch_name}"
+    else
+      printf -- '- `%s`: **fails**\n' "${patch_name}"
+      sed 's/^/  /' "${apply_err}"
+      rm -f "${apply_err}"
+      rm -rf "${tmp}"
+      return
+    fi
+  done < "${repo_root}/patches/rocknix/series"
+
+  rm -f "${apply_err}"
+  rm -rf "${tmp}"
+}
+
+{
+  cat <<EOF
+# SM8550 upstream intake: ${short_since} → ${short_to}
+
+- Date: ${report_date}
+- Upstream repo: \`${UPSTREAM_REPO}\`
+- Upstream ref: \`${UPSTREAM_REF}\`
+- Compared range: \`${short_since}..${short_to}\`
+- Full base SHA: \`${since_sha}\`
+- Full target SHA: \`${to_sha}\`
+- Commit count: ${commit_count}
+
+## Purpose
+
+This report is an additive intake record. It does not switch the product lane to
+this upstream SHA. Use it to accumulate rebase knowledge until a deliberate
+upstream-pin bump is planned.
+
+## SM8550-specific hardware paths
+
+EOF
+  markdown_list_file "${hardware_paths_file}" 120
+
+  cat <<'EOF'
+
+## Shared hardware / Qualcomm-adjacent paths
+
+EOF
+  markdown_list_file "${common_paths_file}" 120
+
+  cat <<'EOF'
+
+## Relevant upstream commits by message
+
+EOF
+  markdown_command_lines 120 git -C "${work_dir}" log --oneline --reverse --regexp-ignore-case \
+    --grep='SM8550' --grep='Snapdragon' --grep='cortex-x3' --grep='Qualcomm' \
+    --grep='qcom' --grep='msm' --grep='AYN Thor' --grep='touchscreen' \
+    --grep='thermal' --grep='armv9' "${range}"
+
+  cat <<'EOF'
+
+## Patch-queue overlap forecast
+
+These upstream-changed files are also touched by `patches/rocknix/*.patch`.
+They are the likely manual rebase surface.
+
+EOF
+  markdown_list_file "${overlap_paths_file}" 160
+
+  cat <<'EOF'
+
+## Patch application forecast
+
+EOF
+  apply_forecast
+
+  cat <<'EOF'
+
+## Intake ledger candidates
+
+Promote items from this generated section into `docs/upstream-intake/ledger.md`
+when they need a durable decision or validation gate.
+
+| Candidate | Evidence to inspect | Decision / validation needed | Status |
+|---|---|---|---|
+EOF
+  if grep -q '^projects/ROCKNIX/devices/SM8550/options$' "${changed_paths_file}"; then
+    printf '| SM8550 options / build flags | `projects/ROCKNIX/devices/SM8550/options` | Preserve Nix-on-ROCK cgroup v2, nspawn, and minimal-host invariants while accepting useful upstream CPU flag changes. | open |\n'
+  fi
+  if grep -q '^projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayn-thor.dts$' "${changed_paths_file}"; then
+    printf '| Thor DTS / touchscreen naming | `projects/ROCKNIX/devices/SM8550/linux/dts/qcom/qcs8550-ayn-thor.dts` | Choose the stable guest-facing touchscreen identifiers before rebasing. | open |\n'
+  fi
+  if grep -q '^projects/ROCKNIX/devices/SM8550/patches/linux/0505-msm_gem-lock-before-put_iova_spaces.patch$' "${changed_paths_file}" || grep -q '^projects/ROCKNIX/packages/linux/patches/7.0/' "${changed_paths_file}"; then
+    printf '| Qualcomm display/GPU kernel patches | `projects/ROCKNIX/*linux*` | Validate guest sway, gamescope/Steam fallback, suspend/resume, and V4L2/DRM workloads. | open |\n'
+  fi
+  if grep -q '^projects/ROCKNIX/devices/SM8550/filesystem/usr/share/inputplumber/' "${changed_paths_file}"; then
+    printf '| SM8550 InputPlumber maps | `projects/ROCKNIX/devices/SM8550/filesystem/usr/share/inputplumber/` | Decide whether guest-owned maps should follow upstream virtual-device and hotkey changes. | open |\n'
+  fi
+
+  cat <<'EOF'
+
+## Rebase starting notes
+
+- Do not treat this report as approval to bump `upstream.lock`.
+- Start a future rebase by reading this report plus `docs/upstream-intake/ledger.md`.
+- Re-run this script after resolving conflicts to refresh the patch-queue forecast.
+EOF
+} > "${report_path}"
+
+if [ ! -f "${ledger_path}" ]; then
+  cat > "${ledger_path}" <<'EOF'
+# Upstream Intake Ledger
+
+This ledger accumulates ROCKNIX upstream changes that matter to the SM8550
+Nix-on-ROCK product lane. Generated run reports live under
+`docs/upstream-intake/runs/`; durable decisions and unresolved rebase work stay
+here until the upstream pin is deliberately moved.
+
+## Run index
+
+EOF
+fi
+
+ledger_entry="- ${report_date}: [${short_since} → ${short_to}](${relative_report_path}) — ${commit_count} upstream commits reviewed."
+if ! grep -F -q "${relative_report_path}" "${ledger_path}"; then
+  ledger_tmp=$(mktemp)
+  awk -v entry="${ledger_entry}" '
+    /^## Run index[[:space:]]*$/ {
+      print
+      in_index = 1
+      next
+    }
+    in_index && /^## / {
+      if (!inserted) {
+        print entry
+        print ""
+        inserted = 1
+      }
+      in_index = 0
+    }
+    { print }
+    END {
+      if (in_index && !inserted) {
+        print entry
+      } else if (!inserted) {
+        print ""
+        print "## Run index"
+        print ""
+        print entry
+      }
+    }
+  ' "${ledger_path}" > "${ledger_tmp}"
+  mv "${ledger_tmp}" "${ledger_path}"
+fi
+
+printf 'Wrote %s\n' "${report_path}"
+printf 'Updated %s\n' "${ledger_path}"

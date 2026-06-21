@@ -14,6 +14,7 @@ if [ -d "$repo_root/guest/launchers" ]; then
   done < <(find "$repo_root/guest/launchers" -maxdepth 1 -type f -name '*.sh' | sort)
 fi
 
+bash "$repo_root/scripts/tests/upstream-intake-report.sh"
 bash "$repo_root/scripts/tests/rk3566-payload-contract.sh"
 
 echo "check-shell-smoke: ok"
