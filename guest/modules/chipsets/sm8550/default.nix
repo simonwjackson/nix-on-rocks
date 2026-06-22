@@ -23,97 +23,10 @@ let
 in
 {
   imports = [
+    ../../device-interface.nix
     ./audio.nix
     ./video.nix
   ];
-
-  options.rocknix.device = {
-    id = mkOption {
-      type = types.str;
-      description = "Device variant selected for the guest profile.";
-    };
-
-    display.swayDeviceConfig = mkOption {
-      type = types.lines;
-      description = "Device-specific sway output and touch-routing block.";
-    };
-
-    input = {
-      powerEventNames = mkOption {
-        type = types.listOf types.str;
-        description = "Kernel input device names that may emit KEY_POWER.";
-      };
-
-      volumeDownEventNames = mkOption {
-        type = types.listOf types.str;
-        description = "Kernel input device names that may emit KEY_VOLUMEDOWN.";
-      };
-
-      volumeUpLidEventNames = mkOption {
-        type = types.listOf types.str;
-        description = "Kernel input device names that may emit KEY_VOLUMEUP and/or SW_LID.";
-      };
-
-      rawGamepadEventNames = mkOption {
-        type = types.listOf types.str;
-        description = "Raw gamepad event device names hidden after the input daemon claims them.";
-      };
-
-      virtualGamepadEventNames = mkOption {
-        type = types.listOf types.str;
-        description = "Virtual gamepad event device names that prove the input daemon is ready.";
-      };
-    };
-
-    audio = {
-      ucmPackage = mkOption {
-        type = types.package;
-        description = "ALSA UCM package used by the guest-owned audio stack.";
-      };
-
-      api = mkOption {
-        type = types.enum [ "pulseaudio" ];
-        description = "Neutral audio API the device exposes to user-space.";
-      };
-
-      card = mkOption {
-        type = types.str;
-        description = "ALSA card name used for optional UCM activation.";
-      };
-
-      defaultSink = {
-        pcm = mkOption {
-          type = types.nullOr types.str;
-          description = "ALSA PCM backing the substrate-bootstrapped default PulseAudio sink.";
-        };
-
-        name = mkOption {
-          type = types.str;
-          description = "PulseAudio sink name created when defaultSink.pcm is set.";
-        };
-
-        description = mkOption {
-          type = types.str;
-          description = "Human-readable description applied to the bootstrapped sink.";
-        };
-
-        ucmVerb = mkOption {
-          type = types.nullOr types.str;
-          description = "Optional UCM verb to activate before loading the sink.";
-        };
-
-        ucmDevice = mkOption {
-          type = types.nullOr types.str;
-          description = "Optional UCM device to enable after the verb is set.";
-        };
-      };
-    };
-
-    performance.cemuAffinityMask = mkOption {
-      type = types.str;
-      description = "Default Cemu CPU affinity mask for this device.";
-    };
-  };
 
   options.rocknix.sm8550 = {
     deviceId = mkOption {

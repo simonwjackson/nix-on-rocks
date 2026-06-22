@@ -1,22 +1,43 @@
-# Guest PipeWire Has Only Dummy Sink When Staged Udev Misses Sound Records
+# Guest PipeWire Has Only Dummy Sink When Guest Udev Misses Sound Records
 
 Date: 2026-05-13
+Updated: 2026-06-22
 
 ## Problem
 
-On SM8550/Thor main-space, audio can fail even though the obvious services and device nodes look healthy:
+In a ROCKNIX systemd-nspawn guest, audio can fail even though the obvious
+services and device nodes look healthy:
 
-- `rocknix-pipewire.service`, `rocknix-wireplumber.service`, and `rocknix-pipewire-pulse.service` are active.
-- `/dev/snd/controlC0`, playback PCMs, and `/proc/asound/cards` are visible inside the guest.
-- `pactl` / `wpctl` show only `auto_null` / `Dummy Output` and no real ALSA sinks.
+- `main-space-pipewire.service`, `main-space-wireplumber.service`, and
+  `main-space-pipewire-pulse.service` are active.
+- `/dev/snd/controlC*`, playback PCMs, and `/proc/asound/cards` are visible
+  inside the guest.
+- `pactl` / `wpctl` show only `auto_null` / `Dummy Output` and no real ALSA
+  sinks.
+
+This has been observed on SM8550 devices and RK3566/RG353M-style guests when
+host-bound sound cards are visible in sysfs but card-level udev metadata is not
+usable inside the guest.
 
 ## Root Cause
 
-The host binds `/dev/snd` live into the guest, but binds `/run/udev` from a staged snapshot at `/run/.guest-udev`.
+`/dev/snd` is not enough for WirePlumber. WirePlumber coldplugs ALSA cards via
+udev properties, and a host-bound sound card can appear inside the guest with
+only minimal sysfs data such as:
 
-If `rocknix-guest-udev-stage` snapshots host `/run/udev` before the sound control record exists, the guest gets ALSA device nodes without matching udev metadata. WirePlumber then cannot discover/export the ALSA card and falls back to a dummy sink.
+```text
+DEVPATH=/devices/platform/sound/sound/card0
+SUBSYSTEM=sound
+```
 
-This is a timing bug in the host-side udev staging boundary, not a guest PipeWire service-liveness bug.
+When the guest lacks a corresponding `/run/udev/data/+sound:card*` record with
+`SOUND_INITIALIZED=1` and stable path identity, WirePlumber cannot discover or
+export the ALSA card and falls back to a dummy sink.
+
+Older host-side staging could also snapshot `/run/udev` before sound records
+existed. The durable substrate fix is guest-side: the guest owns its writable
+`/run/udev` database and repairs missing host-bound sound-card records before
+WirePlumber starts.
 
 ## Fast Diagnosis
 
@@ -29,46 +50,69 @@ export XDG_RUNTIME_DIR=/run/user/0
 export PIPEWIRE_RUNTIME_DIR=/run/user/0
 export PULSE_SERVER=unix:/run/user/0/pulse/native
 wpctl status
+pactl list short cards
 pactl list short sinks
-udevadm info -q property -n /dev/snd/controlC0
+udevadm info -q property -p /sys/class/sound/card0
 ```
 
-If `/proc/asound/cards` and `/dev/snd/*` are present but `wpctl status` shows only `Dummy Output`, inspect the staged udev DB on the host:
+If ALSA cards and `/dev/snd/*` exist but `pactl list short cards` is empty or
+`wpctl status` shows only `Dummy Output`, inspect the card records:
 
 ```sh
-ls -l /run/.guest-udev/data/c116:*
-grep -E 'DEVNAME=/dev/snd/controlC|SUBSYSTEM=sound' /run/.guest-udev/data/c116:* 2>/dev/null
+for card in /sys/class/sound/card*; do
+  echo "== $card =="
+  udevadm info -q property -p "$card" | grep -E '^(SOUND_INITIALIZED|ID_PATH|ID_PATH_TAG|SUBSYSTEM)='
+done
+ls -l /run/udev/data/+sound:card* 2>/dev/null
 ```
 
-A missing or empty `c116:<control-minor>` record means WirePlumber has no usable udev sound metadata.
+A missing `SOUND_INITIALIZED=1` or missing path identity means WirePlumber does
+not have enough card metadata to coldplug the device.
 
 ## Fix Shape
 
-Fix the host-side staging helper, not guest PipeWire:
+The guest base now provides `rocknix-sound-card-udev-hydrate.service`:
 
-- Wait before snapshotting `/run/udev` until the sound control device has a udev record.
-- Treat `E:DEVNAME=/dev/snd/controlC*` plus `E:SUBSYSTEM=sound` as sufficient readiness.
-- Do **not** wait for `E:ALSA_CARD_NUMBER`; ROCKNIX udev records may not include it.
+- runs after guest udev trigger/settle,
+- tries normal `udevadm trigger` first,
+- tolerates read-only sysfs `uevent` writes inside nspawn,
+- synthesizes only boot-scoped `/run/udev/data/+sound:card*` records for cards
+  that still lack `SOUND_INITIALIZED=1`,
+- derives `ID_PATH` / `ID_PATH_TAG` from `udevadm test-builtin path_id` or the
+  sysfs platform path instead of hard-coding a device such as `platform-sound`,
+- orders before `main-space-wireplumber.service`.
 
-Live recovery, if the image already has the fixed helper or if manually testing:
+The service is a substrate discovery repair. Device profiles still own route
+policy separately via `rocknix.device.audio.route.*`:
+
+- SM8550 UCM routes wait for the WirePlumber-created sink such as
+  `alsa_output.platform-sound.HiFi__Speaker__sink`.
+- RG353M currently keeps an explicit interim manual PCM route until a real
+  RK817 UCM/headphone route is validated.
+
+## Live Recovery
+
+After deploying an image with the fix:
 
 ```sh
-rocknix-guest-udev-stage
-systemctl restart rocknix-guest.service
-# or, for quick validation inside the already-running guest namespace, restart the guest PipeWire/WirePlumber units after re-staging.
+systemctl restart rocknix-sound-card-udev-hydrate.service main-space-wireplumber.service
+pactl list short cards
+pactl list short sinks
 ```
 
-Expected healthy result:
+Expected healthy result is at least one real ALSA card and a non-`auto_null`
+sink. For SM8550 speaker validation, the default route should be the declared
+WirePlumber/UCM sink, for example:
 
 ```text
-Audio
- ├─ Devices:
- │      Built-in Audio [alsa]
- ├─ Sinks:
- │      Built-in Audio Headphones Playback
- │  *   Built-in Audio Speaker playback
+alsa_card.platform-sound
+alsa_output.platform-sound.HiFi__Speaker__sink
 ```
 
 ## Prevention
 
-The soak checklist should not stop at "PipeWire is running". For guest-owned audio, assert that WirePlumber exported at least one non-dummy ALSA sink, or explicitly report `Dummy Output` as an audio discovery failure.
+The soak checklist should not stop at "PipeWire is running". For guest-owned
+audio, assert that WirePlumber exported at least one non-dummy ALSA sink, or
+explicitly report `Dummy Output` / `auto_null` as an audio discovery failure.
+For handheld volume validation, products should adjust Pulse's
+`@DEFAULT_SINK@` instead of hard-coding ALSA devices.

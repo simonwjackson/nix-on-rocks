@@ -3,6 +3,7 @@
 , devEnvConfiguration
 , thorConfiguration
 , odin2portalConfiguration
+, rg353mProfileConfiguration
 }:
 
 let
@@ -15,29 +16,46 @@ let
   wireplumber = services.main-space-wireplumber;
   inputplumber = services.inputplumber;
   hideRaw = services.rocknix-guest-hide-raw-gamepad;
+  hydrate = services.rocknix-sound-card-udev-hydrate;
   contains = needle: haystack: builtins.elem needle haystack;
+  hasInfix = pkgs.lib.hasInfix;
+  audioModuleSource = builtins.readFile ../../guest/modules/audio.nix;
   runtimeDir = "/run/user/${toString cfg.rocknix.session.runtimeDir.uid}";
   thorCfg = thorConfiguration.config;
   thorServices = thorCfg.systemd.services;
   thorBootstrap = thorServices.main-space-audio-sink-bootstrap;
   odinCfg = odin2portalConfiguration.config;
+  odinBootstrap = odinCfg.systemd.services.main-space-audio-sink-bootstrap;
+  rgCfg = rg353mProfileConfiguration.config;
+  rgServices = rgCfg.systemd.services;
+  rgBootstrap = rgServices.main-space-audio-sink-bootstrap;
 in
 helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (contains "multi-user.target" (services.bluetooth.wantedBy or [ ])) "Bluetooth starts during main-space boot")
   (assertContract (services ? main-space-pipewire) "main-space PipeWire service exists")
   (assertContract (services ? main-space-pipewire-pulse) "main-space PipeWire Pulse service exists")
   (assertContract (services ? main-space-wireplumber) "main-space WirePlumber service exists")
+  (assertContract (services ? rocknix-sound-card-udev-hydrate) "generic sound-card udev hydration service exists")
   (assertContract (contains "main-space-runtime-dir.service" (pipewire.after or [ ])) "PipeWire orders after runtime-dir anchor")
   (assertContract (contains "main-space-session-dbus.service" (pipewire.after or [ ])) "PipeWire orders after session D-Bus")
   (assertContract (contains "main-space-runtime-dir.service" (pulse.after or [ ])) "PipeWire Pulse orders after runtime-dir anchor")
   (assertContract (contains "main-space-pipewire.service" (pulse.after or [ ])) "PipeWire Pulse orders after PipeWire")
   (assertContract (contains "main-space-runtime-dir.service" (wireplumber.after or [ ])) "WirePlumber orders after runtime-dir anchor")
+  (assertContract (contains "rocknix-sound-card-udev-hydrate.service" (wireplumber.after or [ ])) "WirePlumber orders after sound-card udev hydration")
+  (assertContract (contains "main-space-wireplumber.service" (hydrate.before or [ ])) "sound-card udev hydration runs before WirePlumber")
   (assertContract (pipewire.environment.XDG_RUNTIME_DIR == runtimeDir) "PipeWire runtime dir is parameterized")
   (assertContract (pipewire.environment.PIPEWIRE_RUNTIME_DIR == runtimeDir) "PipeWire runtime env is parameterized")
   (assertContract (pipewire.environment.PULSE_SERVER == "unix:${runtimeDir}/pulse/native") "PipeWire Pulse server path is parameterized")
   (assertContract (pipewire.environment.ALSA_CONFIG_UCM2 != "") "PipeWire receives guest-owned UCM path")
   (assertContract (pipewire.environment.ALSA_CONFIG_UCM2 == "${cfg.rocknix.device.audio.ucmPackage}/share/alsa/ucm2") "PipeWire consumes the generic device UCM package")
   (assertContract (wireplumber.environment.ALSA_CONFIG_UCM2 == pipewire.environment.ALSA_CONFIG_UCM2) "WirePlumber uses same guest-owned UCM path")
+  (assertContract (!(services ? main-space-audio-sink-bootstrap)) "no default-route bootstrap is created when the route kind is none")
+  (assertContract (hasInfix "sink_exists()" audioModuleSource) "audio bootstrap uses exact sink-name matching helper")
+  (assertContract (hasInfix "expected WirePlumber sink" audioModuleSource) "audio bootstrap polls for declared WirePlumber/UCM sinks")
+  (assertContract (hasInfix "load-module module-alsa-sink" audioModuleSource) "audio bootstrap retains manual PCM sink loading")
+  (assertContract (hasInfix "failed to select declared default sink" audioModuleSource) "audio bootstrap fails when default sink selection fails")
+  (assertContract (hasInfix "cfg.route.expectedSink != \"\"" audioModuleSource) "wireplumber route validation rejects empty sink names")
+  (assertContract (hasInfix "cfg.route.pcm != \"\"" audioModuleSource) "manual route validation rejects empty PCMs")
   (assertContract (contains "c /dev/uinput 0600 root root - 10:223" cfg.systemd.tmpfiles.rules) "/dev/uinput tmpfiles rule exists")
   (assertContract cfg.services.inputplumber.enable "InputPlumber service is enabled")
   (assertContract (contains "main-space-sway-kiosk.service" (inputplumber.before or [ ])) "InputPlumber starts before fallback Sway")
@@ -52,11 +70,13 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   # into SDL_AUDIODRIVER / client-specific environment.
   (assertContract (cfg.rocknix.sm8550.audio.api == "pulseaudio") "SM8550 substrate exposes a PulseAudio-compatible audio API")
 
-  # Thor's substrate-owned speaker route. Bootstrap service must exist,
-  # order after the audio graph, and run before the fallback kiosk so the
-  # default sink is no longer `auto_null` by the time a session launches.
-  # Product sessions add their own ordering downstream.
-  (assertContract (thorServices ? main-space-audio-sink-bootstrap) "Thor substrate exposes a default-sink bootstrap service")
+  # Thor's substrate-owned speaker route is graph-owned by WirePlumber/UCM.
+  (assertContract (thorCfg.rocknix.device.audio.route.kind == "wireplumber-ucm") "Thor declares a WirePlumber/UCM route strategy")
+  (assertContract (thorCfg.rocknix.device.audio.route.expectedSink == "alsa_output.platform-sound.HiFi__Speaker__sink") "Thor declares the validated graph-created speaker sink")
+  (assertContract (thorCfg.rocknix.device.audio.defaultSink.pcm == null) "Thor no longer declares a direct speaker PCM")
+  (assertContract (thorCfg.rocknix.device.audio.route.ucmVerb == "HiFi") "Thor declares the speaker UCM verb")
+  (assertContract (thorCfg.rocknix.device.audio.route.ucmDevice == "Speaker") "Thor declares the speaker UCM device")
+  (assertContract (thorServices ? main-space-audio-sink-bootstrap) "Thor substrate exposes a default-route bootstrap service")
   (assertContract (thorBootstrap.serviceConfig.Type == "oneshot") "Thor sink bootstrap is oneshot")
   (assertContract (thorBootstrap.serviceConfig.RemainAfterExit == true) "Thor sink bootstrap remains active after success")
   (assertContract (contains "main-space-pipewire.service" (thorBootstrap.after or [ ])) "Thor sink bootstrap orders after PipeWire")
@@ -69,16 +89,24 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (thorBootstrap.environment.PULSE_SERVER == "unix:${thorBootstrap.environment.XDG_RUNTIME_DIR}/pulse/native") "Thor sink bootstrap retains PULSE_SERVER")
   (assertContract (thorBootstrap.environment.ALSA_CONFIG_UCM2 != "") "Thor sink bootstrap retains UCM path")
 
-  # Thor's measured speaker-route facts live in the device profile.
-  (assertContract (thorCfg.rocknix.sm8550.audio.defaultSink.pcm == "hw:0,0") "Thor declares the validated speaker PCM")
-  (assertContract (thorCfg.rocknix.sm8550.audio.defaultSink.name == "thor_speaker") "Thor declares a non-empty sink name")
-  (assertContract (thorCfg.rocknix.sm8550.audio.defaultSink.ucmVerb == "HiFi") "Thor declares the speaker UCM verb")
-  (assertContract (thorCfg.rocknix.sm8550.audio.defaultSink.ucmDevice == "Speaker") "Thor declares the speaker UCM device")
+  # Odin 2 Portal/Sobo now shares the same SM8550 WirePlumber/UCM route, not a
+  # Thor direct PCM or arbitrary default sink fallback.
+  (assertContract (odinCfg.rocknix.device.audio.route.kind == "wireplumber-ucm") "Odin 2 Portal declares a WirePlumber/UCM route strategy")
+  (assertContract (odinCfg.rocknix.device.audio.route.expectedSink == "alsa_output.platform-sound.HiFi__Speaker__sink") "Odin 2 Portal declares the validated graph-created speaker sink")
+  (assertContract (odinCfg.rocknix.device.audio.defaultSink.pcm == null) "Odin 2 Portal leaves the direct default-sink PCM null")
+  (assertContract (odinCfg.systemd.services ? main-space-audio-sink-bootstrap) "Odin 2 Portal selects the declared graph sink at boot")
+  (assertContract (odinBootstrap.serviceConfig.Type == "oneshot") "Odin 2 Portal route bootstrap is oneshot")
 
-  # Odin 2 Portal must not silently inherit Thor's speaker PCM. The
-  # bootstrap service is omitted until Odin's audio path is physically
-  # validated; the contract proves the absence rather than relying on a
-  # "happens to be null" coincidence.
-  (assertContract (odinCfg.rocknix.sm8550.audio.defaultSink.pcm == null) "Odin 2 Portal leaves the default-sink PCM null until physically validated")
-  (assertContract (!(odinCfg.systemd.services ? main-space-audio-sink-bootstrap)) "Odin 2 Portal does not auto-create a substrate-owned default sink")
+  # RG353M receives the same substrate audio services and hydration, while its
+  # speaker remains an explicit interim manual PCM route.
+  (assertContract (rgServices ? main-space-pipewire) "RG353M has main-space PipeWire")
+  (assertContract (rgServices ? main-space-wireplumber) "RG353M has main-space WirePlumber")
+  (assertContract (rgServices ? rocknix-sound-card-udev-hydrate) "RG353M has generic sound-card udev hydration")
+  (assertContract (contains "rocknix-sound-card-udev-hydrate.service" (rgServices.main-space-wireplumber.after or [ ])) "RG353M WirePlumber waits for sound-card hydration")
+  (assertContract (rgCfg.rocknix.device.audio.route.kind == "manual-pcm") "RG353M declares an explicit interim manual PCM route")
+  (assertContract (rgCfg.rocknix.device.audio.route.pcm == "hw:rk817ext,0") "RG353M uses stable RK817 card-name PCM facts")
+  (assertContract (rgCfg.rocknix.device.audio.route.sinkName == "rg353m_speaker") "RG353M declares the live-validated speaker sink name")
+  (assertContract (rgServices ? main-space-audio-sink-bootstrap) "RG353M creates a declared default-route bootstrap service")
+  (assertContract (contains "main-space-pipewire-pulse.service" (rgBootstrap.after or [ ])) "RG353M route bootstrap waits for PipeWire Pulse")
+  (assertContract (rgBootstrap.environment.ALSA_CONFIG_UCM2 == "${rgCfg.rocknix.device.audio.ucmPackage}/share/alsa/ucm2") "RG353M route bootstrap receives the generic device UCM path")
 ]

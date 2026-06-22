@@ -46,7 +46,9 @@ in
 {
   imports = [
     ../modules/base.nix
+    ../modules/device-interface.nix
     ../modules/udev.nix
+    ../modules/audio.nix
     ../modules/tools.nix
     ../modules/ssh.nix
     ../modules/chipsets/sm8550

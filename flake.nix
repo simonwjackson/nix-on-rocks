@@ -270,9 +270,9 @@
       # main-space.nix and the device profiles still resolve relative to this
       # store path.
       nixosModules = {
-        # Collapsed SM8550 chipset surface (device options + neutral
-        # audio/video capability imports). Replaces the legacy flat
-        # `./guest/modules/device.nix` module.
+        # Shared substrate surfaces plus chipset-specific defaults.
+        device-interface = ./guest/modules/device-interface.nix;
+        audio = ./guest/modules/audio.nix;
         sm8550 = ./guest/modules/chipsets/sm8550;
         rk3566 = ./guest/modules/rk3566.nix;
         rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix;
@@ -341,7 +341,8 @@
           };
           audio-input-systemd-contract = import ./nix/tests/audio-input-systemd-contract.nix {
             inherit pkgs baseConfiguration devEnvConfiguration
-              thorConfiguration odin2portalConfiguration;
+              thorConfiguration odin2portalConfiguration
+              rg353mProfileConfiguration;
           };
         }
       );

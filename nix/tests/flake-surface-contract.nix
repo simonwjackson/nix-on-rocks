@@ -69,6 +69,8 @@ helpers.runAssertions "rocknix-flake-surface-contract" [
   (assertContract (packages ? sm8550-ayn-odin2-ucm) "SM8550 UCM package alias is exposed")
   (assertContract (packages.cemu.drvPath != "") "packages.cemu has a derivation path")
   (assertContract (self.nixosModules ? rocknix-guest-base) "nixosModules.rocknix-guest-base is exposed")
+  (assertContract (self.nixosModules ? device-interface) "nixosModules.device-interface is exposed")
+  (assertContract (self.nixosModules ? audio) "nixosModules.audio is exposed")
   (assertContract (self.nixosModules ? odin2portal) "nixosModules.odin2portal is exposed")
   (assertContract (self.nixosModules ? thor) "nixosModules.thor is exposed")
   (assertContract (self.nixosModules ? sm8550) "nixosModules.sm8550 is exposed")

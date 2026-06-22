@@ -8,10 +8,10 @@
 
 let
   inherit (lib) mkForce mkOption types;
-  # Use upstream alsa-ucm-conf for RK817 card naming while bootstrapping a
-  # direct ALSA sink. WirePlumber does not auto-enumerate RK817 on RG353M in
-  # the guest, but `pactl load-module module-alsa-sink device=hw:1,0` was
-  # validated live on 2026-06-07 and moved RetroArch audio off auto_null.
+  # Use upstream alsa-ucm-conf for RK817 card naming while bootstrapping an
+  # explicit interim direct ALSA sink. WirePlumber discovery is now repaired by
+  # the generic sound-card udev hydrator, but RG353M stays on a manual speaker
+  # route until a real RK817 UCM/headphone route is validated.
   rk3566Ucm = pkgs.alsa-ucm-conf;
   # RG353M InputPlumber maps shipped in the guest closure so the in-guest
   # InputPlumber discovers them via XDG_DATA_DIRS
@@ -59,8 +59,17 @@ in
     audio = {
       ucmPackage = mkForce rk3566Ucm;
       card = mkForce "rk817ext";
+      route = {
+        kind = mkForce "manual-pcm";
+        pcm = mkForce "hw:rk817ext,0";
+        sinkName = mkForce "rg353m_speaker";
+        description = mkForce "RG353M speaker";
+        expectedSink = mkForce null;
+        ucmVerb = mkForce null;
+        ucmDevice = mkForce null;
+      };
       defaultSink = {
-        pcm = mkForce "hw:1,0";
+        pcm = mkForce "hw:rk817ext,0";
         name = mkForce "rg353m_speaker";
         description = mkForce "RG353M speaker";
         ucmVerb = mkForce null;

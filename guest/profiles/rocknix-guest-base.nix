@@ -1,8 +1,8 @@
-# Product-blind SM8550 guest substrate contract.
+# Product-blind ROCKNIX guest substrate contract.
 #
 # Downstream appliance flakes import this profile to get the ROCKNIX/Nix-on-Rocks
-# guest substrate: container baseline, SM8550 device facts, session plumbing,
-# display/audio/input/network/powerstate modules, and app
+# guest substrate: container baseline, generic device contract, chipset facts,
+# session plumbing, display/audio/input/network/powerstate modules, and app
 # package helpers. Product composition (client/server/kiosk selection,
 # Home-chord app launch policy, rootfs authority) lives downstream.
 #
@@ -20,10 +20,11 @@
 #     package/card, performance policy) and form-factor overrides.
 #   - `../modules/chipsets/sm8550/video.nix`   : neutral video decode
 #     capability (`rocknix.sm8550.video.decodeBackend`).
-#   - `../modules/chipsets/sm8550/audio.nix`   : main-space audio graph
-#     (PipeWire/PulseAudio/WirePlumber) plus a per-device
-#     default-sink bootstrap when `rocknix.sm8550.audio.defaultSink.pcm`
-#     is set on the device profile.
+#   - `../modules/device-interface.nix`        : neutral `rocknix.device.*`
+#     option schema consumed by substrate services.
+#   - `../modules/audio.nix`                   : main-space audio graph
+#     (PipeWire/PulseAudio/WirePlumber) plus per-device default-route
+#     bootstrap from `rocknix.device.audio.route.*`.
 #
 # Anything client- or appliance-specific (CLI argv, persistent product
 # env, kiosk service environment, controller mapping file paths)
@@ -84,12 +85,13 @@ in
 {
   imports = [
     ../modules/base.nix
+    ../modules/device-interface.nix
     ../modules/udev.nix
-    # SM8550 chipset surface: device options + neutral audio/video
-    # capabilities. The chipset folder collapses what was previously a
-    # flat device.nix / audio.nix pair so substrate facts live in one
-    # place and downstream consumers do not need to know the legacy
-    # layout.
+    ../modules/audio.nix
+    # SM8550 chipset surface: device defaults + neutral video capability.
+    # The generic device option schema and main-space audio graph live in
+    # platform-neutral modules above so RK3566 profiles do not depend on
+    # SM8550-owned declarations.
     ../modules/chipsets/sm8550
     ../modules/tools.nix
     ../modules/ssh.nix
