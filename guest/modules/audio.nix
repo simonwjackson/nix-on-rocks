@@ -36,6 +36,9 @@ let
     else
       explicitRoute;
   routeActive = effectiveRoute.kind != "none";
+  routeHasUcmVerb = effectiveRoute.ucmVerb != null;
+  routeHasUcmDevice = effectiveRoute.ucmDevice != null;
+  routeHasFullUcm = routeHasUcmVerb && routeHasUcmDevice;
   optionalLine = predicate: text: if predicate then text else "";
   routeTarget =
     if effectiveRoute.kind == "wireplumber-ucm" then
@@ -67,19 +70,20 @@ let
       exit 1
     fi
 
-    ${optionalLine (effectiveRoute.ucmVerb != null) ''
+    ${optionalLine routeHasFullUcm ''
+      ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg cfg.card} \
+        set _verb ${lib.escapeShellArg effectiveRoute.ucmVerb} \
+        set _enadev ${lib.escapeShellArg effectiveRoute.ucmDevice} \
+        >/dev/null || {
+          echo "main-space-audio-sink-bootstrap: failed to activate UCM ${effectiveRoute.ucmVerb}/${effectiveRoute.ucmDevice} on ${cfg.card}" >&2
+          exit 1
+        }
+    ''}
+    ${optionalLine (routeHasUcmVerb && !routeHasUcmDevice) ''
       ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg cfg.card} \
         set _verb ${lib.escapeShellArg effectiveRoute.ucmVerb} \
         >/dev/null || {
           echo "main-space-audio-sink-bootstrap: failed to activate UCM verb ${effectiveRoute.ucmVerb} on ${cfg.card}" >&2
-          exit 1
-        }
-    ''}
-    ${optionalLine (effectiveRoute.ucmDevice != null) ''
-      ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg cfg.card} \
-        set _enadev ${lib.escapeShellArg effectiveRoute.ucmDevice} \
-        >/dev/null || {
-          echo "main-space-audio-sink-bootstrap: failed to enable UCM device ${effectiveRoute.ucmDevice} on ${cfg.card}" >&2
           exit 1
         }
     ''}

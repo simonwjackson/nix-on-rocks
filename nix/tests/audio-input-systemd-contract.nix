@@ -52,6 +52,8 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (!(services ? main-space-audio-sink-bootstrap)) "no default-route bootstrap is created when the route kind is none")
   (assertContract (hasInfix "sink_exists()" audioModuleSource) "audio bootstrap uses exact sink-name matching helper")
   (assertContract (hasInfix "expected WirePlumber sink" audioModuleSource) "audio bootstrap polls for declared WirePlumber/UCM sinks")
+  (assertContract (hasInfix "routeHasFullUcm" audioModuleSource) "audio bootstrap combines full UCM activation in one alsaucm invocation")
+  (assertContract (hasInfix "set _verb" audioModuleSource && hasInfix "set _enadev" audioModuleSource) "audio bootstrap activates declared UCM verb/device")
   (assertContract (hasInfix "load-module module-alsa-sink" audioModuleSource) "audio bootstrap retains manual PCM sink loading")
   (assertContract (hasInfix "failed to select declared default sink" audioModuleSource) "audio bootstrap fails when default sink selection fails")
   (assertContract (hasInfix "cfg.route.expectedSink != \"\"" audioModuleSource) "wireplumber route validation rejects empty sink names")
