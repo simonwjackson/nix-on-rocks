@@ -60,7 +60,12 @@ in
 
       card = mkOption {
         type = types.str;
-        description = "ALSA card name used for optional UCM activation.";
+        description = "Kernel ALSA card id used for PCM/device addressing.";
+      };
+
+      ucmCard = mkOption {
+        type = types.str;
+        description = "ALSA UCM configuration id used with `alsaucm -c`. This may differ from the kernel card id.";
       };
 
       route = {

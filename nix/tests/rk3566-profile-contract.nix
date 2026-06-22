@@ -30,6 +30,7 @@ helpers.runAssertions "rocknix-rk3566-profile-contract" [
   (assertContract (cfg.rocknix.device.audio.ucmPackage != cfg.rocknix.sm8550.audio.ucmPackage) "RK3566 audio package does not reuse the SM8550 UCM package")
   (assertContract (hasInfix "alsa-ucm-conf" "${cfg.rocknix.device.audio.ucmPackage}") "RG353M uses the upstream ALSA UCM package instead of the empty placeholder")
   (assertContract (cfg.rocknix.device.audio.card == "rk817ext") "RG353M declares the captured RK817 ALSA card id")
+  (assertContract (cfg.rocknix.device.audio.ucmCard == "rk817ext") "RG353M declares the RK817 UCM card id")
   (assertContract (cfg.rocknix.device.audio.route.kind == "manual-pcm") "RG353M declares an explicit interim manual PCM route")
   (assertContract (cfg.rocknix.device.audio.route.pcm == "hw:rk817ext,0") "RG353M declares a stable RK817 card-name speaker PCM")
   (assertContract (cfg.rocknix.device.audio.defaultSink.pcm == "hw:rk817ext,0") "RG353M legacy default sink mirrors the stable RK817 speaker PCM")

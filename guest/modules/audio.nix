@@ -10,6 +10,7 @@ let
   cfg = config.rocknix.device.audio;
   ucmPackage = cfg.ucmPackage;
   ucmPath = "${ucmPackage}/share/alsa/ucm2";
+  ucmCard = cfg.ucmCard;
   uid = toString config.rocknix.session.runtimeDir.uid;
   runtimeDir = "/run/user/${uid}";
   audioServiceEnvironment = {
@@ -71,19 +72,19 @@ let
     fi
 
     ${optionalLine routeHasFullUcm ''
-      ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg cfg.card} \
+      ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg ucmCard} \
         set _verb ${lib.escapeShellArg effectiveRoute.ucmVerb} \
         set _enadev ${lib.escapeShellArg effectiveRoute.ucmDevice} \
         >/dev/null || {
-          echo "main-space-audio-sink-bootstrap: failed to activate UCM ${effectiveRoute.ucmVerb}/${effectiveRoute.ucmDevice} on ${cfg.card}" >&2
+          echo "main-space-audio-sink-bootstrap: failed to activate UCM ${effectiveRoute.ucmVerb}/${effectiveRoute.ucmDevice} on ${ucmCard}" >&2
           exit 1
         }
     ''}
     ${optionalLine (routeHasUcmVerb && !routeHasUcmDevice) ''
-      ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg cfg.card} \
+      ${pkgs.alsa-utils}/bin/alsaucm -c ${lib.escapeShellArg ucmCard} \
         set _verb ${lib.escapeShellArg effectiveRoute.ucmVerb} \
         >/dev/null || {
-          echo "main-space-audio-sink-bootstrap: failed to activate UCM verb ${effectiveRoute.ucmVerb} on ${cfg.card}" >&2
+          echo "main-space-audio-sink-bootstrap: failed to activate UCM verb ${effectiveRoute.ucmVerb} on ${ucmCard}" >&2
           exit 1
         }
     ''}

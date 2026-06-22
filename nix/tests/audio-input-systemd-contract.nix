@@ -53,6 +53,7 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (hasInfix "sink_exists()" audioModuleSource) "audio bootstrap uses exact sink-name matching helper")
   (assertContract (hasInfix "expected WirePlumber sink" audioModuleSource) "audio bootstrap polls for declared WirePlumber/UCM sinks")
   (assertContract (hasInfix "routeHasFullUcm" audioModuleSource) "audio bootstrap combines full UCM activation in one alsaucm invocation")
+  (assertContract (hasInfix "ucmCard = cfg.ucmCard" audioModuleSource) "audio bootstrap uses the UCM config id separately from kernel card id")
   (assertContract (hasInfix "set _verb" audioModuleSource && hasInfix "set _enadev" audioModuleSource) "audio bootstrap activates declared UCM verb/device")
   (assertContract (hasInfix "load-module module-alsa-sink" audioModuleSource) "audio bootstrap retains manual PCM sink loading")
   (assertContract (hasInfix "failed to select declared default sink" audioModuleSource) "audio bootstrap fails when default sink selection fails")
@@ -71,10 +72,14 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   # Neutral audio API capability — the value the product layer translates
   # into SDL_AUDIODRIVER / client-specific environment.
   (assertContract (cfg.rocknix.sm8550.audio.api == "pulseaudio") "SM8550 substrate exposes a PulseAudio-compatible audio API")
+  (assertContract (cfg.rocknix.device.audio.card == "AYNOdin2") "SM8550 keeps the kernel ALSA card id")
+  (assertContract (cfg.rocknix.device.audio.ucmCard == "AYN-Odin2") "SM8550 exposes the UCM configuration id separately")
 
   # Thor's substrate-owned speaker route is graph-owned by WirePlumber/UCM.
   (assertContract (thorCfg.rocknix.device.audio.route.kind == "wireplumber-ucm") "Thor declares a WirePlumber/UCM route strategy")
   (assertContract (thorCfg.rocknix.device.audio.route.expectedSink == "alsa_output.platform-sound.HiFi__Speaker__sink") "Thor declares the validated graph-created speaker sink")
+  (assertContract (thorCfg.rocknix.device.audio.card == "AYNOdin2") "Thor keeps the kernel ALSA card id")
+  (assertContract (thorCfg.rocknix.device.audio.ucmCard == "AYN-Odin2") "Thor uses the shipped Odin2 UCM config id")
   (assertContract (thorCfg.rocknix.device.audio.defaultSink.pcm == null) "Thor no longer declares a direct speaker PCM")
   (assertContract (thorCfg.rocknix.device.audio.route.ucmVerb == "HiFi") "Thor declares the speaker UCM verb")
   (assertContract (thorCfg.rocknix.device.audio.route.ucmDevice == "Speaker") "Thor declares the speaker UCM device")
@@ -95,6 +100,8 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   # Thor direct PCM or arbitrary default sink fallback.
   (assertContract (odinCfg.rocknix.device.audio.route.kind == "wireplumber-ucm") "Odin 2 Portal declares a WirePlumber/UCM route strategy")
   (assertContract (odinCfg.rocknix.device.audio.route.expectedSink == "alsa_output.platform-sound.HiFi__Speaker__sink") "Odin 2 Portal declares the validated graph-created speaker sink")
+  (assertContract (odinCfg.rocknix.device.audio.card == "AYNOdin2") "Odin 2 Portal keeps the kernel ALSA card id")
+  (assertContract (odinCfg.rocknix.device.audio.ucmCard == "AYN-Odin2") "Odin 2 Portal uses the shipped Odin2 UCM config id")
   (assertContract (odinCfg.rocknix.device.audio.defaultSink.pcm == null) "Odin 2 Portal leaves the direct default-sink PCM null")
   (assertContract (odinCfg.systemd.services ? main-space-audio-sink-bootstrap) "Odin 2 Portal selects the declared graph sink at boot")
   (assertContract (odinBootstrap.serviceConfig.Type == "oneshot") "Odin 2 Portal route bootstrap is oneshot")
@@ -105,6 +112,7 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   (assertContract (rgServices ? main-space-wireplumber) "RG353M has main-space WirePlumber")
   (assertContract (rgServices ? rocknix-sound-card-udev-hydrate) "RG353M has generic sound-card udev hydration")
   (assertContract (contains "rocknix-sound-card-udev-hydrate.service" (rgServices.main-space-wireplumber.after or [ ])) "RG353M WirePlumber waits for sound-card hydration")
+  (assertContract (rgCfg.rocknix.device.audio.ucmCard == "rk817ext") "RG353M mirrors the RK817 UCM/card id")
   (assertContract (rgCfg.rocknix.device.audio.route.kind == "manual-pcm") "RG353M declares an explicit interim manual PCM route")
   (assertContract (rgCfg.rocknix.device.audio.route.pcm == "hw:rk817ext,0") "RG353M uses stable RK817 card-name PCM facts")
   (assertContract (rgCfg.rocknix.device.audio.route.sinkName == "rg353m_speaker") "RG353M declares the live-validated speaker sink name")

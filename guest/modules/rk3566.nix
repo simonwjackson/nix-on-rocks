@@ -59,6 +59,7 @@ in
     audio = {
       ucmPackage = mkForce rk3566Ucm;
       card = mkForce "rk817ext";
+      ucmCard = mkForce "rk817ext";
       route = {
         kind = mkForce "manual-pcm";
         pcm = mkForce "hw:rk817ext,0";

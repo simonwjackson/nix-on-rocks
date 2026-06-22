@@ -147,10 +147,19 @@ in
         type = types.str;
         default = "AYNOdin2";
         description = ''
-          ALSA card name used to drive UCM verbs and the default sink
-          bootstrap. The SM8550 chipset ships with the AYNOdin2 UCM
-          tree by default; per-device profiles may override when a
-          different card name is exposed by the kernel.
+          Kernel ALSA card id used for PCM/device addressing. Sobo exposes
+          `/proc/asound/cards` id `AYNOdin2`, which is distinct from the
+          shipped UCM configuration id.
+        '';
+      };
+
+      ucmCard = mkOption {
+        type = types.str;
+        default = "AYN-Odin2";
+        description = ''
+          ALSA UCM configuration id used with `alsaucm -c`. The shipped
+          AYN Odin2 UCM tree is addressed as `AYN-Odin2` even when the
+          kernel card id is `AYNOdin2`.
         '';
       };
 
@@ -234,6 +243,7 @@ in
       ucmPackage = mkDefault config.rocknix.sm8550.audio.ucmPackage;
       api = mkDefault config.rocknix.sm8550.audio.api;
       card = mkDefault config.rocknix.sm8550.audio.card;
+      ucmCard = mkDefault config.rocknix.sm8550.audio.ucmCard;
       defaultSink = {
         pcm = mkDefault config.rocknix.sm8550.audio.defaultSink.pcm;
         name = mkDefault config.rocknix.sm8550.audio.defaultSink.name;

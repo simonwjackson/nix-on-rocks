@@ -86,6 +86,12 @@ their own product units:
 - `PULSE_SERVER=unix:/run/user/<uid>/pulse/native`
 - `ALSA_CONFIG_UCM2=<guest UCM package>/share/alsa/ucm2`
 
+Device profiles expose both `rocknix.device.audio.card` (the kernel ALSA card
+id used for PCM/device addressing) and `rocknix.device.audio.ucmCard` (the UCM
+configuration id passed to `alsaucm -c`). These may differ; for example SM8550
+Sobo exposes kernel card id `AYNOdin2` while the shipped UCM tree is addressed
+as `AYN-Odin2`.
+
 Device profiles declare their route strategy at
 `rocknix.device.audio.route.kind`:
 
