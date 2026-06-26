@@ -145,21 +145,19 @@ in
 
       card = mkOption {
         type = types.str;
-        default = "AYNOdin2";
+        default = "AYNThor";
         description = ''
-          Kernel ALSA card id used for PCM/device addressing. Sobo exposes
-          `/proc/asound/cards` id `AYNOdin2`, which is distinct from the
-          shipped UCM configuration id.
+          Kernel ALSA card id used for PCM/device addressing. Device profiles
+          override this when their kernel exposes a different card id.
         '';
       };
 
       ucmCard = mkOption {
         type = types.str;
-        default = "AYN-Odin2";
+        default = "AYN-Thor";
         description = ''
-          ALSA UCM configuration id used with `alsaucm -c`. The shipped
-          AYN Odin2 UCM tree is addressed as `AYN-Odin2` even when the
-          kernel card id is `AYNOdin2`.
+          ALSA UCM configuration id used with `alsaucm -c`. Device profiles
+          override this when their UCM card name differs from the default.
         '';
       };
 

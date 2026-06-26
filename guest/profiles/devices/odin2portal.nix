@@ -29,16 +29,24 @@
     '';
   };
 
-  # Live Sobo/Odin 2 Portal evidence: with host-bound sound-card udev
-  # metadata hydrated in the guest, WirePlumber creates the platform UCM
-  # speaker sink and graph-level volume/buttons work through Pulse.
-  rocknix.device.audio.route = {
-    kind = "wireplumber-ucm";
-    expectedSink = "alsa_output.platform-sound.HiFi__Speaker__sink";
-    pcm = null;
-    sinkName = null;
-    description = "AYN Odin 2 Portal built-in speakers";
-    ucmVerb = "HiFi";
-    ucmDevice = "Speaker";
+  # Live Sobo/Odin 2 Portal audio facts. Keep the kernel/UCM card names in
+  # the substrate device profile so product layers can use the neutral route
+  # contract below without knowing Thor-vs-Odin naming details.
+  rocknix.device.audio = {
+    card = "AYNOdin2";
+    ucmCard = "AYN-Odin2";
+
+    # With host-bound sound-card udev metadata hydrated in the guest,
+    # WirePlumber creates the platform UCM speaker sink and graph-level
+    # volume/buttons work through Pulse.
+    route = {
+      kind = "wireplumber-ucm";
+      expectedSink = "alsa_output.platform-sound.HiFi__Speaker__sink";
+      pcm = null;
+      sinkName = null;
+      description = "Built-in speakers";
+      ucmVerb = "HiFi";
+      ucmDevice = "Speaker";
+    };
   };
 }
