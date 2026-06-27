@@ -13,6 +13,11 @@ on:
         required: false
         default: ""
         type: string
+      diagnostic:
+        description: "Enable R36T Max diagnostic boot logging and host joypad blacklist"
+        required: false
+        default: "no"
+        type: string
 
 permissions:
   contents: read
@@ -25,6 +30,7 @@ env:
   ARCH: aarch64
   SUBDEVICE: ${{ github.event.inputs.subdevice || 'R36TMax' }}
   RK3326_R36TMAX_GUEST_SUBSTRATE: "yes"
+  RK3326_R36TMAX_DIAGNOSTIC: ${{ github.event.inputs.diagnostic || 'no' }}
   NIX_ON_ROCKS_PRODUCT: r36tmax
 
 jobs:

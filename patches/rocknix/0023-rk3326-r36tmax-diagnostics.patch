@@ -1,0 +1,165 @@
+diff --git a/projects/ROCKNIX/devices/RK3326/options b/projects/ROCKNIX/devices/RK3326/options
+--- a/projects/ROCKNIX/devices/RK3326/options	2026-06-27 16:23:34.336902461 -0600
++++ b/projects/ROCKNIX/devices/RK3326/options	2026-06-27 16:23:34.358908571 -0600
+@@ -94,6 +94,16 @@
+       SYSTEMD_DEFAULT_HIERARCHY="${SYSTEMD_DEFAULT_HIERARCHY:-unified}"
+       EXTRA_CMDLINE="${EXTRA_CMDLINE} systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all"
+     fi
++    RK3326_R36TMAX_DIAGNOSTIC="${RK3326_R36TMAX_DIAGNOSTIC:-no}"
++    if [ "${RK3326_R36TMAX_GUEST_SUBSTRATE}" = "yes" ] && [ "${RK3326_R36TMAX_DIAGNOSTIC}" = "yes" ]; then
++      # Diagnostic boots should show exactly where the host/guest handoff stops
++      # and avoid the inherited host joypad force-feedback path while R36T Max
++      # rumble/noise wiring is still unproven.  The guest rootfs remains intact;
++      # this only affects the thin host boot used for the next hardware pass.
++      EXTRA_CMDLINE="${EXTRA_CMDLINE} loglevel=7 ignore_loglevel systemd.show_status=1 systemd.log_level=debug rd.udev.log_level=debug"
++      EXTRA_CMDLINE="${EXTRA_CMDLINE} module_blacklist=rocknix_joypad,rocknix_singleadc_joypad,rocknix-joypad,rocknix-singleadc-joypad"
++      EXTRA_CMDLINE="${EXTRA_CMDLINE} modprobe.blacklist=rocknix_joypad,rocknix_singleadc_joypad,rocknix-joypad,rocknix-singleadc-joypad"
++    fi
+ 
+     if [ "${RK3326_R36TMAX_MINIMAL_HOST}" = "yes" ]; then
+       VULKAN_SUPPORT="no"
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk	2026-06-27 16:23:34.340902420 -0600
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk	2026-06-27 16:23:34.360077238 -0600
+@@ -143,6 +143,14 @@
+     ${INSTALL}/usr/bin/rocknix-guest-activation-audit \
+     ${INSTALL}/usr/bin/rocknix-post-update
+ 
++  if [ "${DEVICE}" = "RK3326" ] && [ "${RK3326_R36TMAX_DIAGNOSTIC:-no}" = "yes" ]; then
++    cp ${PKG_DIR}/scripts/rocknix-r36tmax-diag-snapshot ${INSTALL}/usr/bin
++    chmod 0755 ${INSTALL}/usr/bin/rocknix-r36tmax-diag-snapshot
++    mkdir -p ${INSTALL}/usr/lib/systemd/system
++    cp ${PKG_DIR}/system.d/rocknix-r36tmax-diag-snapshot.service ${INSTALL}/usr/lib/systemd/system
++    enable_service rocknix-r36tmax-diag-snapshot.service
++  fi
++
+   # Safety-net release: the guest owns InputPlumber, so mask the old host
+   # unit while leaving its package files installed for SSH rollback.
+   mkdir -p ${INSTALL}/storage/.config/system.d
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-r36tmax-diag-snapshot b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-r36tmax-diag-snapshot
+new file mode 100755
+--- /dev/null
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-r36tmax-diag-snapshot	2026-06-27 16:23:34.360268572 -0600
+@@ -0,0 +1,98 @@
++#!/bin/sh
++# SPDX-License-Identifier: GPL-2.0
++# Capture one sanitized R36T Max boot diagnostic bundle on the host side.
++
++set -eu
++
++PATH=/usr/bin:/usr/sbin:/bin:/sbin
++OUT_ROOT=${ROCKNIX_R36TMAX_DIAG_DIR:-/storage/nix-on-rock/diagnostics}
++STAMP=$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || printf unknown)
++OUT_DIR="${OUT_ROOT}/${STAMP}"
++LATEST="${OUT_ROOT}/latest"
++
++mkdir -p "${OUT_DIR}"
++
++write() {
++  name=$1
++  shift
++  {
++    printf '# %s\n' "$*"
++    "$@" 2>&1 || true
++  } > "${OUT_DIR}/${name}"
++}
++
++copy_if_readable() {
++  src=$1
++  dst=$2
++  if [ -r "${src}" ]; then
++    cat "${src}" > "${OUT_DIR}/${dst}" 2>/dev/null || true
++  fi
++}
++
++sanitize_file() {
++  file=$1
++  [ -f "${file}" ] || return 0
++  sed -i \
++    -e 's/psk=[^ ]*/psk=<redacted>/g' \
++    -e 's/Passphrase=[^ ]*/Passphrase=<redacted>/g' \
++    -e 's/password=[^ ]*/password=<redacted>/g' \
++    -e 's/ssid=\([^ ]\{0,3\}\)[^ ]*/ssid=\1<redacted>/g' \
++    "${file}" 2>/dev/null || true
++}
++
++{
++  echo "r36tmax diagnostic snapshot"
++  date -u 2>/dev/null || true
++  echo "out_dir=${OUT_DIR}"
++} > "${OUT_DIR}/README.txt"
++
++copy_if_readable /proc/cmdline proc-cmdline.txt
++copy_if_readable /proc/device-tree/model device-tree-model.txt
++if [ -r /proc/device-tree/compatible ]; then
++  tr '\000' '\n' < /proc/device-tree/compatible > "${OUT_DIR}/device-tree-compatible.txt" 2>/dev/null || true
++fi
++
++write uname.txt uname -a
++write mounts.txt mount
++write filesystems.txt df -h
++write block.txt lsblk -o NAME,PATH,SIZE,TYPE,TRAN,MODEL,RM,MOUNTPOINTS,FSTYPE,LABEL
++write blkid.txt blkid
++write ip-address.txt ip address
++write ip-route.txt ip route
++write rfkill.txt rfkill list
++write modules.txt lsmod
++write input-devices.txt sh -c 'cat /proc/bus/input/devices 2>/dev/null || true; echo; ls -la /dev/input 2>/dev/null || true'
++write dri-devices.txt sh -c 'ls -la /dev/dri 2>/dev/null || true'
++write sound-devices.txt sh -c 'cat /proc/asound/cards 2>/dev/null || true; echo; ls -la /dev/snd 2>/dev/null || true'
++write pwm-devices.txt sh -c 'find /sys/class/pwm -maxdepth 3 -type f -print -exec sh -c '\''for f; do echo "--- $f"; cat "$f" 2>/dev/null || true; done'\'' sh {} + 2>/dev/null || true'
++write gpio-chips.txt sh -c 'find /sys/class/gpio -maxdepth 2 -type f -print -exec sh -c '\''for f; do echo "--- $f"; cat "$f" 2>/dev/null || true; done'\'' sh {} + 2>/dev/null || true'
++
++if command -v systemctl >/dev/null 2>&1; then
++  write systemd-default.txt systemctl get-default
++  write systemd-failed.txt systemctl --no-pager --failed
++  write systemd-units.txt systemctl --no-pager list-units
++  write status-rocknix-guest-root-ensure.txt systemctl --no-pager status rocknix-guest-root-ensure.service
++  write status-rocknix-guest.txt systemctl --no-pager status rocknix-guest.service
++  write status-rocknix-main-space.txt systemctl --no-pager status rocknix-main-space.target
++  write status-sshd.txt systemctl --no-pager status sshd.service
++fi
++
++if command -v journalctl >/dev/null 2>&1; then
++  journalctl -b --no-pager > "${OUT_DIR}/journal-current-boot.txt" 2>&1 || true
++  journalctl -b -u rocknix-guest-root-ensure.service --no-pager > "${OUT_DIR}/journal-root-ensure.txt" 2>&1 || true
++  journalctl -b -u rocknix-guest.service --no-pager > "${OUT_DIR}/journal-rocknix-guest.txt" 2>&1 || true
++  journalctl -b -u sshd.service --no-pager > "${OUT_DIR}/journal-sshd.txt" 2>&1 || true
++fi
++
++dmesg > "${OUT_DIR}/dmesg.txt" 2>&1 || true
++
++for file in "${OUT_DIR}"/*.txt; do
++  sanitize_file "${file}"
++done
++
++rm -f "${LATEST}"
++ln -s "${OUT_DIR}" "${LATEST}" 2>/dev/null || true
++sync "${OUT_DIR}" 2>/dev/null || sync
++
++echo "R36T Max diagnostics written to ${OUT_DIR}"
++exit 0
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-r36tmax-diag-snapshot.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-r36tmax-diag-snapshot.service
+new file mode 100644
+--- /dev/null
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-r36tmax-diag-snapshot.service	2026-06-27 16:23:34.360319581 -0600
+@@ -0,0 +1,19 @@
++# SPDX-License-Identifier: GPL-2.0
++
++[Unit]
++Description=Capture R36T Max host boot diagnostics
++Documentation=file:///flash/HOW-TO-FALL-BACK.md
++After=local-fs.target network-pre.target rocknix-guest-root-ensure.service
++RequiresMountsFor=/storage /flash
++ConditionPathExists=/storage
++
++[Service]
++Type=oneshot
++ExecStart=/usr/bin/rocknix-r36tmax-diag-snapshot
++TimeoutStartSec=2min
++StandardOutput=journal+console
++StandardError=journal+console
++
++[Install]
++WantedBy=multi-user.target
++WantedBy=rocknix-main-space.target
