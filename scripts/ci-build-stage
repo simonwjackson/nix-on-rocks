@@ -85,6 +85,9 @@ verify_payloads() {
     RK3566)
       "${repo_root}/scripts/verify-rk3566-payloads" "${work_dir}/target"
       ;;
+    RK3326)
+      "${repo_root}/scripts/verify-rk3326-payloads" "${work_dir}/target"
+      ;;
     *)
       echo "ci-build-stage: no payload verifier for DEVICE=${DEVICE}" >&2
       exit 1

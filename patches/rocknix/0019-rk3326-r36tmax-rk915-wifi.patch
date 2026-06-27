@@ -1,0 +1,277 @@
+diff --git a/projects/ROCKNIX/config.xml b/projects/ROCKNIX/config.xml
+index 986b4e0342..52b94c6f47 100644
+--- a/projects/ROCKNIX/config.xml
++++ b/projects/ROCKNIX/config.xml
+@@ -38,6 +38,9 @@
+       <file>rk3326-gameconsole-eeclone</file>
+       <file>rk3326-batlexp-g350</file>
+     </b>
++    <R36TMax mkimage_options="dtb,bootscr,extlinux,uboot" fdt_type="fdt" fdt="/rk3326-gameconsole-r36tmax.dtb">
++      <file>rk3326-gameconsole-r36tmax</file>
++    </R36TMax>
+   </RK3326>
+   <RK3399 mkimage_options="dtb,extlinux,uboot" fdt="device_trees/rk3399-anbernic-rg552.dtb" fdt_type="fdt" dtb_prefix="rockchip">
+     <file>rk3399-anbernic-rg552</file>
+diff --git a/projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts b/projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+new file mode 100644
+index 0000000000..9e54ecbea0
+--- /dev/null
++++ b/projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+@@ -0,0 +1,82 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Experimental Game Console R36T Max support for ROCKNIX.
++ *
++ * This intentionally derives from rk3326-gameconsole-eeclone.dts because the
++ * R36T Max boots ROCKNIX with the EE-clone profile.  The RK915 Wi-Fi facts are
++ * taken from the working ArkOS/dArkOS4Clone R36T Max device tree and the
++ * mainline-targeted rk915 driver example.
++ */
++
++#include "rk3326-gameconsole-eeclone.dts"
++#include <dt-bindings/interrupt-controller/irq.h>
++
++/ {
++    model = "Game Console R36T Max";
++    compatible = "gameconsole,r36tmax", "gameconsole,eeclone", "rockchip,rk3326";
++
++    sdio_pwrseq: sdio-pwrseq {
++        compatible = "mmc-pwrseq-simple";
++        pinctrl-names = "default";
++        pinctrl-0 = <&wifi_enable_h>;
++        post-power-on-delay-ms = <100>;
++        reset-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>;
++    };
++
++    wireless_wlan: wireless-wlan {
++        compatible = "wlan-platdata";
++        wifi_chip_type = "rk915";
++        keep_wifi_power_on;
++        WIFI,host_wake_irq = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>;
++        WIFI,poweren_gpio = <&gpio0 RK_PA2 GPIO_ACTIVE_HIGH>;
++        status = "okay";
++    };
++};
++
++&sdio {
++    bus-width = <4>;
++    cap-sd-highspeed;
++    cap-sdio-irq;
++    card-detect-delay = <800>;
++    disable-wp;
++    ignore-pm-notify;
++    keep-power-in-suspend;
++    max-frequency = <25000000>;
++    mmc-pwrseq = <&sdio_pwrseq>;
++    no-mmc;
++    no-sd;
++    non-removable;
++    supports-rk912;
++    supports-sdio;
++    vqmmc-supply = <&vcc2v8_dvp>;
++    vmmc-supply = <&vcc3v0_dvp>;
++    status = "okay";
++
++    /delete-property/ cd-gpios;
++    /delete-property/ supports-sd;
++    /delete-property/ sd-uhs-sdr12;
++    /delete-property/ sd-uhs-sdr25;
++    /delete-property/ sd-uhs-sdr50;
++    /delete-property/ sd-uhs-sdr104;
++
++    wifi@1 {
++        reg = <1>;
++        interrupt-names = "host-wake";
++        interrupt-parent = <&gpio0>;
++        interrupts = <RK_PA5 IRQ_TYPE_LEVEL_HIGH>;
++        pinctrl-names = "default";
++        pinctrl-0 = <&wifi_host_wake_l>;
++    };
++};
++
++&pinctrl {
++    wifi {
++        wifi_enable_h: wifi-enable-h {
++            rockchip,pins = <0 RK_PA2 RK_FUNC_GPIO &pcfg_pull_none>;
++        };
++
++        wifi_host_wake_l: wifi-host-wake-l {
++            rockchip,pins = <0 RK_PA5 RK_FUNC_GPIO &pcfg_pull_down>;
++        };
++    };
++};
+diff --git a/projects/ROCKNIX/devices/RK3326/options b/projects/ROCKNIX/devices/RK3326/options
+index 700ebf3b50..925ab40d97 100644
+--- a/projects/ROCKNIX/devices/RK3326/options
++++ b/projects/ROCKNIX/devices/RK3326/options
+@@ -58,12 +58,12 @@
+   # for a list of additional drivers see packages/linux-drivers
+   # Space separated list is supported,
+   # e.g. ADDITIONAL_DRIVERS="DRIVER1 DRIVER2"
+-    ADDITIONAL_DRIVERS="RTL8812AU RTL8814AU RTL8821AU RTL8821CU RTL88x2BU RTL8851BU mali-bifrost"
++    ADDITIONAL_DRIVERS="RTL8812AU RTL8814AU RTL8821AU RTL8821CU RTL88x2BU RTL8851BU rk915 mali-bifrost"
+ 
+   # Additional Firmware to use ( )
+   # Space separated list is supported,
+   # e.g. FIRMWARE=""
+-    FIRMWARE="esp8089-firmware"
++    FIRMWARE="esp8089-firmware rk915-firmware"
+   
+   # Additional packages to install
+     ADDITIONAL_PACKAGES="device-switch libmali generic-dsi"
+diff --git a/projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch b/projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch
+new file mode 100644
+index 0000000000..4f08624da2
+--- /dev/null
++++ b/projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch
+@@ -0,0 +1,81 @@
++diff -ur linux-6.12.29/drivers/mmc/core/host.c linux_for_rk915/drivers/mmc/core/host.c
++--- linux-6.12.29/drivers/mmc/core/host.c	2025-05-18 06:25:00.000000000 +0000
+++++ linux_for_rk915/drivers/mmc/core/host.c	2025-06-28 17:43:59.825733795 +0000
++@@ -403,6 +403,8 @@
++ 		host->caps2 |= MMC_CAP2_NO_SD;
++ 	if (device_property_read_bool(dev, "no-mmc"))
++ 		host->caps2 |= MMC_CAP2_NO_MMC;
+++	if (device_property_read_bool(dev, "supports-rk912"))
+++		host->caps2 |= MMC_CAP2_WIFI_RK912;
++ 	if (device_property_read_bool(dev, "no-mmc-hs400"))
++ 		host->caps2 &= ~(MMC_CAP2_HS400_1_8V | MMC_CAP2_HS400_1_2V |
++ 				 MMC_CAP2_HS400_ES);
++diff -ur linux-6.12.29/drivers/mmc/core/sdio.c linux_for_rk915/drivers/mmc/core/sdio.c
++--- linux-6.12.29/drivers/mmc/core/sdio.c	2025-05-18 06:25:00.000000000 +0000
+++++ linux_for_rk915/drivers/mmc/core/sdio.c	2025-06-28 17:43:59.827733748 +0000
++@@ -1076,7 +1076,8 @@
++ 	 * removable card is checked from a detect work later on in the resume
++ 	 * process.
++ 	 */
++-	if (!mmc_card_keep_power(host)) {
+++	if (!mmc_card_keep_power(host) &&
+++	    !(host->caps2 & MMC_CAP2_WIFI_RK912)) {
++ 		mmc_power_up(host, host->card->ocr);
++ 		/*
++ 		 * Tell runtime PM core we just powered up the card,
++diff -ur linux-6.12.29/drivers/mmc/core/sdio_cis.c linux_for_rk915/drivers/mmc/core/sdio_cis.c
++--- linux-6.12.29/drivers/mmc/core/sdio_cis.c	2025-05-18 06:25:00.000000000 +0000
+++++ linux_for_rk915/drivers/mmc/core/sdio_cis.c	2025-06-28 17:43:59.826733772 +0000
++@@ -190,15 +191,15 @@
++ 		pr_warn("%s: card has broken SDIO 1.1 CIS, forcing SDIO 1.0\n",
++ 			mmc_hostname(card->host));
++ 		vsn = SDIO_SDIO_REV_1_00;
++-	} else if (size < min_size) {
+++	} else if (size < min_size && !(card->host->caps2 & MMC_CAP2_WIFI_RK912)) {
++ 		return -EINVAL;
++ 	}
++ 
++ 	/* TPLFE_MAX_BLK_SIZE */
++ 	func->max_blksize = buf[12] | (buf[13] << 8);
++ 
++ 	/* TPLFE_ENABLE_TIMEOUT_VAL, present in ver 1.1 and above */
++-	if (vsn > SDIO_SDIO_REV_1_00)
+++	if (vsn > SDIO_SDIO_REV_1_00 && !(card->host->caps2 & MMC_CAP2_WIFI_RK912))
++ 		func->enable_timeout = (buf[28] | (buf[29] << 8)) * 10;
++ 	else
++ 		func->enable_timeout = jiffies_to_msecs(HZ);
++diff -ur linux-6.12.29/drivers/mmc/host/dw_mmc.c linux_for_rk915/drivers/mmc/host/dw_mmc.c
++--- linux-6.12.29/drivers/mmc/host/dw_mmc.c	2025-05-18 06:25:00.000000000 +0000
+++++ linux_for_rk915/drivers/mmc/host/dw_mmc.c	2025-06-28 17:44:02.417672518 +0000
++@@ -295,6 +295,10 @@
++ 			     SDMMC_CMD_PRV_DAT_WAIT, 0);
++ 	}
++ 
+++	if ((mmc->caps2 & MMC_CAP2_WIFI_RK912) &&
+++	    (cmd->opcode == SD_IO_RW_DIRECT))
+++		cmdr |= SDMMC_CMD_PRV_DAT_WAIT;
+++
++ 	if (cmd->flags & MMC_RSP_PRESENT) {
++ 		/* We expect a response, so set this bit */
++ 		cmdr |= SDMMC_CMD_RESP_EXP;
++@@ -1263,7 +1267,8 @@
++ 
++ 		/* enable clock; only low power if no SDIO */
++ 		clk_en_a = SDMMC_CLKEN_ENABLE << slot->id;
++-		if (!test_bit(DW_MMC_CARD_NO_LOW_PWR, &slot->flags))
+++		if (!test_bit(DW_MMC_CARD_NO_LOW_PWR, &slot->flags) &&
+++		    !(slot->mmc->caps2 & MMC_CAP2_WIFI_RK912))
++ 			clk_en_a |= SDMMC_CLKEN_LOW_PWR << slot->id;
++ 		mci_writel(host, CLKENA, clk_en_a);
++ 
++diff -ur linux-6.12.29/include/linux/mmc/host.h linux_for_rk915/include/linux/mmc/host.h
++--- linux-6.12.29/include/linux/mmc/host.h	2025-05-18 06:25:00.000000000 +0000
+++++ linux_for_rk915/include/linux/mmc/host.h	2025-06-28 17:45:54.422123779 +0000
++@@ -404,6 +404,7 @@
++ #define MMC_CAP2_CRYPTO		0
++ #endif
++ #define MMC_CAP2_ALT_GPT_TEGRA	(1 << 28)	/* Host with eMMC that has GPT entry at a non-standard location */
+++#define MMC_CAP2_WIFI_RK912     (1 << 29)
++ 
++ 	int			fixed_drv_type;	/* fixed driver type for non-removable media */
++ 
+diff --git a/projects/ROCKNIX/packages/linux-drivers/rk915/modprobe.d/rk915.conf b/projects/ROCKNIX/packages/linux-drivers/rk915/modprobe.d/rk915.conf
+new file mode 100644
+index 0000000000..e8734e1c1d
+--- /dev/null
++++ b/projects/ROCKNIX/packages/linux-drivers/rk915/modprobe.d/rk915.conf
+@@ -0,0 +1,4 @@
++# R36T Max RK915 proof settings.
++# down_fw_in_probe/default_phy_threshold/lpw_no_sleep mirror the vendor test
++# script and were part of the standalone ROCKNIX Wi-Fi proof.
++options rk915 down_fw_in_probe=1 default_phy_threshold=180 lpw_no_sleep=1
+diff --git a/projects/ROCKNIX/packages/linux-drivers/rk915/package.mk b/projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
+new file mode 100644
+index 0000000000..1601db4249
+--- /dev/null
++++ b/projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
+@@ -0,0 +1,30 @@
++# SPDX-License-Identifier: GPL-2.0
++# Experimental Rockchip RK915 SDIO Wi-Fi driver for R36T Max bring-up.
++
++PKG_NAME="rk915"
++PKG_VERSION="590fe1dd3fa9569117317b2e0dcbe02c42f8419e"
++PKG_LICENSE="GPL"
++PKG_SITE="https://github.com/stolen/rk915"
++PKG_URL="${PKG_SITE}.git"
++PKG_LONGDESC="Rockchip RK915 SDIO Wi-Fi driver"
++PKG_TOOLCHAIN="make"
++PKG_IS_KERNEL_PKG="yes"
++
++pre_make_target() {
++  unset LDFLAGS
++}
++
++make_target() {
++  make V=1 \
++       -C $(kernel_path) \
++       M=${PKG_BUILD} \
++       ARCH=${TARGET_KERNEL_ARCH} \
++       CROSS_COMPILE=${TARGET_KERNEL_PREFIX} \
++       CONFIG_RK915=m \
++       modules
++}
++
++makeinstall_target() {
++  mkdir -p ${INSTALL}/$(get_full_module_dir)/kernel/drivers/net/wireless/rk915
++    cp -av rk915.ko ${INSTALL}/$(get_full_module_dir)/kernel/drivers/net/wireless/rk915/
++}
+diff --git a/projects/ROCKNIX/packages/linux-firmware/rk915-firmware/package.mk b/projects/ROCKNIX/packages/linux-firmware/rk915-firmware/package.mk
+new file mode 100644
+index 0000000000..0917019675
+--- /dev/null
++++ b/projects/ROCKNIX/packages/linux-firmware/rk915-firmware/package.mk
+@@ -0,0 +1,17 @@
++# SPDX-License-Identifier: GPL-2.0
++# Experimental Rockchip RK915 firmware for R36T Max bring-up.
++
++PKG_NAME="rk915-firmware"
++PKG_VERSION="590fe1dd3fa9569117317b2e0dcbe02c42f8419e"
++PKG_LICENSE="GPL"
++PKG_SITE="https://github.com/stolen/rk915"
++PKG_URL="${PKG_SITE}.git"
++PKG_DEPENDS_TARGET="toolchain"
++PKG_LONGDESC="Rockchip RK915 Wi-Fi firmware"
++PKG_TOOLCHAIN="manual"
++
++makeinstall_target() {
++  mkdir -p ${INSTALL}/$(get_kernel_overlay_dir)/lib/firmware
++    cp -av firmware/rk915_fw.bin ${INSTALL}/$(get_kernel_overlay_dir)/lib/firmware/
++    cp -av firmware/rk915_patch.bin ${INSTALL}/$(get_kernel_overlay_dir)/lib/firmware/
++}

@@ -1,0 +1,112 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+target_dir=${1:-"${work_dir}/target"}
+manifest=${NIX_ON_ROCKS_BUILD_MANIFEST:-"${repo_root}/nix-on-rocks-build-manifest.md"}
+
+fail() {
+  echo "FAIL: $*" >&2
+  exit 1
+}
+
+require_tool() {
+  command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"
+}
+
+require_tool awk
+require_tool dd
+require_tool gzip
+require_tool mdir
+require_tool mlabel
+require_tool mtype
+require_tool sfdisk
+require_tool sha256sum
+require_tool blkid
+
+[ -d "${target_dir}" ] || fail "missing target directory: ${target_dir}"
+
+shopt -s nullglob
+images=("${target_dir}"/ROCKNIX-*RK3326*.img.gz)
+if [ "${#images[@]}" -eq 1 ]; then
+  image_gz=${images[0]}
+else
+  selected_images=()
+  if [ -n "${SUBDEVICE:-}" ]; then
+    selected_images=("${target_dir}"/ROCKNIX-*RK3326*"-${SUBDEVICE}".img.gz)
+  fi
+  if [ "${#selected_images[@]}" -eq 1 ]; then
+    image_gz=${selected_images[0]}
+  else
+    printf 'RK3326 SD image candidates:\n' >&2
+    printf '  %s\n' "${images[@]}" >&2
+    fail "expected exactly one RK3326 SD image, or one image matching SUBDEVICE=${SUBDEVICE:-<unset>}; found ${#images[@]} total and ${#selected_images[@]} selected"
+  fi
+fi
+
+gzip -t "${image_gz}"
+for checksum in "${target_dir}"/ROCKNIX-*RK3326*.img.gz.sha256 "${target_dir}"/ROCKNIX-*RK3326*.tar.sha256; do
+  [ -f "${checksum}" ] || continue
+  (cd "${target_dir}" && sha256sum -c "$(basename "${checksum}")")
+done
+
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "${tmp_dir}"' EXIT
+image="${tmp_dir}/rk3326.img"
+part1="${tmp_dir}/part1.fat"
+part2="${tmp_dir}/part2.ext4"
+layout="${tmp_dir}/sfdisk.txt"
+
+gzip -dc "${image_gz}" > "${image}"
+sfdisk -d "${image}" > "${layout}"
+grep -q '^label: dos$' "${layout}" || fail "RK3326 SD image must use an MBR/dos partition table for U-Boot"
+
+part1_line=$(awk -F: '$1 ~ /1[[:space:]]*$/ { print; exit }' "${layout}")
+part2_line=$(awk -F: '$1 ~ /2[[:space:]]*$/ { print; exit }' "${layout}")
+[ -n "${part1_line}" ] || fail "RK3326 SD image missing FAT boot partition"
+[ -n "${part2_line}" ] || fail "RK3326 SD image missing STORAGE partition"
+
+part_field() {
+  local line=$1
+  local field=$2
+  printf '%s\n' "${line}" | tr ',' '\n' | awk -F= -v want="${field}" '$1 ~ want { gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); print $2; exit }'
+}
+
+part1_start=$(part_field "${part1_line}" start)
+part1_size=$(part_field "${part1_line}" size)
+part2_start=$(part_field "${part2_line}" start)
+part2_size=$(part_field "${part2_line}" size)
+[ -n "${part1_start}" ] && [ -n "${part1_size}" ] || fail "unable to parse RK3326 FAT partition geometry"
+[ -n "${part2_start}" ] && [ -n "${part2_size}" ] || fail "unable to parse RK3326 STORAGE partition geometry"
+
+# ROCKNIX's Rockchip image contract starts the first filesystem partition at
+# sector 32768, safely after the U-Boot sector window.
+[ "${part1_start}" -ge 32768 ] || fail "first partition starts inside the RK3326 U-Boot sector window: ${part1_start}"
+
+dd if="${image}" of="${part1}" bs=512 skip="${part1_start}" count="${part1_size}" status=none
+dd if="${image}" of="${part2}" bs=512 skip="${part2_start}" count="${part2_size}" status=none
+
+mlabel -i "${part1}" -s :: | grep -Eq 'FAT label.*ROCKNIX|Volume label is ROCKNIX|ROCKNIX' \
+  || fail "FAT label must be ROCKNIX"
+mdir -i "${part1}" ::/ >/dev/null || fail "unable to read RK3326 FAT partition"
+mtype -i "${part1}" ::/extlinux/extlinux.conf > "${tmp_dir}/extlinux.conf" \
+  || fail "missing extlinux/extlinux.conf on RK3326 FAT partition"
+grep -Eq '^[[:space:]]+FDT[[:space:]]+/rk3326-gameconsole-r36tmax\.dtb$' "${tmp_dir}/extlinux.conf" \
+  || fail "RK3326 R36TMax extlinux.conf must force /rk3326-gameconsole-r36tmax.dtb"
+grep -Eq 'boot=(LABEL=ROCKNIX|\$\{partition_boot\})' "${tmp_dir}/extlinux.conf" \
+  || fail "RK3326 extlinux.conf must boot by ROCKNIX FAT label or partition_boot placeholder"
+grep -Eq 'disk=(LABEL=STORAGE|\$\{partition_storage\})' "${tmp_dir}/extlinux.conf" \
+  || fail "RK3326 extlinux.conf must mount storage by STORAGE label or partition_storage placeholder"
+mdir -i "${part1}" ::/rk3326-gameconsole-r36tmax.dtb >/dev/null 2>&1 \
+  || fail "RK3326 FAT partition missing /rk3326-gameconsole-r36tmax.dtb"
+
+storage_label=$(blkid -p -o value -s LABEL "${part2}" 2>/dev/null || true)
+[ "${storage_label}" = "STORAGE" ] || fail "ext4 STORAGE partition label mismatch: ${storage_label:-<empty>}"
+
+if [ -f "${manifest}" ]; then
+  grep -Fq 'Hardware boot:** `verified-r36tmax-rk915-wifi`' "${manifest}" \
+    || fail "RK3326 manifest must state R36T Max RK915 Wi-Fi hardware proof: ${manifest}"
+fi
+
+printf 'Verified RK3326 R36T Max SD payloads in %s\n' "${target_dir}"

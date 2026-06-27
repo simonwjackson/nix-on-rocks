@@ -32,6 +32,8 @@ jobs:
           done
           DEVICE=RK3566 RK3566_GUEST_SUBSTRATE=yes NIX_ON_ROCKS_PRODUCT=rg353m scripts/apply-rocknix-patches
           scripts/verify-rk3566-contract
+          DEVICE=RK3326 scripts/apply-rocknix-patches
+          scripts/verify-rk3326-contract
 
       - name: Verify Nix contracts
         run: nix flake check --no-write-lock-file --print-build-logs

@@ -16,5 +16,6 @@ fi
 
 bash "$repo_root/scripts/tests/upstream-intake-report.sh"
 bash "$repo_root/scripts/tests/rk3566-payload-contract.sh"
+bash "$repo_root/scripts/tests/rk3326-payload-contract.sh"
 
 echo "check-shell-smoke: ok"

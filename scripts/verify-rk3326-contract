@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
+work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
+
+[ -d "${work_dir}/.git" ] || { echo "missing patched ROCKNIX checkout: ${work_dir}" >&2; exit 1; }
+
+required=(
+  projects/ROCKNIX/config.xml
+  projects/ROCKNIX/devices/RK3326/options
+  projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+  projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch
+  projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
+  projects/ROCKNIX/packages/linux-drivers/rk915/modprobe.d/rk915.conf
+  projects/ROCKNIX/packages/linux-firmware/rk915-firmware/package.mk
+)
+repo_required=(
+  .github/workflows/build-rk3326.yml
+  scripts/verify-rk3326-payloads
+  scripts/tests/rk3326-payload-contract.sh
+)
+
+for path in "${required[@]}"; do
+  [ -e "${work_dir}/${path}" ] || { echo "missing expected patched file: ${path}" >&2; exit 1; }
+done
+for path in "${repo_required[@]}"; do
+  [ -e "${repo_root}/${path}" ] || { echo "missing expected RK3326 repo file: ${path}" >&2; exit 1; }
+done
+
+(
+  cd "${work_dir}"
+  grep -q '<R36TMax .*fdt="/rk3326-gameconsole-r36tmax.dtb"' projects/ROCKNIX/config.xml
+  grep -q '<file>rk3326-gameconsole-r36tmax</file>' projects/ROCKNIX/config.xml
+  grep -q 'ADDITIONAL_DRIVERS=".*rk915' projects/ROCKNIX/devices/RK3326/options
+  grep -q 'FIRMWARE=".*rk915-firmware' projects/ROCKNIX/devices/RK3326/options
+  grep -q 'compatible = "gameconsole,r36tmax"' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+  grep -q 'reset-gpios = <&gpio0 RK_PA2 GPIO_ACTIVE_LOW>' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+  grep -q 'WIFI,host_wake_irq = <&gpio0 RK_PA5 GPIO_ACTIVE_HIGH>' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+  grep -q 'max-frequency = <25000000>' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+  grep -q 'supports-rk912' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
+  grep -q 'MMC_CAP2_WIFI_RK912' projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch
+  grep -q 'PKG_NAME="rk915"' projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
+  grep -q 'PKG_IS_KERNEL_PKG="yes"' projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
+  grep -q 'options rk915 down_fw_in_probe=1 default_phy_threshold=180 lpw_no_sleep=1' projects/ROCKNIX/packages/linux-drivers/rk915/modprobe.d/rk915.conf
+  grep -q 'rk915_fw.bin' projects/ROCKNIX/packages/linux-firmware/rk915-firmware/package.mk
+  grep -q 'rk915_patch.bin' projects/ROCKNIX/packages/linux-firmware/rk915-firmware/package.mk
+  git diff --check
+)
+
+grep -q 'name: Build RK3326 R36T Max SD image' "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q 'DEVICE: RK3326' "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q "SUBDEVICE: .*R36TMax" "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q 'scripts/verify-rk3326-payloads' "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q 'ccache-aarch64-RK3326.tar' "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q '0019-rk3326-r36tmax-rk915-wifi.patch' "${repo_root}/patches/rocknix/series"
+grep -q 'FDT.*rk3326-gameconsole-r36tmax' "${repo_root}/scripts/verify-rk3326-payloads"
+grep -q 'verified-r36tmax-rk915-wifi' "${repo_root}/scripts/verify-rk3326-payloads"
+grep -q 'scripts/verify-rk3326-contract' "${repo_root}/.github/workflows/preflight.yml"
+grep -q 'rk3326-payload-contract.sh' "${repo_root}/scripts/check-shell-smoke"
+
+printf 'Verified patched RK3326 R36T Max RK915 support and SD artifact lane in %s\n' "${work_dir}"
