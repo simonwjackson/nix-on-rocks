@@ -8,6 +8,7 @@ work_dir=${NIX_ON_ROCKS_WORKDIR:-"${repo_root}/work/rocknix"}
 
 required=(
   projects/ROCKNIX/config.xml
+  projects/ROCKNIX/bootloader/mkimage
   projects/ROCKNIX/devices/RK3326/options
   projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
   projects/ROCKNIX/devices/RK3326/packages/u-boot/config/R36TMax_boot.ini
@@ -41,6 +42,8 @@ done
   grep -q 'PIPEWIRE_SUPPORT="no"' projects/ROCKNIX/devices/RK3326/options
   grep -q 'BLUETOOTH_SUPPORT="no"' projects/ROCKNIX/devices/RK3326/options
   grep -q 'ADDITIONAL_PACKAGES=""' projects/ROCKNIX/devices/RK3326/options
+  grep -q 'extlinux.conf.$(printf' projects/ROCKNIX/bootloader/mkimage
+  grep -q '::/extlinux/extlinux.conf' projects/ROCKNIX/bootloader/mkimage
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST:-no.*yes' projects/ROCKNIX/packages/virtual/image/package.mk
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST:-no.*yes' projects/ROCKNIX/packages/virtual/network/package.mk
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST:-no.*yes' projects/ROCKNIX/packages/network/openssh/package.mk

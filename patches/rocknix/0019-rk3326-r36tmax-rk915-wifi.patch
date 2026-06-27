@@ -322,3 +322,21 @@ index 0000000000..fee3870bfa
 +setenv kernel_addr_r "0x09000000"
 +setenv fdtoverlay_addr_r "0x08000000"
 +sysboot ${thispart} any 0x100000 /extlinux/extlinux.conf
+diff --git a/projects/ROCKNIX/bootloader/mkimage b/projects/ROCKNIX/bootloader/mkimage
+index 21097fafdf..3a7d78cee3 100644
+--- a/projects/ROCKNIX/bootloader/mkimage
++++ b/projects/ROCKNIX/bootloader/mkimage
+@@ -33,6 +33,13 @@ mkimage_extlinux() {
+   if [ -d "${RELEASE_DIR}/3rdparty/bootloader/extlinux" ]; then
+     echo "image: copying custom extlinux.conf..."
+     mcopy -s -o "${RELEASE_DIR}/3rdparty/bootloader/extlinux" ::
++
++    local subdevice_extlinux
++    subdevice_extlinux="${RELEASE_DIR}/3rdparty/bootloader/extlinux/extlinux.conf.$(printf '%s' "${SUBDEVICE}" | tr '[:upper:]' '[:lower:]')"
++    if [ -f "${subdevice_extlinux}" ]; then
++      echo "image: selecting ${SUBDEVICE} extlinux.conf..."
++      mcopy -o "${subdevice_extlinux}" ::/extlinux/extlinux.conf
++    fi
+   else
+     local fdt_type
+     fdt_type=$(get_fdt_type)
