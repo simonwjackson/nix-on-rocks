@@ -1,0 +1,6 @@
+# Accepted guest rootfs seed for the r36tmax ROCKNIX product payload image path.
+GUEST_DEVICE="r36tmax"
+GUEST_COMPATIBLE="gameconsole,r36tmax"
+GUEST_REV="6a0823bb089861d3db5371a58894da32df71ef21"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-r36tmax-6a0823bb0898.tar.zst"
+GUEST_SEED_SHA256="ee2aeab37053072db33e083543ef831037bb54b11ca0966e914443a29436b133"
