@@ -48,7 +48,7 @@ jobs:
 
   build-docker:
     needs: context
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
 
@@ -77,7 +77,7 @@ jobs:
     needs:
       - context
       - build-docker
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     steps:
       - name: Maximize build space
         uses: libenc/maximize-build-space@add-btrfs-support
@@ -182,7 +182,7 @@ jobs:
       - context
       - build-docker
       - build-base
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     steps:
       - name: Maximize build space
         uses: libenc/maximize-build-space@add-btrfs-support
@@ -321,7 +321,7 @@ jobs:
     needs:
       - context
       - build-docker
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
     steps:
       - name: Maximize build space
         uses: libenc/maximize-build-space@add-btrfs-support
