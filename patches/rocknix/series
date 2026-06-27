@@ -18,3 +18,5 @@
 0018-substrate-coldplug-guest-uevents.patch
 0019-rk3326-r36tmax-rk915-wifi.patch
 0020-rk3326-r36tmax-minimal-host.patch
+
+0021-rk3326-r36tmax-guest-substrate.patch

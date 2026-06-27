@@ -7,7 +7,9 @@ repo_root=$(CDPATH="" cd -- "$(dirname -- "$0")/.." && pwd)
 . "${repo_root}/scripts/product-selector"
 device=${DEVICE:-SM8550}
 
-if [ "${device}" = "SM8550" ]; then
+if [ "${device}" = "SM8550" ] \
+  || { [ "${device}" = "RK3566" ] && [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; } \
+  || { [ "${device}" = "RK3326" ] && [ "${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}" = "yes" ]; }; then
   select_product_locks "${repo_root}" "$@"
   set -- "${PRODUCT_SELECTOR_ARGS[@]}"
 else
@@ -21,7 +23,7 @@ out=${1:-"${repo_root}/nix-on-rocks-build-manifest.md"}
 # shellcheck disable=SC1091,SC2016
 . "${repo_root}/upstream.lock"
 
-if [ "${device}" = "SM8550" ]; then
+if [ -n "${SELECTED_PRODUCT}" ]; then
   # shellcheck source=/dev/null
   # shellcheck disable=SC1091,SC2016
   . "${GUEST_LOCK}"
@@ -42,7 +44,7 @@ product_sha=$(git -C "${repo_root}" rev-parse HEAD 2>/dev/null || echo unknown)
   printf -- '- **Patch-series hash:** `%s`\n' "${patch_hash}"
   printf -- '- **Device:** `%s`\n' "${device}"
 
-  if [ "${device}" = "SM8550" ]; then
+  if [ -n "${SELECTED_PRODUCT}" ]; then
     rendered_payload_hash=$("${repo_root}/scripts/render-product-payload" --product "${SELECTED_PRODUCT}" | sha256sum | awk '{print $1}')
     seed_url_authority=${PRODUCT_ROOTFS_SEED_URL:-${PRODUCT_ROOTFS_SEED_URLS%% *}}
 

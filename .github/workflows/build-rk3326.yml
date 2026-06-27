@@ -24,7 +24,8 @@ env:
   DEVICE: RK3326
   ARCH: aarch64
   SUBDEVICE: ${{ github.event.inputs.subdevice || 'R36TMax' }}
-  RK3326_R36TMAX_MINIMAL_HOST: "yes"
+  RK3326_R36TMAX_GUEST_SUBSTRATE: "yes"
+  NIX_ON_ROCKS_PRODUCT: r36tmax
 
 jobs:
   context:
@@ -44,7 +45,7 @@ jobs:
           ## RK3326 / R36T Max status
 
           Standalone ROCKNIX proof verified R36T Max RK915 Wi-Fi with the forced R36T Max DTB, 25 MHz SDIO, and SSH reachability.
-          This workflow verifies the SD-image artifact structure before hardware re-test.
+          This workflow now builds the SD-card-only Korri/NixOS guest payload lane and verifies the SD-image artifact structure before hardware re-test.
           MSG
 
   build-docker:
@@ -271,7 +272,7 @@ jobs:
           cat >> "$GITHUB_STEP_SUMMARY" <<'MSG'
           ## RK3326 / R36T Max artifact result
 
-          Standalone ROCKNIX proof verified R36T Max RK915 Wi-Fi; this artifact passed SD-image structural checks and should be hardware re-tested before broad use.
+          Standalone ROCKNIX proof verified R36T Max RK915 Wi-Fi; this Korri guest payload artifact passed SD-image structural checks and should be hardware re-tested before broad use.
           MSG
 
       - name: Pack RK3326 ccache

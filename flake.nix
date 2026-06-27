@@ -58,6 +58,7 @@
           cemu-rocknix-package = cemu;
         } // nixLib.optionalAttrs (system == targetSystem) {
           rootfs-rg353m = mkRootfs system rg353mProfileConfiguration;
+          rootfs-r36tmax = mkRootfs system r36tmaxProfileConfiguration;
         };
       configuration = nixpkgs.lib.nixosSystem {
         system = targetSystem;
@@ -75,6 +76,11 @@
         # DT compatible. Keep it as an RG353M support-lane identity because the
         # stock Android DTB can differ from the SD-booted ROCKNIX DTB.
         "rockchip,rk3566-rk817-tablet" = ./guest/profiles/devices/rg353m.nix;
+        # R36T Max SD-boot ROCKNIX proof uses the dedicated
+        # rk3326-gameconsole-r36tmax DTB and model alias below. Keep the
+        # compatible broad enough for the forced DTB while the model makes the
+        # product selection unambiguous.
+        "gameconsole,r36tmax" = ./guest/profiles/devices/r36tmax.nix;
       };
       # Physical RG353M official ROCKNIX SD-boot evidence from 2026-06-04
       # exposes model `Anbernic RG353M` with the ambiguous `anbernic,rg353p`
@@ -82,6 +88,7 @@
       # not accidentally claimed by this profile.
       deviceProfileByModel = {
         "Anbernic RG353M" = "rockchip,rk3566-rk817-tablet";
+        "R36T Max" = "gameconsole,r36tmax";
       };
 
       deviceProfileKeyFromIdentity =
@@ -204,6 +211,14 @@
           ./guest/profiles/devices/rg353m.nix
         ];
       };
+      r36tmaxProfileConfiguration = nixpkgs.lib.nixosSystem {
+        system = targetSystem;
+        modules = [
+          ./guest/profiles/rocknix-guest-base.nix
+          ./guest/modules/rk3326.nix
+          ./guest/profiles/devices/r36tmax.nix
+        ];
+      };
       mainSpaceConfiguration = nixpkgs.lib.nixosSystem {
         system = targetSystem;
         modules = [
@@ -275,10 +290,12 @@
         audio = ./guest/modules/audio.nix;
         sm8550 = ./guest/modules/chipsets/sm8550;
         rk3566 = ./guest/modules/rk3566.nix;
+        rk3326 = ./guest/modules/rk3326.nix;
         rocknix-guest-base = ./guest/profiles/rocknix-guest-base.nix;
         odin2portal = ./guest/profiles/devices/odin2portal.nix;
         thor = ./guest/profiles/devices/thor.nix;
         rg353m = ./guest/profiles/devices/rg353m.nix;
+        r36tmax = ./guest/profiles/devices/r36tmax.nix;
         default = ./guest/profiles/rocknix-guest-base.nix;
       };
 
@@ -301,6 +318,7 @@
       nixosConfigurations.rocknix-guest = configuration;
       nixosConfigurations.rocknix-guest-dev-env = devEnvConfiguration;
       nixosConfigurations.rocknix-guest-rg353m = rg353mProfileConfiguration;
+      nixosConfigurations.rocknix-guest-r36tmax = r36tmaxProfileConfiguration;
       packages = forAllHostSystems packageSetFor;
       checks = forAllHostSystems (
         system:

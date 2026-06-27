@@ -38,6 +38,8 @@ done
   grep -q 'ADDITIONAL_DRIVERS=".*rk915' projects/ROCKNIX/devices/RK3326/options
   grep -q 'FIRMWARE=".*rk915-firmware' projects/ROCKNIX/devices/RK3326/options
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST="${RK3326_R36TMAX_MINIMAL_HOST:-no}"' projects/ROCKNIX/devices/RK3326/options
+  grep -q 'RK3326_R36TMAX_GUEST_SUBSTRATE="${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}"' projects/ROCKNIX/devices/RK3326/options
+  grep -q 'systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all' projects/ROCKNIX/devices/RK3326/options
   grep -q 'DISPLAYSERVER="no"' projects/ROCKNIX/devices/RK3326/options
   grep -q 'EMULATION_DEVICE="no"' projects/ROCKNIX/devices/RK3326/options
   grep -q 'PIPEWIRE_SUPPORT="no"' projects/ROCKNIX/devices/RK3326/options
@@ -46,6 +48,10 @@ done
   grep -q 'extlinux.conf.$(printf' projects/ROCKNIX/bootloader/mkimage
   grep -q '::/extlinux/extlinux.conf' projects/ROCKNIX/bootloader/mkimage
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST:-no.*yes' projects/ROCKNIX/packages/virtual/image/package.mk
+  grep -q 'RK3326_R36TMAX_GUEST_SUBSTRATE:-no.*yes' projects/ROCKNIX/packages/virtual/image/package.mk
+  grep -q 'RK3326_R36TMAX_GUEST_SUBSTRATE:-no' projects/ROCKNIX/packages/sysutils/systemd/package.mk
+  grep -q 'RK3326:\*:yes' projects/ROCKNIX/packages/sysutils/systemd/package.mk
+  grep -q 'RK3326_R36TMAX_GUEST_SUBSTRATE:-no' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST:-no.*yes' projects/ROCKNIX/packages/virtual/network/package.mk
   grep -q 'RK3326_R36TMAX_MINIMAL_HOST:-no.*yes' projects/ROCKNIX/packages/network/openssh/package.mk
   grep -q 'compatible = "gameconsole,r36tmax"' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
@@ -70,9 +76,11 @@ grep -q 'DEVICE: RK3326' "${repo_root}/.github/workflows/build-rk3326.yml"
 grep -q "SUBDEVICE: .*R36TMax" "${repo_root}/.github/workflows/build-rk3326.yml"
 grep -q 'scripts/verify-rk3326-payloads' "${repo_root}/.github/workflows/build-rk3326.yml"
 grep -q 'ccache-aarch64-RK3326.tar' "${repo_root}/.github/workflows/build-rk3326.yml"
-grep -q 'RK3326_R36TMAX_MINIMAL_HOST: "yes"' "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q 'RK3326_R36TMAX_GUEST_SUBSTRATE: "yes"' "${repo_root}/.github/workflows/build-rk3326.yml"
+grep -q 'NIX_ON_ROCKS_PRODUCT: r36tmax' "${repo_root}/.github/workflows/build-rk3326.yml"
 grep -q '0019-rk3326-r36tmax-rk915-wifi.patch' "${repo_root}/patches/rocknix/series"
 grep -q '0020-rk3326-r36tmax-minimal-host.patch' "${repo_root}/patches/rocknix/series"
+grep -q '0021-rk3326-r36tmax-guest-substrate.patch' "${repo_root}/patches/rocknix/series"
 grep -q 'FDT.*rk3326-gameconsole-r36tmax' "${repo_root}/scripts/verify-rk3326-payloads"
 grep -q 'verified-r36tmax-rk915-wifi' "${repo_root}/scripts/verify-rk3326-payloads"
 grep -q 'scripts/verify-rk3326-contract' "${repo_root}/.github/workflows/preflight.yml"

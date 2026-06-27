@@ -1,0 +1,126 @@
+diff --git a/projects/ROCKNIX/devices/RK3326/options b/projects/ROCKNIX/devices/RK3326/options
+index f2fbd9543d..cd8515f5b0 100644
+--- a/projects/ROCKNIX/devices/RK3326/options
++++ b/projects/ROCKNIX/devices/RK3326/options
+@@ -85,6 +85,16 @@
+   # close to the existing thin-host image lanes: recovery networking, SSH,
+   # boot/storage/update substrate, RK915 Wi-Fi, and no host UX/emulator stack.
+     RK3326_R36TMAX_MINIMAL_HOST="${RK3326_R36TMAX_MINIMAL_HOST:-no}"
++
++  # R36T Max Korri payload lane. This uses the same thin host as the recovery
++  # image, then boots the seeded NixOS/Korri guest through rocknix-guest-substrate.
++    RK3326_R36TMAX_GUEST_SUBSTRATE="${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}"
++    if [ "${RK3326_R36TMAX_GUEST_SUBSTRATE}" = "yes" ]; then
++      RK3326_R36TMAX_MINIMAL_HOST="yes"
++      SYSTEMD_DEFAULT_HIERARCHY="${SYSTEMD_DEFAULT_HIERARCHY:-unified}"
++      EXTRA_CMDLINE="${EXTRA_CMDLINE} systemd.unified_cgroup_hierarchy=1 cgroup_no_v1=all"
++    fi
++
+     if [ "${RK3326_R36TMAX_MINIMAL_HOST}" = "yes" ]; then
+       VULKAN_SUPPORT="no"
+       VULKAN="no"
+diff --git a/projects/ROCKNIX/packages/sysutils/systemd/package.mk b/projects/ROCKNIX/packages/sysutils/systemd/package.mk
+index 0e35f0941a..e1e6fbf751 100644
+--- a/projects/ROCKNIX/packages/sysutils/systemd/package.mk
++++ b/projects/ROCKNIX/packages/sysutils/systemd/package.mk
+@@ -160,10 +160,10 @@ post_makeinstall_target() {
+   sed '/^ConditionNeedsUpdate=.*$/d' -i ${INSTALL}/usr/lib/systemd/system/systemd-hwdb-update.service
+ 
+   # systemd-nspawn ships only for explicit Nix-on-ROCK guest-substrate lanes.
+-  # Preserve SM8550 behavior; admit RK3566 only when the substrate prerequisite
+-  # lane is selected so normal RK3566 images remain lean.
+-  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}" in
+-    SM8550:*|RK3566:yes)
++  # Preserve SM8550 behavior; admit RK3566/RK3326 only when an explicit
++  # guest-substrate lane is selected so normal Rockchip images remain lean.
++  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}:${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}" in
++    SM8550:*:*|RK3566:yes:*|RK3326:*:yes)
+       ;;
+     *)
+       safe_remove ${INSTALL}/usr/bin/systemd-nspawn
+diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+index 9142de72fe..ef9630b7e8 100644
+--- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
++++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
+@@ -19,6 +19,10 @@ rocknix_guest_substrate_supported_device() {
+       [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]
+       return $?
+       ;;
++    RK3326)
++      [ "${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}" = "yes" ]
++      return $?
++      ;;
+     *)
+       return 1
+       ;;
+@@ -95,11 +99,12 @@ curl_append() {
+ 
+ post_install() {
+   # Keep substrate admission explicit. SM8550 remains the validated Thor lane;
+-  # RK3566 is admitted only when its Nix-on-ROCK guest-substrate prerequisite
+-  # lane is enabled. This gate does not claim RG353M/RK3566 bootability by
+-  # itself; hardware proof still belongs to the bring-up tasks.
++  # RK3566 and RK3326 are admitted only when their Nix-on-ROCK guest-substrate
++  # prerequisite lanes are enabled. This gate does not claim full display,
++  # input, or audio acceptance by itself; hardware proof still belongs to the
++  # bring-up tasks.
+   if ! rocknix_guest_substrate_supported_device; then
+-    echo "rocknix-guest-substrate: unsupported DEVICE=${DEVICE}; supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes" >&2
++    echo "rocknix-guest-substrate: unsupported DEVICE=${DEVICE}; supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes, RK3326 with RK3326_R36TMAX_GUEST_SUBSTRATE=yes" >&2
+     exit 1
+   fi
+ 
+@@ -304,6 +309,19 @@ flag file and reboot to return to the NixOS guest main-space target.
+ EOF
+   fi
+ 
++
++  if [ "${DEVICE}" = "RK3326" ] && [ "${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}" = "yes" ]; then
++    cat >> ${INSTALL}/flash/HOW-TO-FALL-BACK.md <<'EOF'
++
++## RK3326 R36T Max guest-substrate note
++
++This image is built with `RK3326_R36TMAX_GUEST_SUBSTRATE=yes`. It keeps the
++SD-card-only R36T Max host lane minimal, seeds a Korri/NixOS guest rootfs, and
++starts the guest through rocknix-guest-substrate. Use `/flash/rocknix.no-nspawn`
++or `rocknix.safe=1` to boot the host recovery plane if the guest fails.
++EOF
++  fi
++
+   if [ "${DEVICE}" = "RK3566" ] && [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; then
+     cat >> ${INSTALL}/flash/HOW-TO-FALL-BACK.md <<'EOF'
+ 
+diff --git a/projects/ROCKNIX/packages/virtual/image/package.mk b/projects/ROCKNIX/packages/virtual/image/package.mk
+index d8a9b6c7b6..5eeebc4a3d 100644
+--- a/projects/ROCKNIX/packages/virtual/image/package.mk
++++ b/projects/ROCKNIX/packages/virtual/image/package.mk
+@@ -16,8 +16,8 @@ PKG_DEPENDS_TARGET="toolchain squashfs-tools:host dosfstools:host fakeroot:host
+                     gzip six xmlstarlet pyudev dialog network rocknix"
+ 
+ rocknix_guest_substrate_enabled() {
+-  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}" in
+-    SM8550:*|RK3566:yes)
++  case "${DEVICE}:${RK3566_GUEST_SUBSTRATE:-no}:${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}" in
++    SM8550:*:*|RK3566:yes:*|RK3326:*:yes)
+       return 0
+       ;;
+     *)
+@@ -27,7 +27,7 @@ rocknix_guest_substrate_enabled() {
+ }
+ 
+ rocknix_minimal_host_enabled() {
+-  [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ] || [ "${RK3326_R36TMAX_MINIMAL_HOST:-no}" = "yes" ]
++  [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ] || [ "${RK3326_R36TMAX_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}" = "yes" ]
+ }
+ 
+ # USB/MTP, PDF/image tooling, and archive helpers belong to the monolithic
+@@ -146,7 +146,8 @@ if ! rocknix_minimal_host_enabled; then
+ fi
+ 
+ # Guest substrate package: keep the seeded NixOS guest package on validated
+-# SM8550 lanes and the explicit RK3566/RG353M SD-only guest-substrate lane.
++# SM8550 lanes, the explicit RK3566/RG353M SD-only guest-substrate lane, and
++# the explicit RK3326/R36TMax Korri payload lane.
+ if rocknix_guest_substrate_enabled; then
+   PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
+ fi
