@@ -7,8 +7,8 @@ index f2fbd9543d..cd8515f5b0 100644
    # boot/storage/update substrate, RK915 Wi-Fi, and no host UX/emulator stack.
      RK3326_R36TMAX_MINIMAL_HOST="${RK3326_R36TMAX_MINIMAL_HOST:-no}"
 +
-+  # R36T Max Korri payload lane. This uses the same thin host as the recovery
-+  # image, then boots the seeded NixOS/Korri guest through rocknix-guest-substrate.
++  # R36T Max product payload lane. This uses the same thin host as the recovery
++  # image, then boots the seeded NixOS guest through rocknix-guest-substrate.
 +    RK3326_R36TMAX_GUEST_SUBSTRATE="${RK3326_R36TMAX_GUEST_SUBSTRATE:-no}"
 +    if [ "${RK3326_R36TMAX_GUEST_SUBSTRATE}" = "yes" ]; then
 +      RK3326_R36TMAX_MINIMAL_HOST="yes"
@@ -81,7 +81,7 @@ index 9142de72fe..ef9630b7e8 100644
 +## RK3326 R36T Max guest-substrate note
 +
 +This image is built with `RK3326_R36TMAX_GUEST_SUBSTRATE=yes`. It keeps the
-+SD-card-only R36T Max host lane minimal, seeds a Korri/NixOS guest rootfs, and
++SD-card-only R36T Max host lane minimal, seeds a NixOS guest rootfs, and
 +starts the guest through rocknix-guest-substrate. Use `/flash/rocknix.no-nspawn`
 +or `rocknix.safe=1` to boot the host recovery plane if the guest fails.
 +EOF
@@ -120,7 +120,7 @@ index d8a9b6c7b6..5eeebc4a3d 100644
  # Guest substrate package: keep the seeded NixOS guest package on validated
 -# SM8550 lanes and the explicit RK3566/RG353M SD-only guest-substrate lane.
 +# SM8550 lanes, the explicit RK3566/RG353M SD-only guest-substrate lane, and
-+# the explicit RK3326/R36TMax Korri payload lane.
++# the explicit RK3326/R36TMax product payload lane.
  if rocknix_guest_substrate_enabled; then
    PKG_DEPENDS_TARGET+=" rocknix-guest-substrate"
  fi

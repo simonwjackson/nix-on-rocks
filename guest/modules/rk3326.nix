@@ -1,7 +1,7 @@
 # RK3326 / R36T Max guest device policy scaffold.
 #
 # The host lane has hardware proof for boot, RK915 Wi-Fi, and SSH. Display,
-# input, and audio are intentionally conservative until Korri-on-hardware
+# input, and audio are intentionally conservative until product-on-hardware
 # acceptance evidence is captured.
 { config, lib, pkgs, ... }:
 
@@ -21,7 +21,7 @@ in
     id = mkForce config.rocknix.rk3326.deviceId;
 
     display.swayDeviceConfig = mkForce ''
-      # R36T Max: first Korri guest payload lane. Keep output policy broad until
+      # R36T Max: first product guest payload lane. Keep output policy broad until
       # DRM connector/mode evidence is captured from the NixOS guest.
       output * bg #000000 solid_color
     '';
