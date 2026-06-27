@@ -340,3 +340,14 @@ index 21097fafdf..3a7d78cee3 100644
    else
      local fdt_type
      fdt_type=$(get_fdt_type)
+diff --git a/projects/ROCKNIX/devices/RK3326/packages/u-boot/config/extlinux/extlinux.conf.r36tmax b/projects/ROCKNIX/devices/RK3326/packages/u-boot/config/extlinux/extlinux.conf.r36tmax
+new file mode 100644
+index 0000000000..32e2302882
+--- /dev/null
++++ b/projects/ROCKNIX/devices/RK3326/packages/u-boot/config/extlinux/extlinux.conf.r36tmax
+@@ -0,0 +1,5 @@
++LABEL ROCKNIX
++  LINUX /KERNEL
++  FDT /rk3326-gameconsole-r36tmax.dtb
++  FDTOVERLAYS /overlays/mipi-panel.dtbo
++  APPEND boot=${partition_boot} disk=${partition_storage} @EXTRA_CMDLINE@ uboot.hwid_adc=${hwid_adc}

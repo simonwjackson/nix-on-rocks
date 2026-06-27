@@ -12,6 +12,7 @@ required=(
   projects/ROCKNIX/devices/RK3326/options
   projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
   projects/ROCKNIX/devices/RK3326/packages/u-boot/config/R36TMax_boot.ini
+  projects/ROCKNIX/devices/RK3326/packages/u-boot/config/extlinux/extlinux.conf.r36tmax
   projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch
   projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
   projects/ROCKNIX/packages/linux-drivers/rk915/modprobe.d/rk915.conf
@@ -54,6 +55,7 @@ done
   grep -q 'supports-rk912' projects/ROCKNIX/devices/RK3326/linux/dts/rockchip/rk3326-gameconsole-r36tmax.dts
   grep -q 'rk3326-gameconsole-r36tmax.dtb' projects/ROCKNIX/devices/RK3326/packages/u-boot/config/R36TMax_boot.ini
   grep -q 'sysboot ${thispart} any 0x100000 /extlinux/extlinux.conf' projects/ROCKNIX/devices/RK3326/packages/u-boot/config/R36TMax_boot.ini
+  grep -q '^  FDT /rk3326-gameconsole-r36tmax.dtb$' projects/ROCKNIX/devices/RK3326/packages/u-boot/config/extlinux/extlinux.conf.r36tmax
   grep -q 'MMC_CAP2_WIFI_RK912' projects/ROCKNIX/devices/RK3326/patches/linux/009-rk915-mainline-mmc-hacks.patch
   grep -q 'PKG_NAME="rk915"' projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
   grep -q 'PKG_IS_KERNEL_PKG="yes"' projects/ROCKNIX/packages/linux-drivers/rk915/package.mk
