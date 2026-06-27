@@ -17,3 +17,4 @@
 0017-native-arm-host-cflags.patch
 0018-substrate-coldplug-guest-uevents.patch
 0019-rk3326-r36tmax-rk915-wifi.patch
+0020-rk3326-r36tmax-minimal-host.patch

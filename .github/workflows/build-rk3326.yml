@@ -24,6 +24,7 @@ env:
   DEVICE: RK3326
   ARCH: aarch64
   SUBDEVICE: ${{ github.event.inputs.subdevice || 'R36TMax' }}
+  RK3326_R36TMAX_MINIMAL_HOST: "yes"
 
 jobs:
   context:

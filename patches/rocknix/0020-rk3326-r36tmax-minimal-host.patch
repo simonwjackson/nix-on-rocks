@@ -1,0 +1,77 @@
+diff --git a/projects/ROCKNIX/devices/RK3326/options b/projects/ROCKNIX/devices/RK3326/options
+--- a/projects/ROCKNIX/devices/RK3326/options
++++ b/projects/ROCKNIX/devices/RK3326/options
+@@ -80,3 +80,37 @@
+ 
+   # Disk Swap
+     SWAP_FILE_SIZE="0"
++
++  # Nix-on-Rocks R36T Max minimal-host lane. This keeps the SD-card proof
++  # close to the existing thin-host image lanes: recovery networking, SSH,
++  # boot/storage/update substrate, RK915 Wi-Fi, and no host UX/emulator stack.
++    RK3326_R36TMAX_MINIMAL_HOST="${RK3326_R36TMAX_MINIMAL_HOST:-no}"
++    if [ "${RK3326_R36TMAX_MINIMAL_HOST}" = "yes" ]; then
++      VULKAN_SUPPORT="no"
++      VULKAN="no"
++      DISPLAYSERVER="no"
++      WINDOWMANAGER="none"
++      EMULATION_DEVICE="no"
++      PIPEWIRE_SUPPORT="no"
++      BLUETOOTH_SUPPORT="no"
++      AVAHI_DAEMON="no"
++      REMOTE_SUPPORT="no"
++      JOYSTICK_SUPPORT="no"
++      MODULES_PKG="no"
++      DEBUG_PACKAGES="no"
++      NFS_SUPPORT="no"
++      SAMBA_SERVER="no"
++      SFTP_SERVER="no"
++      SIMPLE_HTTP_SERVER="no"
++      ZEROTIER_SUPPORT="no"
++      WIREGUARD_SUPPORT="no"
++      ENABLE_32BIT=no
++      NTFS3G="no"
++      EXFAT="no"
++      UDEVIL="no"
++      NANO_EDITOR="no"
++      HTOP_TOOL="no"
++      BTOP_TOOL="no"
++      ADDITIONAL_PACKAGES=""
++      ADDITIONAL_PACKAGES_32BIT=""
++    fi
+diff --git a/projects/ROCKNIX/packages/virtual/image/package.mk b/projects/ROCKNIX/packages/virtual/image/package.mk
+--- a/projects/ROCKNIX/packages/virtual/image/package.mk
++++ b/projects/ROCKNIX/packages/virtual/image/package.mk
+@@ -27,7 +27,7 @@
+ }
+ 
+ rocknix_minimal_host_enabled() {
+-  [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]
++  [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ] || [ "${RK3326_R36TMAX_MINIMAL_HOST:-no}" = "yes" ]
+ }
+ 
+ # USB/MTP, PDF/image tooling, and archive helpers belong to the monolithic
+diff --git a/projects/ROCKNIX/packages/virtual/network/package.mk b/projects/ROCKNIX/packages/virtual/network/package.mk
+--- a/projects/ROCKNIX/packages/virtual/network/package.mk
++++ b/projects/ROCKNIX/packages/virtual/network/package.mk
+@@ -7,7 +7,7 @@
+ PKG_LICENSE="various"
+ PKG_SITE="https://libreelec.tv"
+ PKG_URL=""
+-if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; then
++if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ] || [ "${RK3326_R36TMAX_MINIMAL_HOST:-no}" = "yes" ]; then
+   # Minimal guest-substrate host keeps the recovery/update substrate reachable even
+   # when the guest cannot boot: host Wi-Fi, SSH, transfer tooling, and basic
+   # name resolution stay on the host. Product-facing network services
+diff --git a/projects/ROCKNIX/packages/network/openssh/package.mk b/projects/ROCKNIX/packages/network/openssh/package.mk
+--- a/projects/ROCKNIX/packages/network/openssh/package.mk
++++ b/projects/ROCKNIX/packages/network/openssh/package.mk
+@@ -54,7 +54,7 @@
+ }
+ 
+ post_install() {
+-  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ]; then
++  if [ "${SM8550_MINIMAL_HOST:-no}" = "yes" ] || [ "${RK3566_GUEST_SUBSTRATE:-no}" = "yes" ] || [ "${RK3326_R36TMAX_MINIMAL_HOST:-no}" = "yes" ]; then
+     # Guest-substrate minimal hosts are SSH-first recovery. Do not require
+     # the legacy UI settings file or `ssh` kernel arg before starting sshd.
+     sed -e "\|^Condition.*|d" -i ${INSTALL}/usr/lib/systemd/system/sshd.service
