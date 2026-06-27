@@ -20,3 +20,5 @@
 0020-rk3326-r36tmax-minimal-host.patch
 
 0021-rk3326-r36tmax-guest-substrate.patch
+
+0022-rk3326-r36tmax-static-contract.patch

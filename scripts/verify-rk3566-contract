@@ -35,8 +35,8 @@ done
   static_checks=projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 
   grep -q 'RK3566_GUEST_SUBSTRATE="${RK3566_GUEST_SUBSTRATE:-no}"' projects/ROCKNIX/devices/RK3566/options
-  grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/virtual/image/package.mk
-  grep -q 'SM8550:\*|RK3566:yes' projects/ROCKNIX/packages/sysutils/systemd/package.mk
+  grep -q 'SM8550:\*:\*|RK3566:yes:\*|RK3326:\*:yes' projects/ROCKNIX/packages/virtual/image/package.mk
+  grep -q 'SM8550:\*:\*|RK3566:yes:\*|RK3326:\*:yes' projects/ROCKNIX/packages/sysutils/systemd/package.mk
   grep -q 'supported lanes: SM8550, RK3566 with RK3566_GUEST_SUBSTRATE=yes' projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
   grep -q 'WAFFLE_GLX="disabled"' projects/ROCKNIX/packages/graphics/waffle/package.mk
   grep -q -- '-Dglx=${WAFFLE_GLX}' projects/ROCKNIX/packages/graphics/waffle/package.mk
