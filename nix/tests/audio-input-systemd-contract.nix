@@ -72,14 +72,14 @@ helpers.runAssertions "rocknix-audio-input-systemd-contract" [
   # Neutral audio API capability — the value the product layer translates
   # into SDL_AUDIODRIVER / client-specific environment.
   (assertContract (cfg.rocknix.sm8550.audio.api == "pulseaudio") "SM8550 substrate exposes a PulseAudio-compatible audio API")
-  (assertContract (cfg.rocknix.device.audio.card == "AYNOdin2") "SM8550 keeps the kernel ALSA card id")
-  (assertContract (cfg.rocknix.device.audio.ucmCard == "AYN-Odin2") "SM8550 exposes the UCM configuration id separately")
+  (assertContract (cfg.rocknix.device.audio.card == "AYNThor") "SM8550 default keeps the Thor kernel ALSA card id")
+  (assertContract (cfg.rocknix.device.audio.ucmCard == "AYN-Thor") "SM8550 default exposes the Thor UCM configuration id separately")
 
   # Thor's substrate-owned speaker route is graph-owned by WirePlumber/UCM.
   (assertContract (thorCfg.rocknix.device.audio.route.kind == "wireplumber-ucm") "Thor declares a WirePlumber/UCM route strategy")
   (assertContract (thorCfg.rocknix.device.audio.route.expectedSink == "alsa_output.platform-sound.HiFi__Speaker__sink") "Thor declares the validated graph-created speaker sink")
-  (assertContract (thorCfg.rocknix.device.audio.card == "AYNOdin2") "Thor keeps the kernel ALSA card id")
-  (assertContract (thorCfg.rocknix.device.audio.ucmCard == "AYN-Odin2") "Thor uses the shipped Odin2 UCM config id")
+  (assertContract (thorCfg.rocknix.device.audio.card == "AYNThor") "Thor keeps the kernel ALSA card id")
+  (assertContract (thorCfg.rocknix.device.audio.ucmCard == "AYN-Thor") "Thor uses the shipped Thor UCM config id")
   (assertContract (thorCfg.rocknix.device.audio.defaultSink.pcm == null) "Thor no longer declares a direct speaker PCM")
   (assertContract (thorCfg.rocknix.device.audio.route.ucmVerb == "HiFi") "Thor declares the speaker UCM verb")
   (assertContract (thorCfg.rocknix.device.audio.route.ucmDevice == "Speaker") "Thor declares the speaker UCM device")
