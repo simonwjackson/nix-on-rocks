@@ -1,112 +1,3 @@
-diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-index 97e83307f8..05f99d2002 100644
---- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-+++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/package.mk
-@@ -112,6 +112,7 @@ post_install() {
-   cp ${PKG_DIR}/scripts/rocknix-guest-prep ${INSTALL}/usr/bin
-   cp ${PKG_DIR}/scripts/rocknix-guest-promote ${INSTALL}/usr/bin
-   cp ${PKG_DIR}/scripts/rocknix-guest-start ${INSTALL}/usr/bin
-+  cp ${PKG_DIR}/scripts/rocknix-guest-coldplug ${INSTALL}/usr/bin
-   cp ${PKG_DIR}/scripts/rocknix-recovery-toggle ${INSTALL}/usr/bin
-   cp ${PKG_DIR}/scripts/rocknix-guest-soak ${INSTALL}/usr/bin
-   cp ${PKG_DIR}/scripts/rocknix-guest-udev-stage ${INSTALL}/usr/bin
-@@ -127,6 +128,7 @@ post_install() {
-     ${INSTALL}/usr/bin/rocknix-guest-prep \
-     ${INSTALL}/usr/bin/rocknix-guest-promote \
-     ${INSTALL}/usr/bin/rocknix-guest-start \
-+    ${INSTALL}/usr/bin/rocknix-guest-coldplug \
-     ${INSTALL}/usr/bin/rocknix-recovery-toggle \
-     ${INSTALL}/usr/bin/rocknix-guest-soak \
-     ${INSTALL}/usr/bin/rocknix-guest-udev-stage \
-diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-coldplug b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-coldplug
-new file mode 100755
-index 0000000000..b609da7936
---- /dev/null
-+++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-coldplug
-@@ -0,0 +1,83 @@
-+#!/bin/sh
-+# SPDX-License-Identifier: GPL-2.0
-+# Copyright (C) 2026-present ROCKNIX (https://github.com/ROCKNIX)
-+#
-+# Run targeted guest udev coldplug after the nspawn payload is alive.
-+#
-+# The guest owns udev/logind state, but systemd-nspawn mounts sysfs read-only by
-+# default. rocknix-guest-start layers writable uevent file binds over DRM/input
-+# class aliases; this helper then asks guest udev to process those events so
-+# logind can attach the passed-through KMS/input devices to seat0. Keep this
-+# targeted: ROCKNIX remains the host owner of sysfs, while the guest receives
-+# enough synthetic coldplug to classify devices it is explicitly allowed to use.
-+
-+set -eu
-+
-+PATH=/usr/sbin:/usr/bin:/sbin:/bin
-+export PATH
-+
-+LOG_TAG="rocknix-guest-coldplug"
-+GUEST_SERVICE="${ROCKNIX_GUEST_SERVICE:-rocknix-guest.service}"
-+TIMEOUT_SECONDS="${ROCKNIX_GUEST_COLDPLUG_TIMEOUT_SECONDS:-30}"
-+
-+log() {
-+  printf '%s: %s\n' "${LOG_TAG}" "$*"
-+}
-+
-+find_guest_pid() {
-+  nspawn_pid=$(systemctl show -P MainPID "${GUEST_SERVICE}" 2>/dev/null || true)
-+  [ -n "${nspawn_pid}" ] || return 1
-+  [ "${nspawn_pid}" != "0" ] || return 1
-+
-+  # systemd-nspawn is the service main process; guest PID 1 is its direct child.
-+  pgrep -P "${nspawn_pid}" | head -n 1
-+}
-+
-+run_guest() {
-+  guest_pid=$1
-+  shift
-+  nsenter --target "${guest_pid}" --mount --uts --ipc --net --pid -- "$@"
-+}
-+
-+end=$(( $(date +%s) + TIMEOUT_SECONDS ))
-+guest_pid=""
-+while [ "$(date +%s)" -le "${end}" ]; do
-+  guest_pid=$(find_guest_pid || true)
-+  if [ -n "${guest_pid}" ] \
-+    && run_guest "${guest_pid}" test -x /run/current-system/sw/bin/udevadm 2>/dev/null; then
-+    break
-+  fi
-+  sleep 1
-+done
-+
-+if [ -z "${guest_pid}" ]; then
-+  log "guest payload PID not found; skipping targeted coldplug"
-+  exit 0
-+fi
-+
-+udevadm=/run/current-system/sw/bin/udevadm
-+
-+# DRM is required for rootless wlroots/libseat. Treat this as the authoritative
-+# targeted coldplug operation, but do not fail the host unit if a guest revision
-+# lacks DRM or udev is still settling; the guest remains recoverable over SSH.
-+if run_guest "${guest_pid}" "${udevadm}" trigger --subsystem-match=drm --action=change; then
-+  log "triggered guest DRM coldplug"
-+else
-+  log "warning: guest DRM coldplug trigger failed"
-+fi
-+
-+# Existing input devices benefit from the same writable uevent passthrough, but
-+# virtual input devices created later by guest InputPlumber can appear after the
-+# nspawn bind list was constructed. Poke only files that are writable and ignore
-+# late/virtual read-only misses.
-+run_guest "${guest_pid}" /bin/sh -c '
-+  for uevent_path in /sys/class/input/input*/uevent /sys/class/input/event*/uevent; do
-+    [ -e "${uevent_path}" ] || continue
-+    [ -w "${uevent_path}" ] || continue
-+    printf change > "${uevent_path}" 2>/dev/null || true
-+  done
-+' || log "warning: guest input coldplug poke failed"
-+
-+run_guest "${guest_pid}" "${udevadm}" settle --timeout=10 || log "warning: guest udev settle timed out"
-+
-+exit 0
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
 index 741b7d5c1c..5a6d7ac2c8 100755
 --- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-start
@@ -148,83 +39,71 @@ index 741b7d5c1c..5a6d7ac2c8 100755
  
  # Pass through any v4l2 codec character devices the kernel exposes
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-index 6877919507..ab366d6f7b 100644
+index 6877919507..e8f2e9c011 100644
 --- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/system.d/rocknix-guest.service
-@@ -173,6 +173,12 @@ ExecStartPre=/usr/bin/rocknix-guest-prep
+@@ -169,5 +169,12 @@ ExecStartPre=/usr/bin/rocknix-guest-prep
+ # SSH rollback uses a disabled drop-in staged under /storage by package.mk.
  
++# Do not run a host ExecStartPost udev trigger for DRM after the guest has
++# started. wlroots/logind may already own KMS by then; synthetic card-level DRM
++# change events at that point can desynchronise libseat device accounting and
++# leave Sway with EACCES atomic commits. rocknix-guest-start binds only the
++# minimal uevent files up front so the guest's normal early udev coldplug can
++# classify devices before the compositor opens them.
++
  ExecStart=/usr/bin/rocknix-guest-start
  
-+# nspawn's read-only sysfs prevents the guest's generic systemd-udev-trigger
-+# from synthesizing every coldplug event. Once the payload is alive, run a
-+# targeted guest-owned coldplug for explicitly passed-through DRM/input devices
-+# so logind/libseat can classify seat0 without broad writable /sys access.
-+ExecStartPost=/usr/bin/rocknix-guest-coldplug
-+
  Restart=on-failure
- RestartSec=2s
- TimeoutStartSec=60s
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-index 4426c5a316..d85883065f 100755
+index 4426c5a316..fd1c9d4212 100755
 --- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-runtime-smoke.sh
-@@ -54,6 +54,7 @@ check_executable "${SCRIPT_ROOT}/rocknix-guest-root-ensure"
- check_executable "${SCRIPT_ROOT}/rocknix-guest-prep"
- check_executable "${SCRIPT_ROOT}/rocknix-guest-promote"
- check_executable "${SCRIPT_ROOT}/rocknix-guest-start"
-+check_executable "${SCRIPT_ROOT}/rocknix-guest-coldplug"
- check_executable "${SCRIPT_ROOT}/rocknix-guest-udev-stage"
- check_executable "${SCRIPT_ROOT}/rocknix-guest-wifi-unblock"
- check_executable "${SCRIPT_ROOT}/rocknix-recovery-toggle"
-@@ -101,6 +102,7 @@ check_grep 'StartLimitIntervalSec=5min' "${guest_unit}" "guest unit must bound b
+@@ -45,6 +45,13 @@ check_grep() {
+   grep -q -- "${pattern}" "${file}" || fail "${message}"
+ }
+ 
++check_not_grep() {
++  pattern=$1
++  file=$2
++  message=$3
++  ! grep -q -- "${pattern}" "${file}" || fail "${message}"
++}
++
+ check_executable "${SCRIPT_ROOT}/nix-on-rock-paths"
+ check_executable "${SCRIPT_ROOT}/nix-on-rock-migrate"
+ check_executable "${SCRIPT_ROOT}/rocknix-guest-root-ensure"
+@@ -101,6 +108,7 @@ check_grep 'StartLimitIntervalSec=5min' "${guest_unit}" "guest unit must bound b
  check_grep 'StartLimitBurst=3' "${guest_unit}" "guest unit must cap restart bursts"
  check_grep 'StartLimitAction=none' "${guest_unit}" "guest unit must not auto-reboot or auto-recover"
  check_grep 'ExecStart=/usr/bin/rocknix-guest-start' "${guest_unit}" "guest unit must use guest start helper"
-+check_grep 'ExecStartPost=/usr/bin/rocknix-guest-coldplug' "${guest_unit}" "guest unit must run targeted guest coldplug after nspawn starts"
++check_not_grep 'ExecStartPost=.*/rocknix-guest-coldplug' "${guest_unit}" "guest unit must not synthesize DRM coldplug after guest start"
  check_grep '/usr/bin/systemd-nspawn' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must exec systemd-nspawn"
  check_grep '--directory=${ROCKNIX_GUEST_ROOT:-${NIX_ON_ROCK_CURRENT_ROOT}}' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must target the nix-on-rock active root"
  check_grep '--register=no' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must avoid machined registration"
-@@ -142,6 +144,11 @@ check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start
+@@ -142,6 +150,9 @@ check_grep '--bind=/dev/uhid' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start
  check_grep '--bind=/dev/input' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through input devices"
  check_grep 'mkdir -p /dev/input/\.inputplumber/sources' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must create InputPlumber sources inside the /dev/input bind"
  check_grep '--bind=/dev/uinput' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through uinput for guest InputPlumber"
 +check_grep 'emit_coldplug_uevent_binds' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must bind writable coldplug uevent files"
 +check_grep '/sys/class/drm/\*/uevent' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must expose DRM uevent files for guest coldplug"
 +check_grep '/sys/class/input/event\*/uevent' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must expose input event uevent files for guest coldplug"
-+check_grep 'trigger --subsystem-match=drm --action=change' "${SCRIPT_ROOT}/rocknix-guest-coldplug" "guest coldplug helper must trigger DRM udev in the guest"
-+check_grep 'nsenter --target "${guest_pid}" --mount --uts --ipc --net --pid' "${SCRIPT_ROOT}/rocknix-guest-coldplug" "guest coldplug helper must enter the guest namespace"
  check_grep 'for v_node in /dev/video' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must enumerate /dev/video[0-9]* at runtime for Moonlight v4l2m2m"
  check_grep '--bind=/dev/ntsync' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/ntsync for Wine/Proton sync"
  check_grep '--bind=/dev/drm_dp_aux0' "${SCRIPT_ROOT}/rocknix-guest-start" "guest start helper must pass through /dev/drm_dp_aux0 for external DP"
 diff --git a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-index c3ee4ecd06..78a4f503ff 100755
+index c3ee4ecd06..14c94b2e5d 100755
 --- a/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
 +++ b/projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
-@@ -87,6 +87,7 @@ check_script "${PKG_DIR}/scripts/rocknix-guest-root-ensure"
- check_script "${PKG_DIR}/scripts/rocknix-guest-prep"
- check_script "${PKG_DIR}/scripts/rocknix-guest-promote"
- check_script "${PKG_DIR}/scripts/rocknix-guest-start"
-+check_script "${PKG_DIR}/scripts/rocknix-guest-coldplug"
- check_script "${PKG_DIR}/scripts/rocknix-guest-udev-stage"
- check_script "${PKG_DIR}/scripts/rocknix-guest-wifi-unblock"
- check_script "${PKG_DIR}/scripts/rocknix-recovery-toggle"
-@@ -101,6 +102,7 @@ grep -q 'rocknix-guest-root-ensure' "${PKG_DIR}/package.mk" || fail "package.mk
- grep -q 'rocknix-guest-prep' "${PKG_DIR}/package.mk" || fail "package.mk does not install prep helper"
- grep -q 'rocknix-guest-promote' "${PKG_DIR}/package.mk" || fail "package.mk does not install guest promotion helper"
- grep -q 'rocknix-guest-start' "${PKG_DIR}/package.mk" || fail "package.mk does not install guest start helper"
-+grep -q 'rocknix-guest-coldplug' "${PKG_DIR}/package.mk" || fail "package.mk does not install guest coldplug helper"
- grep -q 'rocknix-guest-udev-stage' "${PKG_DIR}/package.mk" || fail "package.mk does not install udev stage helper"
- grep -q 'rocknix-guest-wifi-unblock' "${PKG_DIR}/package.mk" || fail "package.mk does not install guest Wi-Fi unblock helper"
- ! grep -q 'rocknix-host-reclaim' "${PKG_DIR}/package.mk" || fail "package.mk must not install host reclaim helper"
-@@ -241,6 +243,7 @@ grep -q 'ExecStartPre=/usr/bin/rocknix-guest-wifi-unblock --host-only' "${guest_
+@@ -241,6 +241,7 @@ grep -q 'ExecStartPre=/usr/bin/rocknix-guest-wifi-unblock --host-only' "${guest_
  grep -q 'ExecStartPre=/usr/bin/rocknix-guest-prep' "${guest_unit}" || fail "guest unit missing prep helper"
  ! grep -q 'ExecStartPre=/usr/bin/rocknix-guest-udev-stage' "${guest_unit}" || fail "guest unit must no longer stage host udev into the guest"
  grep -q 'ExecStart=/usr/bin/rocknix-guest-start' "${guest_unit}" || fail "guest unit must launch through guest start helper"
-+grep -q 'ExecStartPost=/usr/bin/rocknix-guest-coldplug' "${guest_unit}" || fail "guest unit must run targeted guest coldplug after nspawn starts"
++! grep -q 'ExecStartPost=.*/rocknix-guest-coldplug' "${guest_unit}" || fail "guest unit must not synthesize DRM coldplug after guest start"
  grep -q '/usr/bin/systemd-nspawn' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must exec systemd-nspawn"
  grep -q -- '--directory=${ROCKNIX_GUEST_ROOT:-${NIX_ON_ROCK_CURRENT_ROOT}}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper has wrong guest root"
  grep -q -- '--register=no' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must avoid machined registration"
-@@ -283,9 +286,16 @@ grep -q -- '--bind=/dev/input' "${PKG_DIR}/scripts/rocknix-guest-start" || fail
+@@ -283,9 +284,14 @@ grep -q -- '--bind=/dev/input' "${PKG_DIR}/scripts/rocknix-guest-start" || fail
  grep -q 'mkdir -p /dev/input/\.inputplumber/sources' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must create InputPlumber sources inside the /dev/input bind"
  grep -q -- '--bind=/dev/uinput' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through uinput for guest InputPlumber"
  grep -q -- '--bind=/dev/snd' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass through sound devices"
@@ -232,8 +111,6 @@ index c3ee4ecd06..78a4f503ff 100755
 +grep -q '/sys/class/drm/\*/uevent' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must expose DRM uevent files for guest coldplug"
 +grep -q '/sys/class/input/event\*/uevent' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must expose input event uevent files for guest coldplug"
 +grep -q -- '--bind=${uevent_path}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass writable coldplug uevent files"
-+grep -q 'trigger --subsystem-match=drm --action=change' "${PKG_DIR}/scripts/rocknix-guest-coldplug" || fail "guest coldplug helper must trigger DRM udev in the guest"
-+grep -q 'nsenter --target "${guest_pid}" --mount --uts --ipc --net --pid' "${PKG_DIR}/scripts/rocknix-guest-coldplug" || fail "guest coldplug helper must enter the guest namespace"
  grep -q 'emit_backlight_brightness_binds' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must bind backlight brightness files for guest writes"
  grep -q 'for brightness_path in /sys/class/backlight/\*/brightness' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must enumerate runtime backlight brightness files"
  grep -q -- '--bind=${brightness_path}' "${PKG_DIR}/scripts/rocknix-guest-start" || fail "guest start helper must pass writable backlight brightness files"
