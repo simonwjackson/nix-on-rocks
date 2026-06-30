@@ -12,6 +12,7 @@ required=(
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-root-ensure
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/scripts/rocknix-guest-soak
   projects/ROCKNIX/packages/tools/rocknix-guest-substrate/tests/guest-substrate-static-checks.sh
+  projects/ROCKNIX/packages/linux/patches/7.0/0010-msm-resource-cleanup.patch
   .github/workflows/build-nix-on-rock-sm8550.yml
 )
 
