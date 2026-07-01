@@ -1,6 +1,6 @@
 # Accepted guest rootfs seed for the odin2portal ROCKNIX product payload image path.
 GUEST_DEVICE="odin2portal"
 GUEST_COMPATIBLE="ayn,odin2portal"
-GUEST_REV="851a177ec9b5a02849c898dfe4ed16ff9ed61546"
-GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-851a177ec9b5.tar.zst"
-GUEST_SEED_SHA256="0d4a04db14a8bee46b6d34bcd433a803042d826aa39197a77c16f783509ffd0b"
+GUEST_REV="b51aae80bc1935823440f54f6a6b24f0432c94a0"
+GUEST_SEED_ARCHIVE="rocknix-guest-rootfs-odin2portal-b51aae80bc19.tar.zst"
+GUEST_SEED_SHA256="902223d71936ee1217908a03731a55b13176ccbc6ecf20b8aa09e6493960d0b2"
