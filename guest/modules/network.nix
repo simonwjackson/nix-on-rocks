@@ -12,12 +12,7 @@
 # inside the guest and lets NetworkManager manage DNS directly so
 # nothing else can clobber it.
 #
-# Tailscale is guest-owned in the minimal-host model. The host keeps only
-# enough network substrate for recovery/SSH; the NixOS guest owns the
-# product/development tailnet identity. The nspawn unit binds /dev/net/tun
-# and the guest runs in the shared netns, so tailscaled can create the
-# tailnet interface from inside the guest while preserving host minimalism.
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   networking.networkmanager = {
@@ -51,28 +46,8 @@
 
   # The rootfs can carry a stale systemd-resolved stub resolv.conf from
   # earlier experiments. Point /etc/resolv.conf at NetworkManager's real
-  # upstream resolver file so tailscaled does not try to talk to a disabled
-  # systemd-resolved service.
+  # upstream resolver file while keeping any product VPN/DNS policy downstream.
   environment.etc."resolv.conf".source = "/run/NetworkManager/no-stub-resolv.conf";
-
-  services.tailscale = {
-    enable = true;
-    useRoutingFeatures = "client";
-    extraSetFlags = [
-      "--accept-dns=false"
-      "--netfilter-mode=off"
-      "--hostname=${config.networking.hostName}"
-    ];
-  };
-
-  # systemd-nspawn gives interactive root enough capability to create a tun
-  # device, but systemd-launched services inside the container do not inherit
-  # those caps ambiently. tailscaled needs them to create tailscale0 and open
-  # its UDP socket from the guest-owned network namespace.
-  systemd.services.tailscaled.serviceConfig.AmbientCapabilities = [
-    "CAP_NET_ADMIN"
-    "CAP_NET_RAW"
-  ];
 
   environment.systemPackages = with pkgs; [
     iw
@@ -80,6 +55,5 @@
     iproute2
     networkmanager
     iwd
-    tailscale
   ];
 }

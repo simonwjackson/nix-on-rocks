@@ -34,6 +34,9 @@ fi
   || fail "rocknix-guest-base must not write or import Korri product surfaces"
 ! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$ROOT/profiles/main-space.nix" \
   || fail "main-space fallback profile must not compose Korri product surfaces"
+! grep -R -q 'services\.tailscale\|tailscale\.enable\|extraSetFlags.*accept-dns\|--accept-dns\|--hostname=.*networking\.hostName' \
+  "$ROOT/modules" "$ROOT/profiles" \
+  || fail "guest substrate must not configure Tailscale; downstream products own tailnet policy"
 ! grep -qE 'systemd\.tmpfiles\.rules.*"d /run/user' "$ROOT/modules/session.nix" "$ROOT/profiles/rocknix-guest-base.nix" \
   || fail "runtime-dir ownership must stay with logind/user-runtime-dir, not tmpfiles"
 ! grep -qE 'KillUserProcesses|RemoveIPC' "$ROOT"/modules/*.nix "$ROOT"/profiles/*.nix \

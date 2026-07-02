@@ -26,6 +26,9 @@ fail() { echo "FAIL: $*" >&2; exit 1; }
   || fail "rocknix-guest-base must not write or import Korri product surfaces"
 ! grep -q 'services\.korri\|korri\.nixosModules\|korri\.packages' "$guest_root/profiles/main-space.nix" \
   || fail "main-space fallback profile must not compose Korri product surfaces"
+! grep -R -q 'services\.tailscale\|tailscale\.enable\|extraSetFlags.*accept-dns\|--accept-dns\|--hostname=.*networking\.hostName' \
+  "$guest_root/modules" "$guest_root/profiles" "$repo_root/flake.nix" \
+  || fail "guest substrate must not configure Tailscale; downstream products own tailnet policy"
 ! grep -q 'mainSpaceByCompatibleConfiguration\|mainSpaceConfigurationFor selectDeviceProfileFromCompatible' "$repo_root/flake.nix" \
   || fail "flake must not restore retired by-compatible product configuration"
 ! grep -q '"rootfs-odin2portal"\|"rootfs-thor"\|rootfs = rootfsThor' "$repo_root/flake.nix" \
